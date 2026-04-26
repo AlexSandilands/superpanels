@@ -296,6 +296,19 @@ The `types.ts` file is generated from Rust via `ts-rs`. Don't write it by hand.
 - **No inline `style` attribute** except for dynamic values (`style="--offset: {x}px"`).
 - **Honour `prefers-reduced-motion`** on every animation.
 
+### i18n
+
+UI strings flow through a small `t(key, args?)` helper backed by [`@nubolab-ffwd/svelte-fluent`](https://github.com/nubolab-ffwd/svelte-fluent) (or an equivalent thin wrapper around `@fluent/bundle`). It's a runtime function call, not a Rust-style macro — Svelte's compiler doesn't have macros, so don't write `t!(…)` in `.svelte` files.
+
+```svelte
+<script lang="ts">
+  import { t } from '$lib/i18n';
+</script>
+<button>{t('apply.button')}</button>
+```
+
+Rust-side strings (CLI human-readable messages) use a real `t!` macro backed by `fluent` directly. The two locales live side by side in `ui/locales/en.ftl` and `crates/superpanels-cli/locales/en.ftl`.
+
 ```svelte
 <style>
   .canvas {

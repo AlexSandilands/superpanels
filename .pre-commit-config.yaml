@@ -16,8 +16,13 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
+      # Fixtures are captured verbatim from real tools — never reformat them.
+      # The parser must handle whatever the tool actually produces, trailing
+      # whitespace and all.
       - id: trailing-whitespace
+        exclude: ^tests/fixtures/|^crates/.+/tests/fixtures/
       - id: end-of-file-fixer
+        exclude: ^tests/fixtures/|^crates/.+/tests/fixtures/
       - id: check-yaml
       - id: check-toml
       - id: check-json
@@ -27,6 +32,7 @@ repos:
         args: [--maxkb=1024]
       - id: mixed-line-ending
         args: [--fix=lf]
+        exclude: ^tests/fixtures/|^crates/.+/tests/fixtures/
       - id: detect-private-key
 
   # ───────────────────────────────────── spell-check ──────────────────────

@@ -91,21 +91,34 @@ A physical display as reported by the system, normalised into Superpanels' inter
 
 ```rust
 struct Monitor {
-    id: MonitorId,                 // stable u32, ordering left-to-right then top-to-bottom
-    name: String,                  // e.g. "DP-1", "HDMI-A-1" (may not be portable across reboots)
-    edid_hash: Option<String>,     // EDID-derived hash, used to re-identify a monitor across boots
-    position: (i32, i32),          // top-left corner in the logical desktop (px, post-scale)
-    resolution: (u32, u32),        // pixel dimensions (w, h) in native orientation
-    physical_size_mm: (u32, u32),  // physical dimensions in millimetres (w, h, native orientation)
-    scale: f64,                    // HiDPI scale factor (1.0, 1.25, 1.5, 2.0, ...)
-    rotation: Rotation,            // None | Left (90 CCW) | Right (90 CW) | Inverted (180)
-    refresh_hz: Option<f32>,       // for display in detect output; not used in math
+    id: MonitorId,                       // runtime-only identity, assigned at detection time
+                                         //   (left-to-right then top-to-bottom). Never persisted.
+    name: String,                        // e.g. "DP-1", "HDMI-A-1" (may not be portable across reboots)
+    stable_id: Option<String>,           // compositor-supplied stable ID (KDE per-output UUID etc.);
+                                         //   used as MonitorRef.stable_id when present
+    position: (i32, i32),                // top-left corner in the logical desktop (px, post-scale)
+    resolution: (u32, u32),              // pixel dimensions (w, h) in native orientation
+    physical_size_mm: Option<(u32, u32)>, // physical dimensions in mm (w, h, native orientation);
+                                         //   sourced from per-monitor config (§14.1), NOT detection.
+                                         //   None until the user has provided one — bezel math
+                                         //   refuses to run without it.
+    scale: f64,                          // HiDPI scale factor (1.0, 1.25, 1.5, 2.0, ...)
+    rotation: Rotation,                  // None | Left (90 CCW) | Right (90 CW) | Inverted (180)
+    refresh_hz: Option<f32>,             // for display in detect output; not used in math
     primary: bool,
-    ppi: f64,                      // derived: pixels per inch, post-rotation
+    ppi: Option<f64>,                    // derived: pixels per inch, post-rotation; None when
+                                         //   physical_size_mm is None.
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct MonitorId(u32);
 
 enum Rotation { None, Left, Right, Inverted }
 ```
+
+`MonitorId` is **runtime-only**: it's assigned during detection, used to address monitors during a single apply, and never persisted. For data that must survive reboots and dock re-plugs (per-monitor profile assignments, bezel overrides, physical-size config) use [`MonitorRef`](#64-monitor-identity-across-reboots) instead.
+
+`physical_size_mm` is **user-supplied**, not detected. The reason: `kscreen-doctor` (and most compositor CLIs) do not expose physical mm; reading EDID from sysfs is a workable fallback but EDID values are sometimes wrong and irrelevant on virtual displays. Since the user is already configuring bezel widths in mm, asking them for monitor dimensions in mm is a small additional step (and the GUI's first-run flow can prefill from "diagonal + aspect" — see §12.6). When `physical_size_mm` is `None`, bezel math returns `LayoutError::PhysicalSizeMissing` listing the monitors that need configuration.
 
 `rotation` matters for the layout math: a portrait monitor's *physical* width is its (rotated) short side and its height is its long side. Everything in `physical_size_mm` is recorded in native orientation; the layout module applies the rotation when building the desktop's physical canvas.
 
@@ -115,13 +128,13 @@ Physical gap sizes between adjacent screens, specified in millimetres.
 
 ```rust
 struct BezelConfig {
-    horizontal_mm: f32,  // uniform gap between any pair of horizontally adjacent monitors
-    vertical_mm: f32,    // uniform gap between any pair of vertically adjacent monitors
-    overrides: HashMap<MonitorPair, GapMm>, // optional per-pair override
+    horizontal_mm: f32,                                // uniform gap between any pair of horizontally adjacent monitors
+    vertical_mm: f32,                                  // uniform gap between any pair of vertically adjacent monitors
+    overrides: HashMap<(MonitorRef, MonitorRef), f32>, // optional per-pair override; key is sorted-pair
 }
 ```
 
-Default is uniform `horizontal_mm` / `vertical_mm`, which covers ~90% of real setups. Overrides exist for the rare case where bezel widths differ — e.g., a thin-bezel ultrawide between two thick-bezel old IPS panels.
+Default is uniform `horizontal_mm` / `vertical_mm`, which covers ~90% of real setups. Overrides exist for the rare case where bezel widths differ — e.g., a thin-bezel ultrawide between two thick-bezel old IPS panels. The override key is normalised so `(a, b)` and `(b, a)` collapse to the same entry; see [`MonitorRef`](#64-monitor-identity-across-reboots) for why we key on `MonitorRef`, not `MonitorId`.
 
 ### 3.3 CropSpec
 
@@ -139,38 +152,61 @@ struct CropSpec {
 
 ### 3.4 Profile
 
-A named, persistent configuration that bundles the inputs needed to set a wallpaper.
+A named, persistent configuration that bundles the inputs needed to set a wallpaper. The shape is built around the principle "make illegal states unrepresentable": *how images map to monitors* (span vs per-monitor) and *whether the source rotates over time* (single vs slideshow) are orthogonal concerns expressed by nested enums, so a configuration like `mode=Slideshow, images=Single` is unrepresentable rather than runtime-validated.
 
 ```rust
 struct Profile {
     name: String,
-    images: ImageSource,        // single file | per-monitor list | folder | playlist (see §7)
-    mode: ApplyMode,            // Span | Individual | Slideshow
-    fit: FitMode,               // Fill | Fit | Stretch | Center
+    body: ProfileBody,
     bezels: BezelConfig,
-    slideshow: Option<SlideshowConfig>,
     backend_override: Option<BackendKind>,
-    schedule: Option<Schedule>, // optional time-of-day trigger (see §9)
+    schedule: Option<Schedule>,           // optional time-of-day trigger (see §9)
 }
 
-enum ApplyMode { Span, Individual, Slideshow }
+enum ProfileBody {
+    /// One image at a time, spanned across all monitors with bezel correction.
+    /// The "source" can be a single file or a rotating set (slideshow).
+    Span(SpanProfile),
+    /// One image pinned per monitor. No spanning; bezels are irrelevant per crop.
+    PerMonitor(PerMonitorProfile),
+}
+
+struct SpanProfile {
+    source: SpanSource,
+    fit: FitMode,
+    offset: (i32, i32),                   // image-position offset in canvas px (see §8.3)
+}
+
+enum SpanSource {
+    Single(PathBuf),
+    Slideshow { images: ImageSet, config: SlideshowConfig },
+}
+
+struct PerMonitorProfile {
+    /// Each monitor gets exactly one image. Order is irrelevant — the layout
+    /// step resolves MonitorRef → live MonitorId at apply time.
+    assignments: Vec<(MonitorRef, PathBuf)>,
+    fit: FitMode,
+}
+
 enum FitMode { Fill, Fit, Stretch, Center }
 ```
 
-### 3.5 ImageSource
+### 3.5 ImageSet
+
+The pool of images a slideshow draws from. See §7 for how images are scanned, indexed, and filtered.
 
 ```rust
-enum ImageSource {
-    Single(PathBuf),                      // one image, span or single-monitor
-    PerMonitor(Vec<PathBuf>),             // explicit one-per-monitor in left-to-right order
+enum ImageSet {
     Folder { path: PathBuf, recursive: bool, filters: ImageFilters },
-    Playlist(Vec<PlaylistEntry>),         // hand-curated rotation list
+    Playlist(Vec<PathBuf>),               // hand-curated rotation list
 }
 
 struct ImageFilters {
     min_resolution: Option<(u32, u32)>,
     aspect_ratios: Option<AspectFilter>,  // Any | Wide | Standard | Custom(min, max)
     tags: Option<Vec<String>>,            // matches user-applied tags (see §7.3)
+    favourites_only: bool,                // shorthand for filtering on the favourite flag
 }
 ```
 
@@ -351,17 +387,22 @@ superpanels/
 
 ## 6. Display detection
 
+Detection produces a *layout-only* `Monitor` struct (positions, resolutions, scale, rotation, name, optional `stable_id`). Physical sizes are merged in afterwards from per-monitor config (§14.1). This split exists because no Linux compositor CLI reliably exposes `physical_size_mm` — KDE's `kscreen-doctor -o` doesn't, and EDID-from-sysfs is sometimes wrong on real hardware. Asking the user for monitor mm is one extra config step on top of the bezel mm they're already providing; in exchange we get a uniform detection surface and predictable correctness.
+
 Detection is attempted in priority order, stopping at the first detector that succeeds and returns a non-empty monitor list.
 
 | Priority | Detector | Detection condition | Source of truth |
 |---|---|---|---|
-| 1 | `kscreen-doctor -o` | KDE session detected | KDE Plasma — *preferred*; reports accurate physical sizes from EDID. |
+| 1 | `kscreen-doctor -o` | KDE session detected | KDE Plasma. Provides per-output UUID usable as `stable_id`. Run with `NO_COLOR=1` so the parser doesn't have to strip ANSI. |
 | 2 | `hyprctl monitors -j` | `$HYPRLAND_INSTANCE_SIGNATURE` set | Hyprland JSON output. |
-| 3 | `wlr-randr --json` | wlroots compositor (Sway etc.) | wlroots JSON output. |
-| 4 | `xrandr --verbose` | `$DISPLAY` set, Wayland not in use | X11 fallback; physical sizes parsed from `--verbose`. |
-| 5 | Manual override | `--monitors` CLI flag, or config | Always wins if set. |
+| 3 | `swaymsg -t get_outputs` | `$SWAYSOCK` set | Sway-native; more reliable than `wlr-randr` on Sway specifically. |
+| 4 | `wlr-randr --json` | wlroots compositor without `$SWAYSOCK` | Generic wlroots JSON output. |
+| 5 | `xrandr --verbose` | `$DISPLAY` set, Wayland not in use | X11 fallback. |
+| 6 | Manual override | `--monitors` CLI flag, or config | Always wins if set. |
 
 Each detector runs as a subprocess with a **5-second timeout**. If all fail, return: `Could not detect monitor layout. Try --monitors WxH+X+Y,WxH+X+Y... to specify manually, or run 'superpanels detect --debug' to see what was attempted.`
+
+After detection, layout `Monitor`s are merged with the user's per-monitor config (§14.1) — matching by `stable_id` first, falling back to `name`. The merged `physical_size_mm` is `None` for any monitor not yet in config; the bezel-math entry point (`compute_crop_specs`) returns `LayoutError::PhysicalSizeMissing { monitors: Vec<MonitorRef> }` listing exactly which monitors need configuration. The CLI surfaces this as a friendly "run `superpanels monitor configure DP-1` to provide its dimensions" message; the GUI surfaces it as a first-run modal.
 
 ### 6.1 Detector contract
 
@@ -370,10 +411,31 @@ Each detector implements:
 ```rust
 trait DisplayDetector {
     fn name(&self) -> &str;
-    fn is_available(&self) -> bool; // env-var or PATH check; never spawn
-    fn detect(&self) -> anyhow::Result<Vec<Monitor>>;
+    fn availability(&self) -> Availability; // env-var or PATH check; never spawn
+    fn detect(&self) -> Result<Vec<Monitor>, DetectError>;
+}
+
+enum Availability {
+    Available,
+    ToolMissing { tool: &'static str },     // e.g. "kscreen-doctor not on PATH"
+    WrongEnvironment { reason: &'static str }, // e.g. "$KDE_FULL_SESSION not set"
+    Disabled,                               // user pinned a different detector
+}
+
+#[derive(Debug, thiserror::Error)]
+enum DetectError {
+    #[error("subprocess `{cmd}` failed: {stderr}")]
+    Subprocess { cmd: String, stderr: String },
+    #[error("subprocess `{cmd}` timed out after {seconds}s")]
+    Timeout { cmd: String, seconds: u64 },
+    #[error("could not parse output of `{cmd}`: {message}")]
+    Parse { cmd: String, message: String },
+    #[error("detector returned an empty monitor list")]
+    EmptyResult,
 }
 ```
+
+`Availability` returns an enum (not a `bool`) so `superpanels detect --debug` can explain *why* each detector was skipped. Errors are typed so the orchestrator can react differently to "tool missing" vs "tool present but failed" vs "parser broken".
 
 Each detector is *individually unit-tested* against captured real-world output samples stored under `crates/superpanels-core/tests/fixtures/display/`. We never hit the system in tests.
 
@@ -381,8 +443,8 @@ Each detector is *individually unit-tested* against captured real-world output s
 
 `--monitors WxH+X+Y[@SCALE][/ROT][?WMMxHMM],...`
 
-- `1920x1080+0+0` — minimum form (no scale, no rotation, no physical size — falls back to 96 PPI).
-- `2560x1440+0+0@1.5/right?597x336` — 27" portrait at 1.5× scale, 597×336 mm physical.
+- `1920x1080+0+0` — layout-only override; physical mm still expected from `[[monitor]]` config.
+- `2560x1440+0+0@1.5/right?597x336` — full override including 597×336 mm physical (skips config merge for this monitor).
 
 Useful for SSH/headless/CI environments and for the test suite.
 
@@ -395,7 +457,28 @@ The daemon re-detects monitors on:
 
 ### 6.4 Monitor identity across reboots
 
-`monitor.name` is unstable (a USB-C dock can re-label DP-1 to DP-2). For per-monitor profile data (custom bezel overrides, per-monitor image assignments), we key on `edid_hash` when available, falling back to `name`. The match is many-to-one: profiles refer to monitors by an internal `MonitorRef = { name?, edid_hash? }`, and the layout step resolves these to the live `MonitorId`.
+`monitor.name` is unstable (a USB-C dock can re-label DP-1 to DP-2). For per-monitor persistent data — custom bezel overrides, per-monitor image assignments, **and physical-mm config** — we key on a stable identifier when one is available, falling back to `name`. Profiles and config refer to monitors by:
+
+```rust
+struct MonitorRef {
+    stable_id: Option<String>,  // KDE per-output UUID; or hash of EDID manufacturer+model+serial
+    name: Option<String>,       // "DP-1"; fallback when stable_id is unavailable
+}
+```
+
+The layout step resolves `MonitorRef` to a live `MonitorId` (many-to-one: a `MonitorRef` matches the unique live `Monitor` whose `stable_id` matches, else whose `name` matches).
+
+**`stable_id` sources, by detector:**
+
+| Detector | Source of `stable_id` |
+|---|---|
+| `kscreen-doctor -o` | The per-output UUID printed in the `Output:` line (e.g. `f7f0f124-9e9b-4ef0-91a7-426d58091760`) — KDE generates this deterministically from EDID, so we use it directly without our own hashing. |
+| `hyprctl monitors -j` | The `serial` field from JSON output. |
+| `swaymsg -t get_outputs` | `make + model + serial` from the JSON output, hashed. |
+| `wlr-randr --json` | `make + model + serial` if exposed; else `None`. |
+| `xrandr --verbose` | EDID hex-dump under `EDID:` block, parsed for manufacturer/model/serial, hashed. |
+
+When a detector can't supply `stable_id`, the fallback is `name`. This breaks if the user re-plugs a dock and `DP-1` now refers to a different physical monitor — we accept that ambiguity, and the GUI prompts to re-confirm assignments after detecting that the physical configuration has changed.
 
 ---
 
@@ -451,7 +534,7 @@ For a slideshow over a folder, the picker can be configured to prefer images tha
 In the GUI:
 - Dropping an image file onto the main window adds it to the active profile as a Single source.
 - Dropping a folder adds it as a library root and activates a Folder source.
-- Dropping onto a specific monitor in the canvas creates an Individual-mode profile with that file pinned to that monitor.
+- Dropping onto a specific monitor in the canvas creates a `PerMonitor`-body profile with that file pinned to that monitor.
 
 ---
 
@@ -547,15 +630,39 @@ A profile can have a schedule, or a global schedule list can flip between profil
 ```rust
 pub trait WallpaperBackend: Send + Sync {
     fn name(&self) -> &str;
-    fn is_available(&self) -> bool;
-    fn apply(&self, assignments: &[(MonitorRef, PathBuf)]) -> anyhow::Result<()>;
+    fn availability(&self) -> Availability;
+    fn apply(&self, assignments: &[(MonitorRef, PathBuf)]) -> Result<AppliedReport, BackendError>;
     fn supports_per_monitor(&self) -> bool;
+}
+
+struct AppliedReport {
+    /// Number of monitors successfully assigned a wallpaper. For composite
+    /// backends (GNOME) this is the count of monitors covered by the composite.
+    monitors_set: usize,
+    /// Wall-clock duration of the apply, including any subprocess + redraw wait.
+    duration: Duration,
+    /// Backend name that handled the apply (for diagnostics).
+    backend: &'static str,
+}
+
+#[derive(Debug, thiserror::Error)]
+enum BackendError {
+    #[error("backend `{backend}` is not available: {reason}")]
+    Unavailable { backend: &'static str, reason: String },
+    #[error("subprocess `{cmd}` failed (exit {exit}): {stderr}")]
+    Subprocess { cmd: String, exit: i32, stderr: String },
+    #[error("subprocess `{cmd}` timed out after {seconds}s")]
+    Timeout { cmd: String, seconds: u64 },
+    #[error("D-Bus call failed: {0}")]
+    DBus(String),
+    #[error("monitor `{0}` not present in current layout")]
+    UnknownMonitor(String),
 }
 ```
 
-`is_available()` must be cheap: env var check or `which` lookup. Never spawn a process.
+`availability()` must be cheap: env var check or `which` lookup. Never spawn a process. The enum (defined in §6.1) lets `superpanels detect --debug` explain *why* a backend was skipped — the same diagnostic value as the detector trait.
 
-`apply()` receives `(monitor, image)` pairs. Backends that don't support per-monitor (older GNOME) composite the per-monitor crops into one large image and set it as the spanning wallpaper.
+`apply()` receives `(monitor, image)` pairs and returns an `AppliedReport` rather than `()` so future callers (the GUI toast, the daemon's audit log) can surface the count and duration without a breaking trait change. Backends that don't support per-monitor (older GNOME) composite the per-monitor crops into one large image and set it as the spanning wallpaper; `monitors_set` still reflects the number of monitors covered.
 
 ### 10.2 Auto-detection order
 
@@ -581,7 +688,7 @@ User can pin a backend in config (`backend.prefer = "kde"`) to skip detection.
 ### 10.4 Per-backend specifics
 
 - **KDE.** `zbus`-backed D-Bus call to `org.kde.PlasmaShell.evaluateScript` setting per-monitor `Image` plugin source. The JS payload is a versioned template string with placeholder substitution; we generate it server-side, never accept it from user input.
-- **GNOME.** `gsettings set org.gnome.desktop.background picture-uri[-dark] file://…`. Multi-monitor: composite to a single image of the spanning canvas; GNOME displays the same image stretched across the desktop region. We size the composite to the *logical* desktop, not the physical one — GNOME doesn't do bezel comp itself, so our pre-composited image is the bezel-correct version.
+- **GNOME.** `gsettings set org.gnome.desktop.background picture-uri[-dark] file://…`. Multi-monitor strategy is *to be verified in Phase 2* — modern GNOME Shell may support per-monitor wallpapers via Mutter's backend, in which case the per-monitor pipeline applies directly. The fallback (and current assumption) is to composite the per-monitor crops into a single bezel-correct image of the spanning canvas; GNOME then displays that image stretched across the desktop region. The composite is sized to the *logical* desktop, not the physical one. See PLAN Phase 2 risks.
 - **Hyprland.** Uses `hyprctl hyprpaper preload` then `hyprctl hyprpaper wallpaper "MONITOR,PATH"` per monitor. We require `hyprpaper` running; we do not start it.
 - **Sway/wlroots.** Prefer `swww` (smooth fades), fall back to `swaybg`. `swww img --outputs DP-1 path.png` for per-monitor.
 - **feh.** `feh --bg-fill IMAGE1 IMAGE2 …` — feh handles per-monitor compositing.
@@ -769,28 +876,30 @@ The canvas is the heart of the UI. Five-layer compositing:
 ### 12.4 IPC commands (Tauri, mirrored 1:1 in the daemon's IPC)
 
 ```rust
-#[tauri::command] fn detect_monitors() -> Result<Vec<Monitor>>;
-#[tauri::command] fn list_profiles() -> Result<Vec<Profile>>;
-#[tauri::command] fn apply_profile(name: String) -> Result<()>;
-#[tauri::command] fn save_profile(profile: Profile) -> Result<()>;
-#[tauri::command] fn delete_profile(name: String) -> Result<()>;
+#[tauri::command] fn detect_monitors() -> Result<Vec<Monitor>, IpcError>;
+#[tauri::command] fn list_profiles() -> Result<Vec<Profile>, IpcError>;
+#[tauri::command] fn apply_profile(name: String) -> Result<AppliedReport, IpcError>;
+#[tauri::command] fn save_profile(profile: Profile) -> Result<(), IpcError>;
+#[tauri::command] fn delete_profile(name: String) -> Result<(), IpcError>;
 #[tauri::command] fn preview_crop(
     image: String,
     offset_px: (i32, i32),
     bezels: BezelConfig,
     fit: FitMode,
-) -> Result<Vec<CropSpec>>;
-#[tauri::command] fn library_list(filter: LibraryFilter) -> Result<Vec<LibraryEntry>>;
-#[tauri::command] fn library_thumbnail(path: String) -> Result<Vec<u8>>; // PNG/WebP bytes
-#[tauri::command] fn library_tag(path: String, tag: String, on: bool) -> Result<()>;
-#[tauri::command] fn slideshow_next() -> Result<()>;
-#[tauri::command] fn slideshow_prev() -> Result<()>;
-#[tauri::command] fn slideshow_pause(paused: bool) -> Result<()>;
-#[tauri::command] fn get_config() -> Result<Config>;
-#[tauri::command] fn save_config(config: Config) -> Result<()>;
-#[tauri::command] fn redetect() -> Result<Vec<Monitor>>;
-#[tauri::command] fn current_state() -> Result<RuntimeState>;  // active profile, current image, slideshow position
+) -> Result<Vec<CropSpec>, IpcError>;
+#[tauri::command] fn library_list(filter: LibraryFilter) -> Result<Vec<LibraryEntry>, IpcError>;
+#[tauri::command] fn library_thumbnail(path: String) -> Result<Vec<u8>, IpcError>; // PNG/WebP bytes
+#[tauri::command] fn library_tag(path: String, tag: String, on: bool) -> Result<(), IpcError>;
+#[tauri::command] fn slideshow_next() -> Result<AppliedReport, IpcError>;
+#[tauri::command] fn slideshow_prev() -> Result<AppliedReport, IpcError>;
+#[tauri::command] fn slideshow_pause(paused: bool) -> Result<(), IpcError>;
+#[tauri::command] fn get_config() -> Result<Config, IpcError>;
+#[tauri::command] fn save_config(config: Config) -> Result<(), IpcError>;
+#[tauri::command] fn redetect() -> Result<Vec<Monitor>, IpcError>;
+#[tauri::command] fn current_state() -> Result<RuntimeState, IpcError>;  // active profile, current source, slideshow position
 ```
+
+`IpcError` is a thin enum that flattens the typed errors from `superpanels-core` (`DetectError`, `BackendError`, `LayoutError`, `ConfigError`) into a single shape suitable for serialisation to the frontend. `Profile`, `BezelConfig`, `FitMode`, `CropSpec`, and friends are the types from §3 (after the rework — see §3.4 for `Profile`'s shape).
 
 ### 12.5 Keyboard shortcuts
 
@@ -812,6 +921,10 @@ The canvas is the heart of the UI. Five-layer compositing:
 ### 12.6 Empty/first-run state
 
 - First run with no monitors detected: canvas shows a placeholder with "Couldn't detect monitors — try `superpanels detect --debug`" and a button to open the manual override dialog.
+- **First run with monitors detected but no physical-size config:** the canvas is rendered (so the user sees their layout) but each monitor is annotated with "physical size unknown — click to configure" and the Apply button is disabled with a tooltip explaining why. Clicking a monitor opens a small modal with two input modes:
+  - *Diagonal + aspect ratio* (e.g. `27"`, `16:9`, landscape) — auto-computes physical mm. The default for "common monitor sizes" — a 27" 16:9 panel comes out to ≈ 597 × 336 mm.
+  - *Direct mm entry* — width and height in mm.
+  The chosen values are written to `[[monitor]]` in the config (§14.1), keyed on `stable_id` (or `name` if no stable ID).
 - First run with no profile: canvas shows a single example monitor outline + "Drop an image here or pick one from the library" prompt.
 - First run with no library roots: a friendly onboarding modal asks "Where are your wallpapers?" and registers a root.
 
@@ -896,27 +1009,58 @@ recursive        = true
 thumbnail_size   = 320
 auto_scan        = true              # rescan on FS change
 
+# Per-monitor physical sizes. The detector gives us pixels; this gives us
+# millimetres. Match by stable_id when the detector supplied one (KDE per-output
+# UUID etc.); fall back to name for compositors that don't expose a stable ID.
+# At least one of `stable_id` / `name` must be set. The GUI's first-run flow
+# writes these blocks for you.
+[[monitor]]
+stable_id     = "f7f0f124-9e9b-4ef0-91a7-426d58091760"  # KDE UUID
+name          = "DP-1"                                  # informational; match falls back to this
+physical_mm   = [597, 336]                              # 27" 16:9 landscape
+
+[[monitor]]
+name          = "HDMI-A-1"
+physical_mm   = [527, 296]                              # 24" 16:9
+
 [[profile]]
-name   = "home"
-images = { single = "~/walls/pano.jpg" }
-mode   = "span"
+name = "home"
+bezels = { horizontal_mm = 8.0, vertical_mm = 5.0 }
+
+[profile.body]
+type   = "span"
 fit    = "fill"
+offset = [0, 0]
 
-[profile.bezels]
-horizontal_mm = 8.0
-vertical_mm   = 5.0
+[profile.body.source]
+type = "single"
+path = "~/walls/pano.jpg"
 
 [[profile]]
-name   = "work"
-images = { folder = { path = "~/walls/work", recursive = false, filters = { aspect_ratios = "wide" } } }
-mode   = "slideshow"
+name = "work"
+bezels = { horizontal_mm = 8.0, vertical_mm = 5.0 }
 
-[profile.slideshow]
-interval_secs        = 1800
-sort                 = "shuffle"
-recent_history_size  = 10
-on_start             = "resume"
+[profile.body]
+type = "span"
+fit  = "fill"
+
+[profile.body.source]
+type = "slideshow"
+
+[profile.body.source.images]
+type      = "folder"
+path      = "~/walls/work"
+recursive = false
+filters   = { aspect_ratios = "wide" }
+
+[profile.body.source.config]
+interval_secs       = 1800
+sort                = "shuffle"
+recent_history_size = 10
+on_start            = "resume"
 ```
+
+Enums use `serde`'s tagged representation (`#[serde(tag = "type", rename_all = "snake_case")]`) so the TOML stays readable and round-trip-stable. This is the source of truth for the on-disk format; the Rust types in §3 are the source of truth for the runtime model.
 
 ### 14.2 Validation
 
@@ -933,7 +1077,7 @@ Location: `$XDG_STATE_HOME/superpanels/state.json` (default: `~/.local/state/sup
 ```json
 {
   "active_profile": "home",
-  "current_images": ["/path/to/temp/0.png", "/path/to/temp/1.png"],
+  "current_source": { "kind": "single", "path": "~/walls/pano.jpg" },
   "slideshow": {
     "profile": "home",
     "current_index": 17,
@@ -945,7 +1089,7 @@ Location: `$XDG_STATE_HOME/superpanels/state.json` (default: `~/.local/state/sup
 }
 ```
 
-State is restored on daemon start so the slideshow doesn't loop back to the start after every reboot.
+`current_source` records the *source* (a serialised `SpanSource` or `PerMonitorProfile.assignments`), never the per-monitor temp file paths — those are wiped at the start of each apply (§8.5) so persisting them would always be stale. If the daemon needs to repaint after a re-detection, it re-runs the pipeline from the source. State is restored on daemon start so the slideshow doesn't loop back to the start after every reboot.
 
 ### 14.5 Library DB
 
@@ -995,7 +1139,28 @@ None. Superpanels does not phone home. There is no analytics, no usage reporting
 - Image decoding happens in a worker thread. The `image` crate is safe Rust but image files come from untrusted sources (downloads), so we cap decode memory at a configurable limit (default 512 MB; rejects pathological PNG bombs).
 - Custom backend commands are user-supplied; we run them as the user. The config doc warns clearly; the GUI's custom-command field shows a "this runs with your privileges" callout.
 - No HTTP fetching in v1.
-- Tauri `tauri.conf.json` enables only the IPC commands we need; `dangerousDisableAssetCspModification` is `false`. Local file access is restricted to the configured library roots and the config/cache/state dirs.
+- **Tauri v2 hardening.** The defaults are not safe enough for an app that touches user-supplied paths and runs subprocesses. We lock down four surfaces:
+  - **CSP.** `tauri.conf.json` sets `app.security.csp` explicitly:
+    ```
+    default-src 'self';
+    script-src  'self';
+    style-src   'self' 'unsafe-inline';   /* inline style="" attrs for canvas positioning */
+    img-src     'self' data: blob:;       /* thumbnails arrive as bytes via IPC, become blob: URLs */
+    connect-src 'self' ipc: http://ipc.localhost;  /* Tauri v2 IPC transport */
+    object-src  'none';
+    base-uri    'self';
+    frame-ancestors 'none';
+    ```
+    No `'unsafe-eval'`, no `'unsafe-inline'` on `script-src`. `'unsafe-inline'` on `style-src` is the one concession — Svelte's runes-based canvas positioning sets `style="--offset: {x}px"` on elements, which CSP3 governs via `style-src-attr` (falling back to `style-src`). If we eliminate inline-attr styles in Phase 4a we drop this too.
+  - **`withGlobalTauri: false`.** No `window.__TAURI__` global; everything goes through `import { invoke } from '@tauri-apps/api/core'`. Smaller attack surface from page scripts.
+  - **Capabilities (least-privilege per window).** Plugin permissions are declared in `src-tauri/capabilities/default.json` against the `main` window only. We grant exactly:
+    - `core:default` (window resize, drag, etc.).
+    - `fs:scope` *constrained at runtime* to the configured library roots plus `$XDG_CACHE_HOME/superpanels/thumbs/`. No blanket `fs:allow-read-file`.
+    - `dialog:allow-open` for the file picker.
+    - `notification:allow-notify` only if the user opted in.
+    - **No** `shell:`, `http:`, `process:`, or `os:execute` permissions. Subprocesses run in our Rust code with our own subprocess rules (§10.3), never via the shell plugin.
+  - **No `asset:` protocol for arbitrary paths.** Thumbnails and previews go through a dedicated IPC command (`library_thumbnail`) that returns bytes; the frontend wraps them as `blob:` URLs. This means a webview script can't read arbitrary files via `asset://` even if CSP is bypassed.
+- Custom IPC commands (the ones in §12.4) are app-level handlers — Tauri's capability system gates *plugin* permissions, not custom `#[tauri::command]`s. We mitigate that by validating every command's input as if it were untrusted: paths are canonicalised and verified to be inside an allowed root before any FS access; profile names are matched against the on-disk profile list, never used as path components.
 - No `unsafe` Rust in our crates. Allowed via `#![forbid(unsafe_code)]`.
 
 ---
@@ -1128,4 +1293,4 @@ These need resolution before or during early implementation. Tracked as GitHub i
 3. **Edid hashing.** Should we hash the full EDID or just `manufacturer + model + serial`? Latter is more stable (cable swap doesn't change the hash); former is more unique.
 4. **Tauri v2 vs Iced.** Tauri brings WebKitGTK as a dep. Iced is pure Rust, smaller binaries, but the canvas work is more code. Decision: stick with Tauri for v1 (web tech for the canvas is hard to beat); revisit if WebKitGTK is a deal-breaker for a packager.
 5. **Slideshow during sleep.** Should the slideshow timer pause when the screen is locked / the system is asleep? Answer: yes, listen on `org.freedesktop.login1` for `PrepareForSleep` and `LockedHint`.
-6. **Schema for per-monitor profiles.** When a profile pins images per monitor, how do we refer to monitors in a way that survives re-plugs? `MonitorRef { name?, edid_hash? }` (§6.4) is the proposal; needs a real-world test.
+6. **Schema for per-monitor profiles.** When a profile pins images per monitor, how do we refer to monitors in a way that survives re-plugs? `MonitorRef { stable_id?, name? }` (§6.4) is the resolved design — `stable_id` is the KDE per-output UUID where available, an EDID-derived hash otherwise. Needs a real-world test on non-KDE compositors.

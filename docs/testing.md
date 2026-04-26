@@ -130,10 +130,10 @@ pub struct MockBackend {
 
 impl WallpaperBackend for MockBackend {
     fn name(&self) -> &str { "mock" }
-    fn is_available(&self) -> bool { true }
-    fn apply(&self, assignments: &[(MonitorRef, PathBuf)]) -> Result<()> {
+    fn availability(&self) -> Availability { Availability::Available }
+    fn apply(&self, assignments: &[(MonitorRef, PathBuf)]) -> Result<AppliedReport, BackendError> {
         self.applied.lock().unwrap().extend(/* ... */);
-        Ok(())
+        Ok(AppliedReport { monitors_set: assignments.len(), duration: Duration::ZERO, backend: "mock" })
     }
     fn supports_per_monitor(&self) -> bool { true }
 }

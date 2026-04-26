@@ -57,7 +57,8 @@ Don't bypass hooks (`--no-verify`) — fix the issue. Commit messages follow Con
 ## Gotchas
 
 - **Bezel math is in physical millimetres**, not pixels. The image maps onto the physical desktop plane *including* bezel gaps; pixel-only thinking gives wrong results. See `SPEC.md` §4.
-- **Monitor identity** uses `MonitorRef { edid_hash, name }`. Names like `DP-1` are unstable across reboots / dock plugs — don't key persistent data on them.
+- **Monitor identity** uses `MonitorRef { stable_id, name }`. `stable_id` is the KDE per-output UUID on KDE, or a hash of `manufacturer+model+serial` on other compositors. Names like `DP-1` are unstable across reboots / dock plugs — don't key persistent data on them.
+- **Monitor physical mm comes from config, not detection.** `kscreen-doctor` doesn't expose it. `Monitor.physical_size_mm: Option<…>` is `None` until the user has filled in a `[[monitor]]` block (or used the GUI's first-run flow). `compute_crop_specs` returns `LayoutError::PhysicalSizeMissing` when any monitor lacks one.
 - **The CLI runs without the daemon** (in-process fallback). Don't assume a daemon is present for one-shot operations.
 - **Logging uses `tracing` with structured fields**, never `format!` into the message: `info!(monitor = %name, "applied")`, not `info!("applied {name}")`.
 - **KDE backend** calls `org.kde.PlasmaShell.evaluateScript` via zbus — image paths are JSON-quoted into the script template, never string-concatenated. See `SPEC.md` §10.4.

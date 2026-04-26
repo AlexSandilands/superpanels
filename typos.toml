@@ -22,7 +22,6 @@ xrandr      = "xrandr"
 randr       = "randr"
 edid        = "edid"
 zbus        = "zbus"
-notif       = "notif"
 # GitHub auto-generates markdown anchors by stripping apostrophes, so a
 # heading like "What you're building" becomes the anchor "what-youre-building".
 # Allow the stripped form to appear in ToC links.

@@ -34,7 +34,7 @@ You need:
 |---|---|---|
 | Rust toolchain | The core language | The `rust-toolchain.toml` file pins the channel; `rustup` installs it on first `cargo` call. Get rustup with `pacman -S rustup` then `rustup default stable`. |
 | Node + npm | Frontend tooling (prettier, eslint, Svelte) | `pacman -S nodejs npm` |
-| Tauri prerequisites | Building the GUI | `pacman -S webkit2gtk-4.1 base-devel curl wget file openssl appmenu-gtk-module libappindicator-gtk3 librsvg` |
+| Tauri prerequisites | Building the GUI | `pacman -S webkit2gtk-4.1 base-devel curl wget file openssl librsvg` (Tauri v2 — no GTK3 indicator/appmenu packages needed) |
 | pre-commit | Git hook runner | `pacman -S pre-commit` (or `pip install --user pre-commit`) |
 | typos | Fast spell-checker (used by pre-commit) | `pacman -S typos` (or `cargo install --locked typos-cli`) |
 | cargo-deny | Dep-policy enforcement | `cargo install --locked cargo-deny` |

@@ -192,7 +192,7 @@ Each is a candidate for its own submodule. The wrong split is "library_part_2.rs
 - **No abbreviations** unless the long form is genuinely awkward. `monitor`, not `mon`. `configuration` is acceptable as `config` because that's the universal short form.
 - **No Hungarian notation.** `image_path: PathBuf` not `path_image`. Type information lives in the type system.
 - **Verbs for functions, nouns for types.** `compute_crop_specs()`, not `crop_spec_computer()`.
-- **Boolean-returning functions read like predicates.** `is_available()`, `has_rotation()`, `should_skip()`.
+- **Boolean-returning functions read like predicates.** `has_rotation()`, `should_skip()`, `is_primary()`. (Note: prefer richer enums when "available / not available" has *reasons* — see `Availability` in SPEC §6.1.)
 
 ---
 
@@ -264,6 +264,14 @@ workspace = true
 ```
 
 Each crate may override individual lints if it has a documented reason (e.g. the CLI may `allow(print_stdout)` because that *is* its job).
+
+---
+
+## Edition and toolchain
+
+- **Edition: 2024.** Set in `rustfmt.toml`; every crate's `Cargo.toml` must also declare `edition = "2024"`. The workspace `Cargo.toml` should set `edition.workspace = true` in `[workspace.package]` so per-crate `package.edition.workspace = true` inherits.
+- **Channel: stable.** `rust-toolchain.toml` pins the channel; pre-v0.7 we track current stable, post-v0.7 we pin a specific version for CI reproducibility.
+- **MSRV: 1.85** (per `clippy.toml`) — that's the first stable that ships edition 2024. MSRV is currently a clippy hint; set it in workspace `Cargo.toml` (`rust-version = "1.85"`) when we first take an MSRV bump as a breaking change.
 
 ---
 

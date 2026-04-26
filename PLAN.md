@@ -12,9 +12,11 @@
 4. [Phase 1 — Core CLI MVP](#phase-1--core-cli-mvp)
 5. [Phase 2 — Multi-backend & slideshow](#phase-2--multi-backend--slideshow)
 6. [Phase 3 — Tauri shell & tray](#phase-3--tauri-shell--tray)
-7. [Phase 4 — Polished GUI & library](#phase-4--polished-gui--library)
-8. [Phase 5 — Packaging & first release](#phase-5--packaging--first-release-v01)
-9. [Phase 6 — Stabilisation toward 1.0](#phase-6--stabilisation-toward-10)
+7. [Phase 4a — Canvas interaction](#phase-4a--canvas-interaction)
+8. [Phase 4b — Library + SQLite](#phase-4b--library--sqlite)
+9. [Phase 4c — Polish & accessibility](#phase-4c--polish--accessibility)
+10. [Phase 5 — Packaging & first release](#phase-5--packaging--first-release-v01)
+11. [Phase 6 — Stabilisation toward 1.0](#phase-6--stabilisation-toward-10)
 10. [Cross-cutting concerns](#cross-cutting-concerns)
 11. [Risk register](#risk-register)
 12. [Decisions to make early](#decisions-to-make-early)
@@ -36,17 +38,21 @@
 
 ## Phase map
 
-| Phase | Goal | Ship-ready demo |
-|---|---|---|
-| 0 | Spike & derisk | A throwaway binary that prints correct crops for a 3-monitor KDE setup |
-| 1 | Core CLI MVP on KDE | `superpanels set pano.jpg` works, with bezel correction |
-| 2 | Multi-backend + slideshow | Works on GNOME, Sway, Hyprland, X11/feh; folder-driven rotation |
-| 3 | Tauri shell + tray | `superpanels gui` window + system tray; profile switching |
-| 4 | Polished GUI + library | The headline canvas; library grid; tags/favourites; first screenshot worth sharing |
-| 5 | Packaging & v0.1 release | AUR + crates.io + GitHub release artefacts |
-| 6 | Stabilise toward 1.0 | Schema freeze, docs, accessibility audit, perf budget enforced |
+| Phase | Goal | Ship-ready demo | Target version |
+|---|---|---|---|
+| 0 | Spike & derisk | A throwaway binary that prints correct crops for a 3-monitor KDE setup | — |
+| 1 | Core CLI MVP on KDE | `superpanels set pano.jpg` works, with bezel correction | v0.1.0 (CLI only, KDE only) |
+| 2 | Multi-backend + slideshow | Works on GNOME, Sway, Hyprland, X11/feh; folder-driven rotation | v0.2.x |
+| 3 | Tauri shell + tray | `superpanels gui` window + system tray; profile switching | v0.3.x |
+| 4a | Canvas interaction | Drag-to-offset + live bezel sliders; ≥ 60 fps preview | v0.4.x |
+| 4b | Library + SQLite | Library grid + thumbnails + tags + favourites | v0.5.x |
+| 4c | Polish & accessibility | Onboarding, theming, keyboard shortcuts, a11y audit | v0.6.x |
+| 5 | Packaging & v0.7 release | AUR + crates.io + GitHub release artefacts | v0.7.0 |
+| 6 | Stabilise toward 1.0 | Schema freeze, docs, perf budget enforced | v0.8 → v1.0.0 |
 
 Rough effort: Phase 0–2 is the unglamorous engine work (the majority of the value). Phase 3–4 is the visible payoff. Phase 5–6 is hardening.
+
+The version trajectory is *intent*, not contract. Pre-1.0 minor bumps may include breaking config changes; the changelog is explicit. The schema is frozen at v1.0; before then we accept the migration cost rather than freezing too early.
 
 ---
 
@@ -54,12 +60,14 @@ Rough effort: Phase 0–2 is the unglamorous engine work (the majority of the va
 
 **Goal.** Validate the two hardest assumptions in the spec before committing to architecture.
 
-**Deliverable.** A *throwaway* `examples/spike.rs` (or short standalone binary) that:
+**Deliverable.** A *throwaway* standalone Rust binary (its own scratch directory outside this repo, or a `rust-script` single-file program — the workspace doesn't exist yet) that:
 1. Reads `kscreen-doctor -o` and parses it into `Vec<Monitor>` including physical sizes in mm.
 2. Computes `Vec<CropSpec>` for an arbitrary input image and the detected layout.
 3. Prints the result in JSON.
 
 This validates: the parser is feasible; physical-mm data is actually present; the bezel math gives sensible numbers on a real layout. **No GUI, no D-Bus, no apply.**
+
+> Note: `examples/spike.rs` would require an existing Cargo workspace. We don't have one yet — Phase 1.1 creates it. Keep the spike entirely separate so no spike code can drift into Phase 1.
 
 **Definition of done.**
 - [ ] kscreen-doctor parser handles a real 3-monitor KDE layout from the dev machine.
@@ -86,7 +94,7 @@ This validates: the parser is feasible; physical-mm data is actually present; th
 ### 1.1 Workspace scaffold
 - [ ] `cargo new --lib superpanels-core` inside a workspace `Cargo.toml`.
 - [ ] Add `superpanels-cli` crate as a separate binary; `superpanels-cli` depends on `superpanels-core`.
-- [ ] Workspace deps: `image`, `anyhow`, `thiserror`, `serde`, `serde_json`, `toml`, `clap` (with `derive`), `tracing`, `tracing-subscriber`.
+- [ ] Workspace deps: `image`, `anyhow`, `thiserror`, `serde`, `serde_json`, `toml`, `toml_edit` (round-trip-with-comments writes), `clap` (with `derive`), `tracing`, `tracing-subscriber`.
 - [ ] `rust-toolchain.toml` pinning to a stable Rust version (recent stable, no nightly).
 - [ ] `rustfmt.toml`, `clippy.toml` (lints config), `.editorconfig`.
 - [ ] `#![forbid(unsafe_code)]` in every crate.
@@ -96,20 +104,23 @@ This validates: the parser is feasible; physical-mm data is actually present; th
 - [ ] CI skeleton (`.github/workflows/ci.yml`) running `cargo test`, `clippy`, `fmt --check` on push.
 
 ### 1.2 `display/` — KDE detection
-- [ ] `Monitor` struct per SPEC §3.1, `serde::Serialize`.
-- [ ] `Rotation` enum, `serde`-friendly.
-- [ ] `DisplayDetector` trait per SPEC §6.1.
-- [ ] `KscreenDoctorDetector` — spawns subprocess (timeout 5 s), parses output.
-  - Capture two real-world fixtures: single monitor, three monitors mixed orientation.
+- [ ] `Monitor` struct per SPEC §3.1, `serde::Serialize`. Note: `physical_size_mm: Option<(u32, u32)>` and `ppi: Option<f64>` — both `None` until merged with config (§1.6).
+- [ ] `Rotation` enum, `serde`-friendly. Includes the KDE numeric mapping (1=None, 2=Right, 4=Inverted, 8=Left) — verify via spike fixture.
+- [ ] `MonitorRef { stable_id, name }` per SPEC §6.4.
+- [ ] `DisplayDetector` trait + `Availability` + `DetectError` per SPEC §6.1.
+- [ ] `KscreenDoctorDetector` — spawns subprocess with `NO_COLOR=1` env (fixture `tests/fixtures/display/kscreen-3-monitors.txt` has ANSI escapes if not stripped; setting the env avoids the regex), timeout 5 s, parses output. Extracts per-output UUID as `stable_id`. **Does not extract physical mm** — kscreen-doctor doesn't expose it.
+  - Fixture already captured for the 3×27" 2560×1440 case. Add a single-monitor fixture from any other system before merging.
   - Tests run against fixtures, *not* a live system.
-- [ ] Manual override parser for `--monitors` per SPEC §6.2.
-- [ ] `detect()` orchestrator: try KDE, then manual override, then bail with the friendly error from SPEC §6.
-- [ ] `superpanels detect` and `superpanels detect --json` CLI wired up.
-- [ ] `--debug` flag prints attempted detectors + their stderr.
+- [ ] Manual override parser for `--monitors` per SPEC §6.2 (layout-only and full-with-mm forms both supported).
+- [ ] `detect()` orchestrator: try KDE detector, then manual override, then bail with the friendly error from SPEC §6.
+- [ ] **Config merge step:** after detection, walk `[[monitor]]` blocks from §14.1 config and populate `physical_size_mm` (matching by `stable_id` first, then `name`). Compute `ppi` for monitors that got a size.
+- [ ] `superpanels detect` and `superpanels detect --json` CLI wired up. Output indicates which monitors are missing physical_mm.
+- [ ] `--debug` flag prints attempted detectors + their stderr + which `Availability` variant each returned.
 
 ### 1.3 `layout.rs` — bezel math
-- [ ] `BezelConfig`, `CropSpec`, `Rect`, `FitMode` types per SPEC §3.
-- [ ] `compute_crop_specs(monitors, bezels, image_size, fit) -> Vec<CropSpec>`.
+- [ ] `BezelConfig`, `CropSpec`, `Rect`, `FitMode`, `LayoutError` types per SPEC §3.
+- [ ] `compute_crop_specs(monitors, bezels, image_size, fit) -> Result<Vec<CropSpec>, LayoutError>`.
+- [ ] **Pre-flight check:** any monitor with `physical_size_mm: None` triggers `LayoutError::PhysicalSizeMissing { monitors: Vec<MonitorRef> }` so callers can prompt the user. Test this explicitly.
 - [ ] Single row, identical monitors, zero bezel — trivial test.
 - [ ] Single row, identical monitors, uniform bezel — the canonical test.
 - [ ] Single row, mixed PPI — verify reference-PPI normalisation.
@@ -133,7 +144,7 @@ This validates: the parser is feasible; physical-mm data is actually present; th
 
 ### 1.5 `backends/` — KDE backend
 - [ ] `WallpaperBackend` trait per SPEC §10.1.
-- [ ] `KdeBackend::is_available()` checks `$KDE_FULL_SESSION` / `$XDG_CURRENT_DESKTOP`.
+- [ ] `KdeBackend::availability()` checks `$KDE_FULL_SESSION` / `$XDG_CURRENT_DESKTOP` and returns `Availability::Available` or a specific `WrongEnvironment { reason }`.
 - [ ] `KdeBackend::apply()` uses `zbus` to call `org.kde.PlasmaShell.evaluateScript` setting per-monitor `Image` plugin source.
 - [ ] JS payload generated from a versioned template; image paths injected as JSON-quoted literals (never string-concatenated).
 - [ ] Subprocess/D-Bus rules per SPEC §10.3 (timeout, error capture).
@@ -141,7 +152,9 @@ This validates: the parser is feasible; physical-mm data is actually present; th
 - [ ] Test against a `MockBackend` is written *first*, then `KdeBackend` is implemented to satisfy the same trait — keeps the trait honest.
 
 ### 1.6 `config.rs` — config & profiles
-- [ ] `Config`, `Profile`, `BackendKind` types with `serde` derives.
+- [ ] `Config`, `Profile`, `BackendKind`, `MonitorConfig` types with `serde` derives.
+- [ ] `[[monitor]]` block per SPEC §14.1: `stable_id?`, `name?`, `physical_mm: [u32; 2]`. At least one of `stable_id`/`name` required. Round-trip stable.
+- [ ] `superpanels monitor configure <NAME-OR-ID> --diagonal 27in --aspect 16:9` and `--mm 597x336` CLI subcommands so users can write `[[monitor]]` blocks without hand-editing TOML.
 - [ ] Load from `$XDG_CONFIG_HOME/superpanels/config.toml`, write a default if missing (with comments via `toml_edit`).
 - [ ] Validation pass: returns `ConfigError { path, field, message }`.
 - [ ] Round-trip test: load → modify → save → reload → identical.
@@ -201,7 +214,7 @@ This validates: the parser is feasible; physical-mm data is actually present; th
 - [ ] Folder scanning (recursive flag) producing `Vec<LibraryEntry>` with resolution, aspect ratio, mtime.
 - [ ] `notify`-backed FS watch on configured roots; incremental index updates.
 - [ ] Rayon-parallel initial scan with a progress callback (for the GUI to consume later).
-- [ ] No SQLite yet — flat in-memory index serialised to JSON. SQLite arrives in Phase 4 with tags.
+- [ ] No SQLite yet — flat in-memory index serialised to its own file at `$XDG_STATE_HOME/superpanels/library-index.json`. **Not** mixed into `state.json` (different write cadence, different migration concerns; the library index is rebuildable from disk while `state.json` is not). SQLite replaces this in Phase 4b with tags.
 
 ### 2.5 `daemon/` binary
 - [ ] `superpanels daemon [--foreground]`.
@@ -296,19 +309,17 @@ This validates: the parser is feasible; physical-mm data is actually present; th
 
 ---
 
-## Phase 4 — Polished GUI & library
+## Phase 4a — Canvas interaction
 
-**Goal.** The headline UI. The interactive monitor preview canvas works. Library grid with thumbnails, tags, favourites. The first screenshot worth sharing.
+**Goal.** The headline canvas works. Drag-to-offset, live bezel sliders, accurate physical-mm rendering. No library work yet — the canvas is the unit Phase 4 was over-stuffed for, and it deserves its own phase.
 
 **Definition of done.**
 - [ ] Drag the image in the canvas; the crop updates at ≥ 60 fps; releasing applies the new offset to the active profile.
 - [ ] Bezel sliders update the canvas in real time.
-- [ ] Library grid renders 1,000 thumbnails smoothly; filtering by tag and aspect ratio works.
 - [ ] Drag-and-drop image into the window adds it to the active profile.
-- [ ] `prefers-reduced-motion` respected.
-- [ ] Five clean screenshots: empty state, single-monitor canvas, three-monitor canvas, library grid, settings.
+- [ ] Three clean screenshots: empty state, single-monitor canvas, three-monitor canvas.
 
-### 4.1 Canvas — rendering pipeline
+### 4a.1 Canvas — rendering pipeline
 - [ ] Five-layer compositing per SPEC §12.3:
   - [ ] Wallpaper image layer (using a thumbnail of the source, never the full image during interaction).
   - [ ] Dark overlay.
@@ -318,14 +329,14 @@ This validates: the parser is feasible; physical-mm data is actually present; th
 - [ ] Renders at canvas resolution, redraws via `requestAnimationFrame`.
 - [ ] Monitor labels with name, resolution, and physical size.
 
-### 4.2 Canvas — accuracy
+### 4a.2 Canvas — accuracy
 - [ ] Monitors at correct relative *physical* sizes (mm).
 - [ ] Correct relative positions (a monitor lower in `position.y` renders lower).
 - [ ] Portrait monitors as rotated rectangles.
 - [ ] Bezel bars proportional to mm gap.
 - [ ] Visual regression tested by capturing the canvas state to JSON (positions/sizes); diff is meaningful and reviewable.
 
-### 4.3 Canvas — interactivity
+### 4a.3 Canvas — interactivity
 - [ ] Drag offset: pointer events → IPC `preview_crop` → redraw.
 - [ ] Bezel sliders: live update; crops + bar widths update on every `input` event.
 - [ ] Hover monitor: glow + tooltip with src pixel range.
@@ -334,34 +345,64 @@ This validates: the parser is feasible; physical-mm data is actually present; th
 - [ ] Wheel/pinch: zoom 0.5×–2.0× for inspection (does not affect applied result).
 - [ ] Apply animation < 400 ms, fade overlay → per-monitor flash → fade in. Replaced by instant transition under `prefers-reduced-motion`.
 
-### 4.4 Library grid
+### 4a.4 Profile editor (canvas-adjacent)
+- [ ] Inline form on the right side: image source picker, body type (Span / PerMonitor), fit, bezels, slideshow config.
+- [ ] Per-monitor pin UI for `PerMonitor` body (drop image onto monitor in canvas).
+- [ ] Schedule editor: visual chooser for daily-time / sunset-offset / cron.
+- [ ] Save button or autosave (autosave for non-destructive fields like fit; explicit save for destructive ones like image source).
+
+**Risks for this phase.**
+- The canvas's drag interaction sending an IPC roundtrip per frame may bottleneck on Tauri serialisation. If profiling shows > 5 ms per call, port the crop math to TypeScript so it runs in-process and call IPC only on release.
+
+---
+
+## Phase 4b — Library + SQLite
+
+**Goal.** Library grid with thumbnails, tags, favourites. SQLite replaces the Phase-2 JSON index. Drag images *from* the grid *onto* canvas monitors.
+
+**Definition of done.**
+- [ ] Library grid renders 1,000 thumbnails smoothly; filtering by tag and aspect ratio works.
+- [ ] Tags and favourites persist across daemon restarts via SQLite.
+- [ ] Migration from the Phase-2 `library-index.json` runs once on first launch and removes the old file.
+- [ ] One clean screenshot of the library grid.
+
+### 4b.1 Library grid
 - [ ] `LibraryGrid` virtualised list (e.g. `svelte-virtual-list`); renders only visible rows.
 - [ ] `library_thumbnail` IPC returns WebP bytes; cached client-side via `URL.createObjectURL`.
 - [ ] Filters: tag chips, aspect ratio dropdown, min-resolution input.
 - [ ] Sort: Date added, Date modified, Resolution, Last shown.
 - [ ] Right-click context menu: Apply now, Set for monitor…, Tag…, Favourite, Reveal in file manager, Delete from library.
 - [ ] Search box filtering on filename + tag.
-- [ ] Drag-and-drop image *out* of the grid onto a monitor in the canvas → assigns image to that monitor (Individual mode).
+- [ ] Drag-and-drop image *out* of the grid onto a monitor in the canvas → assigns image to that monitor (PerMonitor body).
 
-### 4.5 Library backing — SQLite
-- [ ] Replace the Phase-2 in-memory index with SQLite per SPEC §14.5.
-- [ ] Migration from `state.json`-backed index (one-shot, on first run of new version).
+### 4b.2 Library backing — SQLite
+- [ ] Replace the Phase-2 in-memory + `library-index.json` index with SQLite per SPEC §14.5.
+- [ ] One-shot migration from `library-index.json` on first run of the new version; removes the old file once committed.
 - [ ] Schema migrations via `PRAGMA user_version`.
 - [ ] Tag operations idempotent; case-insensitive matching.
 
-### 4.6 Profile editor
-- [ ] Inline form on the right side: image source picker, mode (Span / Individual / Slideshow), fit, bezels, slideshow config.
-- [ ] Per-monitor pin UI for Individual mode (drop image onto monitor in canvas).
-- [ ] Schedule editor: visual chooser for daily-time / sunset-offset / cron.
-- [ ] Save button or autosave (autosave for non-destructive fields like fit; explicit save for destructive ones like image source).
+**Risks for this phase.**
+- Thumbnail generation for a large library is the GUI's first-impression cost. Move to a background queue with visible progress, never block the grid.
 
-### 4.7 Settings panel
+---
+
+## Phase 4c — Polish & accessibility
+
+**Goal.** The first version that's *pleasant* to use. Onboarding, settings, theming, accessibility audit.
+
+**Definition of done.**
+- [ ] `prefers-reduced-motion` respected throughout.
+- [ ] Five clean screenshots: empty state, single-monitor canvas, three-monitor canvas, library grid, settings.
+- [ ] Keyboard-only walk-through of every screen succeeds.
+- [ ] Orca screen-reader smoke test passes for the main flows.
+
+### 4c.1 Settings panel
 - [ ] General: theme, autostart, notifications, default profile.
 - [ ] Library: roots add/remove, recursive toggle, thumbnail size.
 - [ ] Backend: prefer dropdown, custom command field with safety callout.
 - [ ] Advanced: log level, memory cap, debug pane (raw IPC responses for support).
 
-### 4.8 Polish pass
+### 4c.2 Polish pass
 - [ ] Tailwind theme tokens for a consistent dark palette.
 - [ ] Toasts: bottom-right, dismiss on click, auto-dismiss after 5 s, errors persist until dismissed.
 - [ ] Empty states: canvas shows a friendly placeholder with onboarding hint; library shows "no images — add a folder" CTA.
@@ -369,27 +410,23 @@ This validates: the parser is feasible; physical-mm data is actually present; th
 - [ ] Loading indicators on long ops (initial library scan, large image apply).
 - [ ] Focus outlines preserved (no `outline: none`).
 
-### 4.9 Accessibility
+### 4c.3 Accessibility
 - [ ] Every interactive control has an `aria-label` or visible label.
 - [ ] Tab order audit: keyboard-only walk-through of every screen.
 - [ ] Colour-contrast check: text ≥ 4.5:1 against background (WCAG AA).
 - [ ] Respect `prefers-reduced-motion`.
 - [ ] Screen reader smoke test with Orca on the dev machine.
 
-**Risks for this phase.**
-- The canvas's drag interaction sending an IPC roundtrip per frame may bottleneck on Tauri serialisation. If profiling shows > 5 ms per call, port the crop math to TypeScript so it runs in-process and call IPC only on release.
-- Thumbnail generation for a large library is the GUI's first-impression cost. Move to a background queue with visible progress, never block the grid.
-
 ---
 
-## Phase 5 — Packaging & first release (v0.1)
+## Phase 5 — Packaging & first release (v0.7)
 
 **Goal.** Anyone on Arch can install Superpanels in one command. The release artefacts are pre-built and signed. The README sells the project in 30 seconds.
 
 **Definition of done.**
 - [ ] `yay -S superpanels` and `yay -S superpanels-gui` work on Arch and CachyOS.
 - [ ] `cargo install superpanels` works on a fresh Rust toolchain.
-- [ ] GitHub release tagged `v0.1.0` with binary attachments.
+- [ ] GitHub release tagged `v0.7.0` (first public, GUI-bundled release) with binary attachments.
 - [ ] README has one screenshot, an install line for Arch, an install line for crates.io, and a paragraph explaining what's special.
 
 ### 5.1 PKGBUILDs (AUR)
@@ -406,7 +443,7 @@ This validates: the parser is feasible; physical-mm data is actually present; th
 
 ### 5.3 Flatpak (best-effort)
 - [ ] Flatpak manifest under `packaging/flatpak/io.github.alex.superpanels.yaml`.
-- [ ] Builds locally; submission to Flathub deferred to v0.2.
+- [ ] Builds locally; submission to Flathub deferred to v0.8.
 
 ### 5.4 GitHub Actions release pipeline
 - [ ] On tag push: build CLI binary (statically linked where viable), build GUI binary (Tauri bundler), attach to release.
@@ -433,7 +470,7 @@ This validates: the parser is feasible; physical-mm data is actually present; th
 **Goal.** Schema-frozen, perf-budget-enforced, accessibility-audited, ready for a 1.0 declaration.
 
 **Definition of done.**
-- [ ] No breaking config changes since v0.5; migration code present for older configs.
+- [ ] No breaking config changes since v0.7; migration code present for older configs.
 - [ ] Performance budgets from SPEC §19 enforced by CI benchmarks (regression > 10% fails the build).
 - [ ] Localisation pipeline operational; English catalogue complete.
 - [ ] Accessibility audit complete (Orca + axe-core for the web view); known issues triaged.
@@ -512,7 +549,7 @@ These run through every phase and don't belong to any single one.
 | ID | Risk | Likelihood | Impact | Mitigation | Phase |
 |---|---|---|---|---|---|
 | R1 | KDE D-Bus call fails or is rate-limited | Med | High | Backoff + retry; `evaluateScript` has been stable for years; capture stderr | 1 |
-| R2 | EDID-derived physical mm missing on some monitors (fallback monitors) | Med | Med | Allow user-supplied physical-size override per monitor in config | 1 |
+| R2 | ~~EDID-derived physical mm missing on some monitors~~ — *resolved during Phase 0 spike*: kscreen-doctor doesn't expose physical mm at all, so the design now sources it from per-monitor config (§14.1). What was a risk became a deliberate design decision. | — | — | n/a | — |
 | R3 | Hyprland JSON shape changes between minor versions | Med | Med | Pin lower bound; capture multiple-version fixtures; quick parser updates | 2 |
 | R4 | GNOME composite memory spike on huge canvases | Med | Med | Cap at 8K long-edge; downscale below that; document in troubleshooting | 2 |
 | R5 | Tauri tray UX differences across compositors | High | Med | Detect `StatusNotifierItem` host; degrade gracefully (no tray, window still works); document | 3 |

@@ -3,6 +3,9 @@
 # clippy uses to decide when something is "too complex".
 
 # Minimum supported Rust version. Some pedantic lints back off below this.
+# This is currently a clippy hint only — when we first take an MSRV bump as a
+# breaking change, also set `rust-version = "1.85"` in the workspace Cargo.toml
+# so cargo enforces it. See docs/architecture.md "Edition and toolchain".
 msrv = "1.85"
 
 # A function with cognitive complexity above this earns a `cognitive_complexity` warning.

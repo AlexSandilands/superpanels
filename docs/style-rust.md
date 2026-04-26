@@ -167,11 +167,12 @@ Use `Mutex` only when the lock is held briefly and contention is genuinely low.
 ### Take traits, not concrete types
 
 ```rust
-✅ fn read_config<P: AsRef<Path>>(path: P) -> Result<Config>
+✅ fn read_config(path: impl AsRef<Path>) -> Result<Config>   // canonical
+✅ fn read_config<P: AsRef<Path>>(path: P) -> Result<Config>  // older form, equivalent
 ❌ fn read_config(path: PathBuf) -> Result<Config>
 ```
 
-Callers can pass `&str`, `&Path`, `String`, `PathBuf`. Lifetime cost: zero.
+Prefer `impl Trait` in argument position — it reads top-down and avoids introducing a type parameter the caller doesn't care about. The `<P: AsRef<Path>>` form is fine when you reuse `P` elsewhere in the signature; otherwise it's noise. Either way, callers can pass `&str`, `&Path`, `String`, `PathBuf`. Lifetime cost: zero.
 
 ### Builder pattern for > 3 arguments
 
@@ -213,8 +214,8 @@ Even if you don't use the return today, you might want to surface "applied to N 
 
 ```rust
 ❌ struct Profile { name: String, image_path: Option<PathBuf>, image_paths: Option<Vec<PathBuf>> }
-✅ enum ImageSource { Single(PathBuf), PerMonitor(Vec<PathBuf>), Folder(PathBuf) }
-   struct Profile { name: String, images: ImageSource }
+✅ enum ProfileBody { Span(SpanProfile), PerMonitor(PerMonitorProfile) }
+   struct Profile { name: String, body: ProfileBody }
 ```
 
 The first lets you express "both Some" or "both None" — neither valid. The second can only express valid states.
