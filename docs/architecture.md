@@ -225,9 +225,11 @@ This block goes into the root `Cargo.toml` once the workspace is scaffolded (Pha
 [workspace.lints.rust]
 unsafe_code        = "forbid"        # we forbid unsafe — `forbid` is stronger than `deny`
 missing_docs       = "warn"          # public items in libraries should be documented
-unused             = "warn"
-nonstandard_style  = "warn"
-rust_2018_idioms   = "warn"
+# Lint groups need an explicit lower priority so individual lints in the same
+# table can coexist (cargo enforces this since Rust 1.85+).
+unused             = { level = "warn", priority = -1 }
+nonstandard_style  = { level = "warn", priority = -1 }
+rust_2018_idioms   = { level = "warn", priority = -1 }
 unreachable_pub    = "warn"
 trivial_casts      = "warn"
 trivial_numeric_casts = "warn"
