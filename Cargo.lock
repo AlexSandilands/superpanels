@@ -1307,6 +1307,7 @@ dependencies = [
  "image",
  "serde_json",
  "superpanels-core",
+ "tempfile",
  "thiserror",
  "toml",
  "tracing",

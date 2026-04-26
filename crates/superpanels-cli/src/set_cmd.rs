@@ -61,7 +61,11 @@ pub(crate) struct SetArgs {
 ///
 /// Bubbles every step's typed error up as `anyhow::Error`; `main` downcasts
 /// to map to the `SPEC.md` §11.6 exit code.
-pub(crate) fn run(args: &SetArgs, config_path: Option<&Path>) -> Result<()> {
+pub(crate) fn run(
+    args: &SetArgs,
+    config_path: Option<&Path>,
+    backend_override: Option<Box<dyn WallpaperBackend>>,
+) -> Result<()> {
     if !args.extra_images.is_empty() {
         bail!(
             "multiple-image `set` (one per monitor) is not yet supported in Phase 1; \
@@ -94,13 +98,18 @@ pub(crate) fn run(args: &SetArgs, config_path: Option<&Path>) -> Result<()> {
         return print_dry_run(&specs, &monitors, bezels, image_size);
     }
 
-    let backend = pick_backend(args.backend.as_deref())?;
+    let backend: Box<dyn WallpaperBackend> = match backend_override {
+        Some(b) => b,
+        None => pick_backend(args.backend.as_deref())?,
+    };
 
     clear_temp_dir()?;
     let assignments = render_per_monitor(&source, &specs, &monitors)?;
 
     let report = backend.apply(&assignments)?;
     let elapsed_ms = report.duration.as_millis();
+    // reason: u128 elapsed ms; u64::MAX ≈ 584 million years — saturation is
+    // lossless for any real wallpaper apply and is used only for the log field.
     let elapsed_ms_log = u64::try_from(elapsed_ms).unwrap_or(u64::MAX);
     info!(
         backend = report.backend,
@@ -420,6 +429,48 @@ mod tests {
             ],
         });
         assert_eq!(payload, expected);
+    }
+
+    #[test]
+    fn set_pipeline_with_mock_backend_runs_end_to_end() {
+        // Arrange — one-monitor manual spec with physical mm so
+        // compute_crop_specs can run; MockBackend avoids needing a KDE session.
+        use image::{DynamicImage, RgbaImage};
+        use superpanels_core::backends::MockBackend;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let img_path = dir.path().join("pano.png");
+        // Solid-colour image matching the monitor resolution.
+        DynamicImage::ImageRgba8(RgbaImage::new(1920, 1080))
+            .save(&img_path)
+            .unwrap();
+        // Empty TOML deserialises to Config::default(); no [[monitor]] blocks
+        // needed because the manual spec carries physical mm directly.
+        let cfg_path = dir.path().join("config.toml");
+        std::fs::write(&cfg_path, "").unwrap();
+
+        let args = SetArgs {
+            image: img_path,
+            extra_images: vec![],
+            bezel_h: None,
+            bezel_v: None,
+            fit: LayoutFitMode::Fill,
+            offset: None,
+            backend: None,
+            // 1920x1080 at origin with 480x270 mm — enough for the pipeline.
+            monitors: Some("1920x1080+0+0?480x270".to_owned()),
+            pins: vec![],
+            dry_run: false,
+        };
+
+        // Act
+        let result = run(&args, Some(&cfg_path), Some(Box::new(MockBackend::new())));
+
+        // Assert
+        if let Err(e) = result {
+            panic!("pipeline failed: {e:#}");
+        }
     }
 
     #[test]
