@@ -1,12 +1,17 @@
-//! Display detection data model.
+//! Display detection data model and detector orchestration.
 //!
 //! Defines the foundational types ([`Monitor`], [`MonitorId`], [`Rotation`],
-//! [`MonitorRef`]) that the rest of the core uses to talk about screens.
-//! Concrete detector implementations (kscreen-doctor, wlr-randr, hyprctl,
-//! xrandr) and the [`DisplayDetector`] trait land in later commits per the
-//! "First commits playbook" in `PLAN.md`.
+//! [`MonitorRef`]) that the rest of the core uses to talk about screens, plus
+//! the [`DisplayDetector`] trait, [`Availability`] enum, [`DetectError`] enum,
+//! and the [`detect`] orchestrator that walks detectors in priority order.
+//!
+//! Concrete detector implementations live in submodules ([`kscreen`] for
+//! KDE Plasma, [`manual`] for the `--monitors` CLI override).
 
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+pub mod kscreen;
 
 /// A physical display normalised into Superpanels' internal model.
 ///
@@ -92,6 +97,85 @@ pub struct MonitorRef {
     pub stable_id: String,
     /// Output name (e.g. `"DP-1"`); used as the human-readable fallback.
     pub name: String,
+}
+
+/// A source of [`Monitor`] data — typically a thin wrapper around a compositor
+/// CLI tool (`kscreen-doctor`, `wlr-randr`, `xrandr`, …).
+///
+/// Mirrors `SPEC.md` §6.1. The orchestrator [`detect`] walks detectors in the
+/// priority order defined by `SPEC.md` §6, calling [`Self::availability`]
+/// first to skip detectors whose tool is missing or whose environment doesn't
+/// match before paying the subprocess cost of [`Self::detect`].
+pub trait DisplayDetector {
+    /// Short, stable identifier (e.g. `"kscreen-doctor"`). Used by
+    /// `superpanels detect --debug` to label per-detector output.
+    fn name(&self) -> &str;
+    /// Cheap, non-spawning check — env-var presence and `PATH` lookups only.
+    fn availability(&self) -> Availability;
+    /// Spawn the underlying tool and parse its output.
+    fn detect(&self) -> Result<Vec<Monitor>, DetectError>;
+}
+
+/// Why a [`DisplayDetector`] is or isn't usable in the current environment.
+///
+/// Returned as an enum, not a `bool`, so `superpanels detect --debug` can
+/// explain *why* each detector was skipped (`SPEC.md` §6.1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Availability {
+    /// Tool is present and the environment matches; [`DisplayDetector::detect`]
+    /// is worth attempting.
+    Available,
+    /// The detector's underlying binary is not on `PATH`.
+    ToolMissing {
+        /// The binary the detector looked for (e.g. `"kscreen-doctor"`).
+        tool: &'static str,
+    },
+    /// The detector's environment markers are absent (e.g.
+    /// `$KDE_FULL_SESSION` not set for the KDE detector).
+    WrongEnvironment {
+        /// Human-readable reason suitable for `--debug` output.
+        reason: &'static str,
+    },
+    /// The user pinned a different detector via config.
+    Disabled,
+}
+
+/// Errors a [`DisplayDetector`] can return from [`DisplayDetector::detect`].
+///
+/// Distinct variants let the orchestrator react differently to "tool missing"
+/// vs "tool present but failed" vs "parser broken" (`SPEC.md` §6.1).
+#[derive(Debug, Error)]
+pub enum DetectError {
+    /// The subprocess exited non-zero or could not be spawned.
+    #[error("subprocess `{cmd}` failed: {stderr}")]
+    Subprocess {
+        /// Command line for diagnostics (e.g. `"kscreen-doctor -o"`).
+        cmd: String,
+        /// Captured stderr (or `io::Error` description if the spawn itself
+        /// failed).
+        stderr: String,
+    },
+    /// The subprocess didn't return within the configured timeout.
+    #[error("subprocess `{cmd}` timed out after {seconds}s")]
+    Timeout {
+        /// Command line for diagnostics.
+        cmd: String,
+        /// Configured timeout in seconds.
+        seconds: u64,
+    },
+    /// The subprocess returned, but its output couldn't be parsed.
+    #[error("could not parse output of `{cmd}`: {message}")]
+    Parse {
+        /// Command line for diagnostics.
+        cmd: String,
+        /// Parser-specific reason (line number, missing field, …).
+        message: String,
+    },
+    /// The subprocess returned successfully but reported zero usable
+    /// monitors. The orchestrator treats this as a soft failure and tries
+    /// the next detector.
+    #[error("detector returned an empty monitor list")]
+    EmptyResult,
 }
 
 #[cfg(test)]

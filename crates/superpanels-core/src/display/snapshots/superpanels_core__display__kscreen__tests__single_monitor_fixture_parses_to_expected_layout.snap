@@ -1,0 +1,31 @@
+---
+source: crates/superpanels-core/src/display/kscreen.rs
+expression: monitors
+---
+[
+    Monitor {
+        id: MonitorId(
+            0,
+        ),
+        name: "HDMI-A-1",
+        stable_id: Some(
+            "9b3e5b4a-7c2d-4f1e-9b91-1234567890ab",
+        ),
+        position: (
+            0,
+            0,
+        ),
+        resolution: (
+            1080,
+            1920,
+        ),
+        physical_size_mm: None,
+        scale: 1.25,
+        rotation: Right,
+        refresh_hz: Some(
+            60.0,
+        ),
+        primary: true,
+        ppi: None,
+    },
+]

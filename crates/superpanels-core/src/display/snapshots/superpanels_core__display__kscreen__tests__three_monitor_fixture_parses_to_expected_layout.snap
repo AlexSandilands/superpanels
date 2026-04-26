@@ -1,0 +1,81 @@
+---
+source: crates/superpanels-core/src/display/kscreen.rs
+expression: monitors
+---
+[
+    Monitor {
+        id: MonitorId(
+            0,
+        ),
+        name: "DP-1",
+        stable_id: Some(
+            "f7f0f124-9e9b-4ef0-91a7-426d58091760",
+        ),
+        position: (
+            0,
+            0,
+        ),
+        resolution: (
+            2560,
+            1440,
+        ),
+        physical_size_mm: None,
+        scale: 1.0,
+        rotation: None,
+        refresh_hz: Some(
+            155.0,
+        ),
+        primary: true,
+        ppi: None,
+    },
+    Monitor {
+        id: MonitorId(
+            1,
+        ),
+        name: "DP-2",
+        stable_id: Some(
+            "37cd0816-055b-44ca-a8dc-40cf4f7918ce",
+        ),
+        position: (
+            2560,
+            0,
+        ),
+        resolution: (
+            2560,
+            1440,
+        ),
+        physical_size_mm: None,
+        scale: 1.0,
+        rotation: None,
+        refresh_hz: Some(
+            279.96,
+        ),
+        primary: false,
+        ppi: None,
+    },
+    Monitor {
+        id: MonitorId(
+            2,
+        ),
+        name: "DP-3",
+        stable_id: Some(
+            "280da8b1-c051-44fa-bb6b-4e0791b811db",
+        ),
+        position: (
+            5120,
+            0,
+        ),
+        resolution: (
+            2560,
+            1440,
+        ),
+        physical_size_mm: None,
+        scale: 1.0,
+        rotation: None,
+        refresh_hz: Some(
+            155.0,
+        ),
+        primary: false,
+        ppi: None,
+    },
+]
