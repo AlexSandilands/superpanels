@@ -14,6 +14,9 @@ use thiserror::Error;
 pub mod kscreen;
 pub mod manual;
 
+use kscreen::KscreenDoctorDetector;
+use manual::parse_manual_monitors;
+
 /// A physical display normalised into Superpanels' internal model.
 ///
 /// Mirrors `SPEC.md` §3.1. Field ordering and semantics are part of the
@@ -177,6 +180,45 @@ pub enum DetectError {
     /// the next detector.
     #[error("detector returned an empty monitor list")]
     EmptyResult,
+}
+
+/// Try detectors in priority order; return the first non-empty layout.
+///
+/// If `manual_override` is `Some(spec)`, the `--monitors` parser
+/// ([`manual::parse_manual_monitors`]) wins unconditionally (`SPEC.md` §6
+/// priority 6 — manual override "always wins"). Otherwise the orchestrator
+/// tries the KDE detector first (the only one wired up in Phase 1.2;
+/// further detectors arrive in Phase 2.2).
+///
+/// Layout `Monitor`s come back with `physical_size_mm: None`. The merge
+/// against `[[monitor]]` config (`SPEC.md` §14.1) happens in Phase 1.6.
+///
+/// # Errors
+///
+/// Returns the parser error directly if `manual_override` is supplied and
+/// malformed. Otherwise, if every available detector failed (or none were
+/// available), returns a friendly [`DetectError::Subprocess`] mirroring
+/// `SPEC.md` §6's recommended message.
+pub fn detect(manual_override: Option<&str>) -> Result<Vec<Monitor>, DetectError> {
+    if let Some(spec) = manual_override {
+        return parse_manual_monitors(spec);
+    }
+
+    let kscreen = KscreenDoctorDetector;
+    if kscreen.availability() == Availability::Available
+        && let Ok(monitors) = kscreen.detect()
+        && !monitors.is_empty()
+    {
+        return Ok(monitors);
+    }
+
+    Err(DetectError::Subprocess {
+        cmd: "all detectors".to_owned(),
+        stderr: "Could not detect monitor layout. Try --monitors WxH+X+Y,... \
+                 to specify manually, or run 'superpanels detect --debug' \
+                 to see what was attempted."
+            .to_owned(),
+    })
 }
 
 #[cfg(test)]

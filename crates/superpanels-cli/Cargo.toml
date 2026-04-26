@@ -17,4 +17,9 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-superpanels-core = { path = "../superpanels-core", version = "=0.0.0" }
+superpanels-core   = { path = "../superpanels-core", version = "=0.0.0" }
+anyhow             = { workspace = true }
+clap               = { workspace = true }
+serde_json         = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }

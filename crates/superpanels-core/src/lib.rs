@@ -7,7 +7,9 @@
 pub mod display;
 pub mod layout;
 
-pub use display::{Availability, DetectError, DisplayDetector, Monitor, MonitorRef, Rotation};
+pub use display::{
+    Availability, DetectError, DisplayDetector, Monitor, MonitorRef, Rotation, detect,
+};
 pub use layout::{BezelConfig, CropSpec, FitMode, LayoutError, Rect, compute_crop_specs};
 
 /// The crate version, sourced from `Cargo.toml`.
