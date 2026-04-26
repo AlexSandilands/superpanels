@@ -104,7 +104,7 @@ pub(crate) fn run(
     };
 
     clear_temp_dir()?;
-    let assignments = render_per_monitor(&source, &specs, &monitors)?;
+    let assignments = render_per_monitor(&source, &specs, &monitors, apply_token())?;
 
     let report = backend.apply(&assignments)?;
     let elapsed_ms = report.duration.as_millis();
@@ -214,6 +214,7 @@ fn render_per_monitor(
     source: &image::DynamicImage,
     specs: &[CropSpec],
     monitors: &[Monitor],
+    token: u128,
 ) -> Result<Vec<(MonitorRef, PathBuf)>> {
     let mut out = Vec::with_capacity(specs.len());
     for spec in specs {
@@ -226,12 +227,28 @@ fn render_per_monitor(
         let resized = scale_to_fit(&cropped, spec.dst_size, ImageFitMode::Stretch);
         let rotated = rotate(&resized, spec.rotation);
         let safe = sanitise_filename(&monitor.name);
-        let filename = format!("{safe}.png");
+        // The `-{token}` suffix is a per-apply cache-buster: Plasma's
+        // org.kde.image plugin caches by URL, so re-writing the same path
+        // with new bytes does not trigger a redraw on a desktop that was
+        // already showing the previous slice. Giving each apply a unique
+        // filename forces the URL to change. `clear_temp_dir()` runs
+        // before this loop, so stale tokens never accumulate on disk.
+        let filename = format!("{safe}-{token}.png");
         let path = save_temp(&rotated, &filename)?;
         debug!(monitor = %monitor.name, file = %path.display(), "set: wrote temp slice");
         out.push((to_monitor_ref(monitor), path));
     }
     Ok(out)
+}
+
+/// Per-apply cache-buster token. Wall-clock nanos are monotonic enough at
+/// the granularity of a `set` call (you can't run the CLI twice in the
+/// same nanosecond), and they survive process restarts so a fresh process
+/// still produces a new value.
+fn apply_token() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos())
 }
 
 fn monitor_for_spec<'a>(monitors: &'a [Monitor], spec: &CropSpec) -> Result<&'a Monitor> {

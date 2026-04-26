@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::display::{Availability, MonitorRef};
 
@@ -24,20 +24,29 @@ const PATH: &str = "/PlasmaShell";
 const INTERFACE: &str = "org.kde.PlasmaShell";
 const METHOD: &str = "evaluateScript";
 const APPLY_TIMEOUT: Duration = Duration::from_secs(10);
-const TEMPLATE_VERSION: u32 = 1;
+const TEMPLATE_VERSION: u32 = 2;
 
-const SCRIPT_HEADER: &str = "// superpanels evaluateScript template v1\n\
+// Plasma 6's scripting API has no `outputName` property on Desktop and no
+// `screenName(int)` global, so we can't iterate desktops and look up their
+// connector. Instead we iterate the assignments (keyed by connector) and
+// resolve `screenForConnector(name) -> int`, then `desktopForScreen(int)`.
+// A connector that isn't on the active layout returns `-1`; we skip it.
+// The script `print()`s the count it actually wrote so the Rust side can
+// surface partial application instead of trusting `assignments.len()`.
+const SCRIPT_HEADER: &str = "// superpanels evaluateScript template v2\n\
                              var assignments = ASSIGNMENTS_LITERAL;\n\
-                             var allDesktops = desktops();\n\
-                             for (var i = 0; i < allDesktops.length; i++) {\n\
-                                 var d = allDesktops[i];\n\
-                                 var output = d.screen >= 0 ? screenName(d.screen) : null;\n\
-                                 if (output === null) { continue; }\n\
-                                 if (!(output in assignments)) { continue; }\n\
+                             var applied = 0;\n\
+                             for (var name in assignments) {\n\
+                                 var screen = screenForConnector(name);\n\
+                                 if (screen < 0) { continue; }\n\
+                                 var d = desktopForScreen(screen);\n\
+                                 if (!d) { continue; }\n\
                                  d.wallpaperPlugin = 'org.kde.image';\n\
                                  d.currentConfigGroup = ['Wallpaper', 'org.kde.image', 'General'];\n\
-                                 d.writeConfig('Image', 'file://' + assignments[output]);\n\
-                             }\n";
+                                 d.writeConfig('Image', 'file://' + assignments[name]);\n\
+                                 applied++;\n\
+                             }\n\
+                             print(applied);\n";
 
 /// `WallpaperBackend` for KDE Plasma sessions.
 ///
@@ -96,11 +105,20 @@ impl WallpaperBackend for KdeBackend {
             "submitting evaluateScript"
         );
         let started = Instant::now();
-        evaluate_script(&script)?;
+        let output = evaluate_script(&script)?;
         let duration = started.elapsed();
-        info!(monitors = assignments.len(), backend = NAME, "applied");
+        let monitors_set = parse_applied_count(&output)?;
+        if monitors_set != assignments.len() {
+            warn!(
+                requested = assignments.len(),
+                applied = monitors_set,
+                backend = NAME,
+                "Plasma applied fewer monitors than requested (unknown connector?)",
+            );
+        }
+        info!(monitors = monitors_set, backend = NAME, "applied");
         Ok(AppliedReport {
-            monitors_set: assignments.len(),
+            monitors_set,
             duration,
             backend: NAME,
         })
@@ -147,8 +165,20 @@ fn path_to_json_string(path: &Path) -> Result<String, BackendError> {
         .ok_or_else(|| BackendError::Encode(format!("non-UTF-8 path: {}", path.display())))
 }
 
+/// Parse the script's printed output (a single integer in the v2 template)
+/// into the count of desktops it actually wrote. Anything else is treated
+/// as a malformed reply and surfaces as `BackendError::DBus`.
+pub(crate) fn parse_applied_count(output: &str) -> Result<usize, BackendError> {
+    let trimmed = output.trim();
+    trimmed.parse::<usize>().map_err(|_| {
+        BackendError::DBus(format!(
+            "evaluateScript returned non-numeric output: {trimmed:?}"
+        ))
+    })
+}
+
 #[cfg(unix)]
-fn evaluate_script(script: &str) -> Result<(), BackendError> {
+fn evaluate_script(script: &str) -> Result<String, BackendError> {
     let connection =
         zbus::blocking::Connection::session().map_err(|e| BackendError::DBus(e.to_string()))?;
     // zbus's blocking call_method blocks indefinitely; enforce our own
@@ -162,8 +192,13 @@ fn evaluate_script(script: &str) -> Result<(), BackendError> {
     std::thread::spawn(move || {
         let result = conn
             .call_method(Some(SERVICE), PATH, Some(INTERFACE), METHOD, &(s,))
-            .map(|_| ())
-            .map_err(|e| BackendError::DBus(e.to_string()));
+            .map_err(|e| BackendError::DBus(e.to_string()))
+            .and_then(|reply| {
+                reply
+                    .body()
+                    .deserialize::<String>()
+                    .map_err(|e| BackendError::DBus(format!("decoding reply: {e}")))
+            });
         let _ = tx.send(result);
     });
     match rx.recv_timeout(APPLY_TIMEOUT) {
@@ -176,7 +211,7 @@ fn evaluate_script(script: &str) -> Result<(), BackendError> {
 }
 
 #[cfg(not(unix))]
-fn evaluate_script(_script: &str) -> Result<(), BackendError> {
+fn evaluate_script(_script: &str) -> Result<String, BackendError> {
     Err(BackendError::Unavailable {
         backend: NAME,
         reason: "KDE backend requires a unix session bus".to_owned(),
@@ -218,7 +253,11 @@ mod tests {
             script.contains("\"DP-2\":\"/walls/b.png\"")
                 || script.contains("\"DP-2\": \"/walls/b.png\"")
         );
-        assert!(script.contains("evaluateScript template v1"));
+        assert!(script.contains("evaluateScript template v2"));
+        // v2 looks up desktops by connector via the inverse-direction APIs
+        // Plasma 6 exposes (no `screenName` / `outputName` in 6.x).
+        assert!(script.contains("screenForConnector"));
+        assert!(script.contains("desktopForScreen"));
     }
 
     #[test]
@@ -255,6 +294,18 @@ mod tests {
         assert!(env_indicates_kde(None, Some("X-Cinnamon:KDE")));
         assert!(!env_indicates_kde(None, Some("GNOME")));
         assert!(!env_indicates_kde(None, None));
+    }
+
+    #[test]
+    fn parse_applied_count_accepts_trimmed_integer() {
+        assert_eq!(parse_applied_count("3").unwrap(), 3);
+        assert_eq!(parse_applied_count("  0\n").unwrap(), 0);
+    }
+
+    #[test]
+    fn parse_applied_count_rejects_non_numeric_output() {
+        let err = parse_applied_count("TypeError: undefined").unwrap_err();
+        assert!(matches!(err, BackendError::DBus(_)), "got {err:?}");
     }
 
     /// Full apply against a live KDE session. Only meaningful on a real
