@@ -2,9 +2,37 @@
 
 > Linux wallpaper manager focused on physical-bezel-aware multi-monitor spanning and folder-driven slideshows.
 
-**Status: pre-code.** Spec, plan, and project conventions are written. The Cargo workspace lands in [PLAN.md](./PLAN.md) Phase 1.1.
+**Status: Phase 1 (CLI MVP, KDE Wayland).** The Rust core and `superpanels` CLI are working; multi-backend, slideshow, daemon, and GUI follow in [PLAN.md](./PLAN.md) Phases 2–4.
 
 Single binary. Rust core, Tauri v2 + Svelte 5 GUI. Primary target: Arch / CachyOS on KDE Wayland.
+
+## Install
+
+Not yet on crates.io or the AUR. Build from source:
+
+```sh
+git clone https://github.com/alex/superpanels.git
+cd superpanels
+cargo build --release -p superpanels-cli
+# binary at target/release/superpanels
+```
+
+Once Phase 5 ships, `cargo install superpanels` and `yay -S superpanels` will be the supported install paths.
+
+## Quick start
+
+```sh
+# Tell Superpanels how big each monitor is in mm (one-off, see SPEC.md §6).
+superpanels monitor configure DP-1 --diagonal 27in --aspect 16:9
+
+# Span a panorama across every monitor, bezel-corrected.
+superpanels set panorama.jpg --bezel-h 8
+
+# Or preview the crops without touching the wallpaper.
+superpanels set panorama.jpg --bezel-h 8 --dry-run
+```
+
+See [SPEC.md](./SPEC.md) for the full design and [`superpanels --help`](./crates/superpanels-cli/src/main.rs) for the current command surface.
 
 ## What it does
 
