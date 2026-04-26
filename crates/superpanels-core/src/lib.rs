@@ -8,7 +8,7 @@ pub mod display;
 pub mod layout;
 
 pub use display::{Monitor, MonitorRef, Rotation};
-pub use layout::{BezelConfig, CropSpec, FitMode, Rect};
+pub use layout::{BezelConfig, CropSpec, FitMode, LayoutError, Rect, compute_crop_specs};
 
 /// The crate version, sourced from `Cargo.toml`.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
