@@ -1,0 +1,20 @@
+[package]
+name         = "superpanels-cli"
+description  = "Command-line interface for the Superpanels wallpaper manager."
+default-run  = "superpanels"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+
+[[bin]]
+name = "superpanels"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+superpanels-core = { path = "../superpanels-core", version = "=0.0.0" }

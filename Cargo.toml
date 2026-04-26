@@ -1,0 +1,63 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/superpanels-core",
+    "crates/superpanels-cli",
+]
+
+[workspace.package]
+version      = "0.0.0"
+edition      = "2024"
+rust-version = "1.85"
+license      = "MIT OR Apache-2.0"
+repository   = "https://github.com/alex/superpanels"
+authors      = ["Alex Sandilands <profile.alex@proton.me>"]
+
+[workspace.lints.rust]
+unsafe_code        = "forbid"        # we forbid unsafe — `forbid` is stronger than `deny`
+missing_docs       = "warn"          # public items in libraries should be documented
+# Lint groups need an explicit lower priority so individual lints in the same
+# table can coexist (cargo enforces this since Rust 1.95).
+unused             = { level = "warn", priority = -1 }
+nonstandard_style  = { level = "warn", priority = -1 }
+rust_2018_idioms   = { level = "warn", priority = -1 }
+unreachable_pub    = "warn"
+trivial_casts      = "warn"
+trivial_numeric_casts = "warn"
+
+[workspace.lints.clippy]
+# Tier 1: catch real bugs and style issues.
+all      = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+
+# Things we want to be loud about:
+unwrap_used     = "warn"
+expect_used     = "warn"
+panic           = "warn"
+todo            = "warn"
+unimplemented   = "warn"
+dbg_macro       = "warn"
+print_stdout    = "warn"
+print_stderr    = "warn"   # use `tracing` or `eprintln!` only in CLI top-level
+mod_module_files = "warn"  # enforce module.rs over mod.rs
+
+# Pedantic lints that are noisy without being useful — selectively allow.
+module_name_repetitions = "allow"
+must_use_candidate      = "allow"
+missing_errors_doc      = "allow"
+missing_panics_doc      = "allow"
+return_self_not_must_use = "allow"
+
+[workspace.dependencies]
+# Declared here so commits 2+ can pull them in via `dep.workspace = true`.
+# None are wired into a per-crate `[dependencies]` block yet.
+anyhow             = "1.0.102"
+clap               = { version = "4.6.1", features = ["derive"] }
+image              = "0.25.10"
+serde              = { version = "1.0.228", features = ["derive"] }
+serde_json         = "1.0.149"
+thiserror          = "2.0.18"
+toml               = "1.1.2"
+toml_edit          = "0.25.11"
+tracing            = "0.1.44"
+tracing-subscriber = "0.3.23"
