@@ -4,9 +4,14 @@
 //!
 //! See [SPEC.md] for the design and [PLAN.md] for the development plan.
 
+pub mod config;
 pub mod display;
 pub mod layout;
 
+pub use config::{
+    BackendConfig, BackendKind, Config, ConfigError, GeneralConfig, LibraryConfig, MonitorConfig,
+    Profile,
+};
 pub use display::{
     Availability, DetectError, DisplayDetector, Monitor, MonitorRef, Rotation, detect,
 };

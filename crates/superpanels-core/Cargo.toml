@@ -12,11 +12,14 @@ authors.workspace      = true
 serde      = { workspace = true }
 serde_json = { workspace = true }
 thiserror  = { workspace = true }
+toml       = { workspace = true }
+toml_edit  = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
 insta     = { workspace = true }
 proptest  = { workspace = true }
+tempfile  = { workspace = true }
 
 [[bench]]
 name    = "layout"
