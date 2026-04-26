@@ -1304,8 +1304,11 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap",
+ "image",
  "serde_json",
  "superpanels-core",
+ "thiserror",
+ "toml",
  "tracing",
  "tracing-subscriber",
 ]

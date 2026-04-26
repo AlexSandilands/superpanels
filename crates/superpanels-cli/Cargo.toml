@@ -20,6 +20,9 @@ workspace = true
 superpanels-core   = { path = "../superpanels-core", version = "=0.0.0" }
 anyhow             = { workspace = true }
 clap               = { workspace = true }
+image              = { workspace = true }
 serde_json         = { workspace = true }
+thiserror          = { workspace = true }
 tracing            = { workspace = true }
 tracing-subscriber = { workspace = true }
+toml               = { workspace = true }
