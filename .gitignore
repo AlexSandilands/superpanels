@@ -39,3 +39,6 @@ Thumbs.db
 .env
 .env.local
 *.local
+
+# --- Local Testing Files ---
+tests/wallpapers/
