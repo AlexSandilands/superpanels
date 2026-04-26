@@ -12,7 +12,7 @@
 #![allow(clippy::print_stderr)]
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
@@ -259,7 +259,7 @@ fn run(cli: &Cli) -> Result<()> {
             };
             set_cmd::run(&args, cli.config.as_deref(), None)
         }
-        Command::Detect { json, debug } => detect_cmd(*json, *debug),
+        Command::Detect { json, debug } => detect_cmd(*json, *debug, cli.config.as_deref()),
         Command::Config => config_cmd(cli.config.as_deref()),
         Command::Monitor { action } => match action {
             MonitorAction::Configure {
@@ -290,11 +290,16 @@ fn config_cmd(config_path: Option<&std::path::Path>) -> Result<()> {
     Ok(())
 }
 
-fn detect_cmd(json: bool, debug: bool) -> Result<()> {
+fn detect_cmd(json: bool, debug: bool, config_path: Option<&Path>) -> Result<()> {
     if debug {
         print_debug_attempts();
     }
-    let monitors = detect(None).context("detecting monitors")?;
+    let mut monitors = detect(None).context("detecting monitors")?;
+    let cfg = match config_path {
+        Some(p) => Config::load_from(p)?,
+        None => Config::load_or_default()?,
+    };
+    cfg.merge_into_monitors(&mut monitors);
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
     if json {
@@ -318,8 +323,11 @@ fn print_debug_attempts() {
 fn write_table<W: Write>(out: &mut W, monitors: &[Monitor]) -> std::io::Result<()> {
     for (i, m) in monitors.iter().enumerate() {
         let physical = match m.physical_size_mm {
-            Some((w, h)) => format!("{w}x{h}mm"),
-            None => "(no physical size configured)".to_owned(),
+            Some((w, h)) => {
+                let ppi = m.ppi.map(|p| format!("  {p:.0} PPI")).unwrap_or_default();
+                format!("{w}x{h}mm{ppi}")
+            }
+            None => "(no physical size — run `monitor configure`)".to_owned(),
         };
         let rotation = match m.rotation {
             Rotation::None => "none",
