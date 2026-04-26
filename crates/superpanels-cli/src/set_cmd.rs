@@ -15,7 +15,7 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow, bail};
-use serde_json::json;
+use serde_json::{Value, json};
 use superpanels_core::backends::{KdeBackend, WallpaperBackend};
 use superpanels_core::config::Config;
 use superpanels_core::detect;
@@ -171,7 +171,23 @@ fn print_dry_run(
     bezels: BezelConfig,
     image_size: (u32, u32),
 ) -> Result<()> {
-    let payload = json!({
+    let payload = dry_run_payload(specs, monitors, bezels, image_size);
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
+    serde_json::to_writer_pretty(&mut out, &payload)?;
+    writeln!(out).ok();
+    Ok(())
+}
+
+/// Build the `--dry-run` JSON payload. Pure (no I/O) so the on-disk shape
+/// scripts will consume can be unit-tested directly.
+fn dry_run_payload(
+    specs: &[CropSpec],
+    monitors: &[Monitor],
+    bezels: BezelConfig,
+    image_size: (u32, u32),
+) -> Value {
+    json!({
         "image_size": [image_size.0, image_size.1],
         "bezels": bezels,
         "monitors": monitors.iter().map(|m| json!({
@@ -182,12 +198,7 @@ fn print_dry_run(
             "physical_mm": m.physical_size_mm.map(|(w, h)| [w, h]),
         })).collect::<Vec<_>>(),
         "crops": specs,
-    });
-    let stdout = std::io::stdout();
-    let mut out = stdout.lock();
-    serde_json::to_writer_pretty(&mut out, &payload)?;
-    writeln!(out).ok();
-    Ok(())
+    })
 }
 
 fn render_per_monitor(
@@ -319,6 +330,96 @@ mod tests {
         // Assert
         assert!(bezels.horizontal_mm.abs() < f32::EPSILON);
         assert!(bezels.vertical_mm.abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn dry_run_payload_serialises_both_physical_mm_branches() {
+        // Arrange — two monitors: one with physical mm set, one without, so
+        // the test pins both the `[w, h]` and the `null` branch of the
+        // payload that scripts consume.
+        use superpanels_core::display::{MonitorId, Rotation};
+        use superpanels_core::layout::{CropSpec, Rect};
+
+        let monitors = vec![
+            Monitor {
+                id: MonitorId(0),
+                name: "DP-1".to_owned(),
+                stable_id: Some("uuid-a".to_owned()),
+                position: (0, 0),
+                resolution: (2560, 1440),
+                physical_size_mm: Some((597, 336)),
+                scale: 1.0,
+                rotation: Rotation::None,
+                refresh_hz: None,
+                primary: true,
+                ppi: Some(108.79),
+            },
+            Monitor {
+                id: MonitorId(1),
+                name: "DP-2".to_owned(),
+                stable_id: None,
+                position: (2560, 0),
+                resolution: (1920, 1080),
+                physical_size_mm: None,
+                scale: 1.0,
+                rotation: Rotation::None,
+                refresh_hz: None,
+                primary: false,
+                ppi: None,
+            },
+        ];
+        let specs = vec![CropSpec {
+            monitor_id: MonitorId(0),
+            src_rect: Rect {
+                x: 0,
+                y: 0,
+                w: 100,
+                h: 100,
+            },
+            dst_size: (2560, 1440),
+            rotation: Rotation::None,
+            fit: LayoutFitMode::Fill,
+        }];
+        let bezels = BezelConfig {
+            horizontal_mm: 8.0,
+            vertical_mm: 5.0,
+        };
+
+        // Act
+        let payload = dry_run_payload(&specs, &monitors, bezels, (3840, 2160));
+
+        // Assert — exact shape, including `physical_mm: null` for the second
+        // monitor.
+        let expected = serde_json::json!({
+            "image_size": [3840, 2160],
+            "bezels": { "horizontal_mm": 8.0, "vertical_mm": 5.0 },
+            "monitors": [
+                {
+                    "id": 0,
+                    "name": "DP-1",
+                    "stable_id": "uuid-a",
+                    "resolution": [2560, 1440],
+                    "physical_mm": [597, 336],
+                },
+                {
+                    "id": 1,
+                    "name": "DP-2",
+                    "stable_id": null,
+                    "resolution": [1920, 1080],
+                    "physical_mm": null,
+                },
+            ],
+            "crops": [
+                {
+                    "monitor_id": 0,
+                    "src_rect": { "x": 0, "y": 0, "w": 100, "h": 100 },
+                    "dst_size": [2560, 1440],
+                    "rotation": "None",
+                    "fit": "Fill",
+                }
+            ],
+        });
+        assert_eq!(payload, expected);
     }
 
     #[test]
