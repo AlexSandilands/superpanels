@@ -4,6 +4,7 @@
 //!
 //! See [SPEC.md] for the design and [PLAN.md] for the development plan.
 
+pub mod backends;
 pub mod config;
 pub mod display;
 pub mod image;
