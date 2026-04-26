@@ -1,0 +1,23 @@
+# Build outputs
+target/
+dist/
+build/
+.svelte-kit/
+.vite/
+node_modules/
+
+# Lockfiles (managed by their tools)
+Cargo.lock
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Generated / fixtures (shouldn't be reformatted)
+**/generated/**
+**/tests/fixtures/**
+**/snapshots/**
+
+# Don't reformat docs that have specific layout
+LICENSE
+LICENSE-*
+CHANGELOG.md

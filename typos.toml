@@ -1,0 +1,41 @@
+# Configuration for `typos` — fast spell-checker for code/comments/docs.
+# Runs in pre-commit. See https://github.com/crate-ci/typos for the full schema.
+
+[default]
+# Don't try to spell-check git hashes / SHA-256 / hex IDs.
+extend-ignore-re = [
+    "[A-Fa-f0-9]{40}",
+    "[A-Fa-f0-9]{64}",
+]
+
+[default.extend-words]
+# Project-specific terms typos might flag as misspellings.
+superpanels = "superpanels"
+plasmashell = "plasmashell"
+hyprctl     = "hyprctl"
+hyprpaper   = "hyprpaper"
+swww        = "swww"
+swaybg      = "swaybg"
+wlroots     = "wlroots"
+kscreen     = "kscreen"
+xrandr      = "xrandr"
+randr       = "randr"
+edid        = "edid"
+zbus        = "zbus"
+notif       = "notif"
+# GitHub auto-generates markdown anchors by stripping apostrophes, so a
+# heading like "What you're building" becomes the anchor "what-youre-building".
+# Allow the stripped form to appear in ToC links.
+youre       = "youre"
+
+[files]
+# Don't scan the cache or build outputs.
+extend-exclude = [
+    "target/",
+    "node_modules/",
+    "dist/",
+    "build/",
+    ".pre-commit-cache/",
+    "*.lock",
+    "tests/fixtures/**",
+]

@@ -1,0 +1,48 @@
+# `cargo deny` policy — runs in pre-commit and CI.
+# Catches: unmaintained / vulnerable deps, incompatible licences, duplicate
+# versions of the same crate, banned crates, unknown sources.
+# https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+all-features = true
+
+[advisories]
+db-path  = "$CARGO_HOME/advisory-db"
+db-urls  = ["https://github.com/rustsec/advisory-db"]
+yanked   = "warn"
+ignore   = []  # Add advisory IDs here ONLY with a comment justifying why.
+
+[licenses]
+# Anything in `allow` is OK. Anything else aborts the build with a clear error
+# pointing at the offending crate. Re-evaluate periodically.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "MPL-2.0",  # weak copyleft, file-level — fine for libraries we link against
+    "Zlib",
+    "CC0-1.0",
+    "0BSD",
+]
+confidence-threshold = 0.93
+exceptions = []
+
+[bans]
+multiple-versions  = "warn"   # noisy; warn rather than deny
+wildcards          = "deny"   # `version = "*"` is forbidden
+highlight          = "all"
+allow              = []
+deny               = []
+skip               = []
+skip-tree          = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git      = "deny"
+allow-registry   = ["https://github.com/rust-lang/crates.io-index"]
+allow-git        = []

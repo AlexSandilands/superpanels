@@ -1,0 +1,24 @@
+# Project-wide clippy thresholds. Lint *levels* (warn/deny/allow) live in
+# Cargo.toml under [workspace.lints]; this file is for the threshold values
+# clippy uses to decide when something is "too complex".
+
+# Minimum supported Rust version. Some pedantic lints back off below this.
+msrv = "1.85"
+
+# A function with cognitive complexity above this earns a `cognitive_complexity` warning.
+# 25 is generous; below that and you're flagging perfectly reasonable functions.
+cognitive-complexity-threshold = 25
+
+# `too_many_arguments` flags functions with more than this many parameters.
+# Default is 7; we keep that.
+too-many-arguments-threshold = 7
+
+# `type_complexity` flags nested generic types past this score.
+# Default 250 is fine for most code; tune up if it fires on legitimate type expressions.
+type-complexity-threshold = 250
+
+# Don't warn on these names — they are legitimate in our domain.
+allowed-idents-below-min-chars = ["i", "j", "k", "x", "y", "w", "h", "id", "fs", "ok"]
+
+# Allow `Vec<u8>` and `String` parameters where they might otherwise be flagged.
+# avoid-breaking-exported-api = false  # uncomment if pedantic complains on public API

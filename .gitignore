@@ -1,0 +1,41 @@
+# --- Rust ---
+target/
+**/*.rs.bk
+*.pdb
+# Cargo.lock IS committed for binaries (we have binaries) — do not ignore it.
+
+# --- Node / Tauri / Svelte ---
+node_modules/
+.svelte-kit/
+.vite/
+dist/
+build/
+
+# --- Tauri ---
+src-tauri/target/
+src-tauri/gen/
+
+# --- Editors / IDEs ---
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+.idea/
+*.swp
+*.swo
+*~
+
+# --- OS detritus ---
+.DS_Store
+Thumbs.db
+
+# --- Project artefacts ---
+*.bak
+*.log
+/coverage/
+/cache/
+.pre-commit-cache/
+
+# --- Local secrets / per-machine configs ---
+.env
+.env.local
+*.local

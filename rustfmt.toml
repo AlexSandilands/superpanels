@@ -1,0 +1,21 @@
+# Stable rustfmt options only — keeps `cargo fmt` working on stock toolchains.
+# If you have nightly rustfmt, see the commented options below for nicer-but-unstable extras.
+
+edition = "2024"
+max_width = 100
+tab_spaces = 4
+hard_tabs = false
+newline_style = "Unix"
+use_field_init_shorthand = true
+use_try_shorthand = true
+reorder_imports = true
+reorder_modules = true
+
+# Nightly-only options (uncomment when running nightly rustfmt — falls back silently on stable):
+# group_imports = "StdExternalCrate"
+# imports_granularity = "Crate"
+# wrap_comments = true
+# comment_width = 100
+# format_strings = true
+# format_macro_matchers = true
+# normalize_comments = true

@@ -1,0 +1,117 @@
+# Pre-commit hook configuration. Run `pre-commit install` once after cloning.
+# https://pre-commit.com
+#
+# Hooks are split into two stages:
+#   - pre-commit (default): fast checks that run on every `git commit`.
+#   - pre-push:             slower checks (full clippy, test suite) — run on `git push`.
+#
+# To run all hooks against every file (e.g. before opening a PR):
+#   pre-commit run --all-files --hook-stage pre-push
+
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
+
+repos:
+  # ───────────────────────────────────── general hygiene ──────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: detect-private-key
+
+  # ───────────────────────────────────── spell-check ──────────────────────
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.27.0
+    hooks:
+      - id: typos
+        args: []  # config in typos.toml
+
+  # ───────────────────────────────────── Rust: fast (commit) ──────────────
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        description: Format Rust code
+        entry: cargo fmt --all -- --check
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-check
+        name: cargo check
+        description: Compile-check the workspace
+        entry: cargo check --workspace --all-targets --all-features
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+  # ───────────────────────────────────── Rust: thorough (push) ────────────
+  - repo: local
+    hooks:
+      - id: cargo-clippy
+        name: cargo clippy
+        description: Lint Rust code with -D warnings
+        entry: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: cargo-test
+        name: cargo test
+        description: Run the test suite
+        entry: cargo test --workspace --all-features
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: cargo-deny
+        name: cargo deny
+        description: Audit dependencies for licences and advisories
+        entry: bash -c 'if [ -f Cargo.toml ]; then cargo deny check; else echo "no Cargo.toml yet — skipping" && exit 0; fi'
+        language: system
+        files: ^(Cargo\.toml|Cargo\.lock|deny\.toml)$
+        pass_filenames: false
+        stages: [pre-push]
+
+  # ───────────────────────────────────── frontend (commit) ────────────────
+  - repo: local
+    hooks:
+      - id: prettier
+        name: prettier
+        description: Format frontend files
+        entry: bash -c 'if [ -d ui ] && [ -f ui/package.json ]; then cd ui && npx --no-install prettier --check .; else echo "ui/ not yet initialised — skipping" && exit 0; fi'
+        language: system
+        types_or: [javascript, ts, tsx, svelte, json, css, scss, html, markdown, yaml]
+        files: ^ui/
+        pass_filenames: false
+
+      - id: eslint
+        name: eslint
+        description: Lint frontend code
+        entry: bash -c 'if [ -d ui ] && [ -f ui/package.json ]; then cd ui && npx --no-install eslint .; else echo "ui/ not yet initialised — skipping" && exit 0; fi'
+        language: system
+        types_or: [javascript, ts, tsx, svelte]
+        files: ^ui/
+        pass_filenames: false
+
+      - id: svelte-check
+        name: svelte-check
+        description: Type-check Svelte + TypeScript
+        entry: bash -c 'if [ -d ui ] && [ -f ui/package.json ]; then cd ui && npx --no-install svelte-check --threshold error; else echo "ui/ not yet initialised — skipping" && exit 0; fi'
+        language: system
+        types_or: [ts, svelte]
+        files: ^ui/
+        pass_filenames: false
+        stages: [pre-push]
