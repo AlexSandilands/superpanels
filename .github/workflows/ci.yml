@@ -11,8 +11,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Pre-code stage: lints docs and configs even before the Cargo workspace exists.
-  # Replace this job (or add to it) once Phase 1.1 lands the workspace.
   pre-commit:
     name: pre-commit
     runs-on: ubuntu-24.04
@@ -23,8 +21,6 @@ jobs:
           python-version: '3.12'
       - uses: pre-commit/action@v3.0.1
 
-  # Active once `Cargo.toml` is committed. Until then this job is a no-op
-  # because the `if` guard short-circuits the steps.
   rust:
     name: rust (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -34,52 +30,17 @@ jobs:
         os: [ubuntu-22.04, ubuntu-24.04]
     steps:
       - uses: actions/checkout@v4
-
-      - name: Detect workspace
-        id: workspace
-        run: |
-          if [ -f Cargo.toml ]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::No Cargo.toml yet — Rust steps will skip until Phase 1.1 lands."
-          fi
-
-      - name: Install Rust toolchain
-        if: steps.workspace.outputs.exists == 'true'
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-
-      - name: Cache cargo
-        if: steps.workspace.outputs.exists == 'true'
-        uses: Swatinem/rust-cache@v2
-
-      - name: cargo fmt
-        if: steps.workspace.outputs.exists == 'true'
-        run: cargo fmt --all -- --check
-
-      - name: cargo clippy
-        if: steps.workspace.outputs.exists == 'true'
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-
-      - name: cargo test
-        if: steps.workspace.outputs.exists == 'true'
-        run: cargo test --workspace --all-features
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - run: cargo test --workspace --all-features
 
   cargo-deny:
     name: cargo deny
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Detect workspace
-        id: workspace
-        run: |
-          if [ -f Cargo.toml ]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
-      - name: cargo-deny
-        if: steps.workspace.outputs.exists == 'true'
-        uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: EmbarkStudios/cargo-deny-action@v2
