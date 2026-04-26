@@ -6,6 +6,7 @@
 
 pub mod config;
 pub mod display;
+pub mod image;
 pub mod layout;
 
 pub use config::{
