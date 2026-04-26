@@ -29,5 +29,9 @@ tempfile  = { workspace = true }
 name    = "layout"
 harness = false
 
+[[bench]]
+name    = "image"
+harness = false
+
 [lints]
 workspace = true
