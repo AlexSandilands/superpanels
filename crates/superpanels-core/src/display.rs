@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub mod kscreen;
+pub mod manual;
 
 /// A physical display normalised into Superpanels' internal model.
 ///
