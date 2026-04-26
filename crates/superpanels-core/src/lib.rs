@@ -4,5 +4,9 @@
 //!
 //! See [SPEC.md] for the design and [PLAN.md] for the development plan.
 
+pub mod display;
+
+pub use display::{Monitor, MonitorRef, Rotation};
+
 /// The crate version, sourced from `Cargo.toml`.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
