@@ -9,6 +9,7 @@ pub mod config;
 pub mod display;
 pub mod image;
 pub mod layout;
+pub mod library;
 pub mod slideshow;
 
 pub use backends::{
@@ -23,6 +24,9 @@ pub use display::{
     Availability, DetectError, DisplayDetector, Monitor, MonitorRef, Rotation, detect,
 };
 pub use layout::{BezelConfig, CropSpec, FitMode, LayoutError, Rect, compute_crop_specs};
+pub use library::{
+    FolderWatcher, LibraryEntry, LibraryError, load_index, persist_index, scan_folder,
+};
 pub use slideshow::{
     SlideshowConfig, SlideshowError, SlideshowPicker, SlideshowSort, SlideshowStart, SlideshowState,
 };
