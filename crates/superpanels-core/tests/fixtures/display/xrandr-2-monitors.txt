@@ -1,0 +1,50 @@
+Screen 0: minimum 320 x 200, current 4480 x 1440, maximum 16384 x 16384
+DP-1 connected primary 2560x1440+0+0 (0x12a) normal (normal left inverted right x axis y axis) 597mm x 336mm
+	Identifier: 0x42
+	Timestamp:  12345
+	Subpixel:   horizontal rgb
+	Gamma:      1.0:1.0:1.0
+	Brightness: 1.0
+	Clones:
+	CRTC:       0
+	CRTCs:      0 1 2 3
+	EDID:
+		00ffffffffffff0010ac7441393000000000000000000000000000000000
+		00000000000000000000000000000000000000000000000000000000000000
+		000000000000000000000000000000000000000000ff004142433132333435
+		36370a2020000000fc0055323732335145202020202020000000000000000000
+		00000000000000000000000000
+	BorderDimensions: 4
+	Border: 0 0 0 0
+	  2560x1440 (0x55) 241.500MHz +HSync -VSync *current +preferred
+	        h: width  2560 start 2680 end 2720 total 2800 skew    0 clock  86.25KHz
+	        v: height 1440 start 1443 end 1448 total 1481           clock  60.00Hz
+	  1920x1080 (0x56) 148.500MHz +HSync +VSync
+	        h: width  1920 start 2008 end 2052 total 2200 skew    0 clock  67.50KHz
+	        v: height 1080 start 1084 end 1089 total 1125           clock  60.00Hz
+HDMI-1 connected 1920x1080+2560+0 (0x12b) normal (normal left inverted right x axis y axis) 597mm x 336mm
+	Identifier: 0x43
+	Timestamp:  12345
+	Subpixel:   unknown
+	Gamma:      1.0:1.0:1.0
+	Brightness: 1.0
+	Clones:
+	CRTC:       1
+	CRTCs:      0 1 2 3
+	EDID:
+		00ffffffffffff001e6dba77393000000000000000000000000000000000
+		00000000000000000000000000000000000000000000000000000000000000
+		000000000000000000000000000000000000000000ff005859593938373635
+		34330a2020000000fc003237475038353020202020202000000000000000000000
+		00000000000000000000000000
+	BorderDimensions: 4
+	Border: 0 0 0 0
+	  1920x1080 (0x56) 148.500MHz +HSync +VSync *current +preferred
+	        h: width  1920 start 2008 end 2052 total 2200 skew    0 clock  67.50KHz
+	        v: height 1080 start 1084 end 1089 total 1125           clock  60.00Hz
+HDMI-2 disconnected (normal left inverted right x axis y axis)
+	Identifier: 0x44
+	Timestamp:  12345
+	Subpixel:   unknown
+	Clones:
+	CRTCs:      0 1 2 3

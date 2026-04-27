@@ -17,6 +17,7 @@ pub mod manual;
 mod stable_id;
 mod subprocess;
 pub mod wlr_randr;
+pub mod xrandr;
 
 use kscreen::KscreenDoctorDetector;
 use manual::parse_manual_monitors;
