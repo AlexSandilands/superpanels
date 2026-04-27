@@ -20,7 +20,7 @@ const SCHEMA: &str = "org.gnome.desktop.background";
 const KEY_LIGHT: &str = "picture-uri";
 const KEY_DARK: &str = "picture-uri-dark";
 /// Composite long-edge cap to keep memory bounded.
-pub(crate) const MAX_LONG_EDGE: u32 = 8192;
+pub const MAX_LONG_EDGE: u32 = 8192;
 
 #[derive(Debug, Default)]
 pub struct GnomeBackend;
@@ -135,7 +135,7 @@ pub(crate) fn composite_to_tempfile(
 
 /// Width = sum of per-crop widths, height = max per-crop height; each crop
 /// is pasted top-aligned at the running horizontal offset.
-pub(crate) fn composite_band(decoded: &[DynamicImage]) -> Result<RgbaImage, BackendError> {
+pub fn composite_band(decoded: &[DynamicImage]) -> Result<RgbaImage, BackendError> {
     if decoded.is_empty() {
         return Err(BackendError::Encode(
             "cannot composite empty crop list".to_owned(),
@@ -170,7 +170,7 @@ pub(crate) fn composite_band(decoded: &[DynamicImage]) -> Result<RgbaImage, Back
     Ok(canvas)
 }
 
-pub(crate) fn downscale_if_needed(canvas: RgbaImage, cap: u32) -> DynamicImage {
+pub fn downscale_if_needed(canvas: RgbaImage, cap: u32) -> DynamicImage {
     let (w, h) = (canvas.width(), canvas.height());
     let long = w.max(h);
     if long <= cap || cap == 0 {

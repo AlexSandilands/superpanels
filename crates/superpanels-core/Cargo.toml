@@ -41,5 +41,9 @@ harness = false
 name    = "library"
 harness = false
 
+[[bench]]
+name    = "gnome"
+harness = false
+
 [lints]
 workspace = true
