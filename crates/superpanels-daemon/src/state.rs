@@ -159,6 +159,23 @@ impl DaemonState {
     }
 }
 
+#[cfg(test)]
+impl DaemonState {
+    /// Test constructor: build a state directly from in-memory pieces, bypassing
+    /// XDG config / state-dir lookup. Production code should use [`Self::load`].
+    pub(crate) fn for_tests(config: Config) -> Self {
+        Self {
+            config,
+            monitors: Vec::new(),
+            library: Vec::new(),
+            active_profile: None,
+            slideshow_picker: None,
+            last_apply_unix_secs: None,
+            schedule_checker: ScheduleChecker::new(),
+        }
+    }
+}
+
 fn load_library_index(cfg: &LibraryConfig) -> Vec<LibraryEntry> {
     let Some(state_dir) = DaemonState::state_dir() else {
         return Vec::new();
@@ -177,5 +194,100 @@ fn load_library_index(cfg: &LibraryConfig) -> Vec<LibraryEntry> {
             }
             entries
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)] // reason: tests fail loudly on harness errors
+#[allow(clippy::expect_used)] // reason: same as above
+mod tests {
+    use std::path::PathBuf;
+    use std::time::Duration;
+
+    use superpanels_core::config::{
+        BackendKind, ImageSet, Profile, ProfileBody, SlideshowConfig as SlideshowCfg,
+        SlideshowSort, SlideshowStart, SpanProfile, SpanSource,
+    };
+    use superpanels_core::layout::{BezelConfig, FitMode};
+    use superpanels_core::slideshow::{
+        SlideshowConfig as PickerCfg, SlideshowPicker, SlideshowSort as PickerSort,
+        SlideshowStart as PickerStart, persist_state,
+    };
+    use tempfile::tempdir;
+
+    use super::*;
+
+    fn slideshow_profile(name: &str) -> Profile {
+        Profile {
+            name: name.to_owned(),
+            body: ProfileBody::Span(SpanProfile {
+                source: SpanSource::Slideshow {
+                    images: ImageSet::Folder {
+                        path: PathBuf::from("/walls"),
+                        recursive: false,
+                    },
+                    config: SlideshowCfg {
+                        interval: Duration::from_secs(60),
+                        sort: SlideshowSort::Alphabetical,
+                        recent_history_size: 10,
+                        on_start: SlideshowStart::Resume,
+                        pause_when_active: false,
+                        skip_on_unavailable: true,
+                    },
+                },
+                fit: FitMode::Fill,
+                offset: [0, 0],
+            }),
+            bezels: BezelConfig {
+                horizontal_mm: 0.0,
+                vertical_mm: 0.0,
+            },
+            backend_override: Some(BackendKind::Custom),
+            schedule: None,
+        }
+    }
+
+    #[test]
+    fn restore_slideshow_round_trips_history_via_disk() {
+        // Arrange — persist a picker state with non-empty history, then load
+        // it back through DaemonState::restore_slideshow.
+        let dir = tempdir().unwrap();
+        let state_path = dir.path().join("slideshow-state.json");
+
+        let mut picker = SlideshowPicker::new(PickerCfg {
+            interval: Duration::from_secs(60),
+            sort: PickerSort::Alphabetical,
+            recent_history_size: 10,
+            on_start: PickerStart::Resume,
+            pause_when_active: false,
+            skip_on_unavailable: true,
+        });
+        picker
+            .state_mut()
+            .history
+            .push_front(PathBuf::from("/walls/a.png"));
+        picker
+            .state_mut()
+            .history
+            .push_front(PathBuf::from("/walls/b.png"));
+        picker.state_mut().current_index = Some(1);
+        persist_state(picker.state(), &state_path).unwrap();
+
+        let mut config = Config::default();
+        config.profiles.push(slideshow_profile("p"));
+        let mut state = DaemonState::for_tests(config);
+
+        // Act
+        state.restore_slideshow("p", &state_path);
+
+        // Assert
+        let restored = state.slideshow_picker.expect("picker was not restored");
+        let s = restored.state();
+        assert_eq!(s.history.len(), 2);
+        assert_eq!(
+            s.history.front().cloned(),
+            Some(PathBuf::from("/walls/b.png"))
+        );
+        assert_eq!(s.current_index, Some(1));
     }
 }

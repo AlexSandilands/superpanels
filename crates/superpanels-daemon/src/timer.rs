@@ -162,3 +162,149 @@ pub(crate) async fn slideshow_tick(state: Arc<Mutex<DaemonState>>) {
         Err(e) => warn!(error = %e, "slideshow tick task panicked"),
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)] // reason: tests fail loudly on harness errors
+mod tests {
+    use std::path::PathBuf;
+
+    use superpanels_core::config::{
+        BackendKind, Config, ImageSet, Profile, ProfileBody, SlideshowConfig as SlideshowCfg,
+        SlideshowSort, SlideshowStart, SpanProfile, SpanSource,
+    };
+    use superpanels_core::layout::{BezelConfig, FitMode};
+    use superpanels_core::slideshow::{
+        SlideshowConfig as PickerCfg, SlideshowPicker, SlideshowSort as PickerSort,
+        SlideshowStart as PickerStart,
+    };
+    use tempfile::tempdir;
+
+    use super::*;
+
+    fn picker_cfg() -> PickerCfg {
+        PickerCfg {
+            interval: Duration::from_secs(60),
+            sort: PickerSort::Alphabetical,
+            recent_history_size: 4,
+            on_start: PickerStart::Resume,
+            pause_when_active: false,
+            skip_on_unavailable: false,
+        }
+    }
+
+    fn slideshow_profile(name: &str, folder: &std::path::Path) -> Profile {
+        Profile {
+            name: name.to_owned(),
+            body: ProfileBody::Span(SpanProfile {
+                source: SpanSource::Slideshow {
+                    images: ImageSet::Folder {
+                        path: folder.to_path_buf(),
+                        recursive: false,
+                    },
+                    config: SlideshowCfg {
+                        interval: Duration::from_secs(60),
+                        sort: SlideshowSort::Alphabetical,
+                        recent_history_size: 4,
+                        on_start: SlideshowStart::Resume,
+                        pause_when_active: false,
+                        skip_on_unavailable: false,
+                    },
+                },
+                fit: FitMode::Fill,
+                offset: [0, 0],
+            }),
+            bezels: BezelConfig {
+                horizontal_mm: 0.0,
+                vertical_mm: 0.0,
+            },
+            backend_override: Some(BackendKind::Custom),
+            schedule: None,
+        }
+    }
+
+    fn write_dummy_image(path: &PathBuf) {
+        // Tiny valid PNG so `image::load` does not error before the picker has
+        // already been advanced. The unpaused test relies on picker.next()
+        // running before any apply work.
+        let img = image::RgbaImage::from_pixel(2, 2, image::Rgba([0, 0, 0, 255]));
+        image::DynamicImage::ImageRgba8(img).save(path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn paused_picker_does_not_advance_history() {
+        // Arrange — slideshow folder with one image, picker paused.
+        let dir = tempdir().unwrap();
+        let img_path = dir.path().join("a.png");
+        write_dummy_image(&img_path);
+
+        let mut config = Config::default();
+        config.profiles.push(slideshow_profile("p", dir.path()));
+
+        let mut state = DaemonState::for_tests(config);
+        state.active_profile = Some("p".to_owned());
+        let mut picker = SlideshowPicker::new(picker_cfg());
+        picker.state_mut().paused = true;
+        state.slideshow_picker = Some(picker);
+        let state = Arc::new(Mutex::new(state));
+
+        let initial_history = state
+            .lock()
+            .await
+            .slideshow_picker
+            .as_ref()
+            .unwrap()
+            .state()
+            .history
+            .len();
+
+        // Act
+        slideshow_tick(Arc::clone(&state)).await;
+
+        // Assert — paused tick is a no-op; history must not grow.
+        let after_history = state
+            .lock()
+            .await
+            .slideshow_picker
+            .as_ref()
+            .unwrap()
+            .state()
+            .history
+            .len();
+        assert_eq!(after_history, initial_history);
+    }
+
+    #[tokio::test]
+    async fn unpaused_picker_advances_history_by_one() {
+        // Arrange — slideshow with two images so picker can pick.
+        let dir = tempdir().unwrap();
+        let a = dir.path().join("a.png");
+        let b = dir.path().join("b.png");
+        write_dummy_image(&a);
+        write_dummy_image(&b);
+
+        let mut config = Config::default();
+        config.profiles.push(slideshow_profile("p", dir.path()));
+
+        let mut state = DaemonState::for_tests(config);
+        state.active_profile = Some("p".to_owned());
+        state.slideshow_picker = Some(SlideshowPicker::new(picker_cfg()));
+        let state = Arc::new(Mutex::new(state));
+
+        // Act — tick. The actual backend apply may fail (Custom backend with
+        // empty command, no real desktop) but picker.next() runs first so the
+        // history side-effect is observable regardless.
+        slideshow_tick(Arc::clone(&state)).await;
+
+        // Assert
+        let history_len = state
+            .lock()
+            .await
+            .slideshow_picker
+            .as_ref()
+            .unwrap()
+            .state()
+            .history
+            .len();
+        assert_eq!(history_len, 1, "expected picker to have advanced once");
+    }
+}

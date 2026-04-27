@@ -249,6 +249,7 @@ fn is_leap_year(year: i32) -> bool {
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)] // reason: test failures are bugs, not runtime errors
+#[allow(clippy::expect_used)] // reason: same as above
 mod tests {
     use super::*;
     use std::path::PathBuf;
@@ -362,6 +363,63 @@ mod tests {
 
         // Assert
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn sunset_fires_at_computed_local_sunset_and_does_not_refire_within_minute() {
+        // Arrange — London, midsummer. The test builds `now` by mirroring the
+        // exact sequence sunset_should_fire performs internally so the
+        // assertion holds regardless of the host's timezone (TZ=UTC and
+        // TZ=America/Los_Angeles must both pass).
+        let lat = 51.5074_f64;
+        let lon = -0.1278_f64;
+
+        // Pick a `local_date` from the host's Local now to keep the same
+        // conversion semantics; the actual day of year drives the sunset.
+        let local_today = Local::now().date_naive();
+        let sunset_utc_min = compute_sunset_utc_minutes(
+            lat,
+            lon,
+            local_today.year(),
+            local_today.month(),
+            local_today.day(),
+        )
+        .expect("london is below the polar circle");
+        let fire_naive_utc = local_today.and_hms_opt(0, 0, 0).unwrap()
+            + chrono::TimeDelta::minutes(i64::from(sunset_utc_min));
+        let fire_local: DateTime<Local> =
+            Utc.from_utc_datetime(&fire_naive_utc).with_timezone(&Local);
+
+        // Build `now` so that now.date_naive() == local_today AND hour/minute
+        // match fire_local's hour/minute — this is what sunset_should_fire
+        // compares against. We use `local_today` plus fire_local's h/m.
+        let now_naive = local_today
+            .and_hms_opt(fire_local.hour(), fire_local.minute(), 0)
+            .unwrap();
+        let now: DateTime<Local> = Local
+            .from_local_datetime(&now_naive)
+            .single()
+            .unwrap_or_else(|| Local.from_local_datetime(&now_naive).earliest().unwrap());
+
+        let profile = profile_with_schedule(
+            "p",
+            Schedule::Sunset {
+                offset_minutes: 0,
+                profile: "target".to_owned(),
+            },
+        );
+        let mut checker = ScheduleChecker::new();
+
+        // Act + Assert — first call at the firing minute must fire.
+        let result = checker.check_at(now, std::slice::from_ref(&profile), Some([lat, lon]));
+        assert_eq!(result, vec!["target".to_owned()]);
+
+        // Re-fire guard: same `now` must not fire again.
+        let again = checker.check_at(now, &[profile], Some([lat, lon]));
+        assert!(
+            again.is_empty(),
+            "expected re-fire suppression, got {again:?}"
+        );
     }
 
     #[test]

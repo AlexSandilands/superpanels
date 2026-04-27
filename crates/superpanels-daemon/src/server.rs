@@ -555,9 +555,24 @@ pub(crate) async fn write_frame(stream: &mut UnixStream, data: &[u8]) -> std::io
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)] // reason: tests fail loudly on harness errors
+#[allow(clippy::expect_used)] // reason: same as above
 mod tests {
-    use super::*;
+    use std::time::Duration;
+
+    use serde_json::json;
+    use superpanels_core::config::{
+        BackendKind, Config, ImageSet, Profile, ProfileBody, SlideshowConfig as SlideshowCfg,
+        SlideshowSort, SlideshowStart, SpanProfile, SpanSource,
+    };
+    use superpanels_core::layout::{BezelConfig, FitMode as LayoutFitMode};
+    use superpanels_core::slideshow::{
+        SlideshowConfig as PickerCfg, SlideshowPicker, SlideshowSort as PickerSort,
+        SlideshowStart as PickerStart,
+    };
+    use tempfile::tempdir;
     use tokio::io::AsyncWriteExt;
+
+    use super::*;
 
     #[tokio::test]
     async fn read_frame_rejects_oversize_length_before_allocating() {
@@ -578,5 +593,394 @@ mod tests {
             err.to_string().contains("exceeds"),
             "unexpected error: {err}"
         );
+    }
+
+    fn write_dummy_image(path: &std::path::Path) {
+        let img = image::RgbaImage::from_pixel(2, 2, image::Rgba([0, 0, 0, 255]));
+        image::DynamicImage::ImageRgba8(img).save(path).unwrap();
+    }
+
+    fn slideshow_profile(name: &str, folder: &std::path::Path) -> Profile {
+        Profile {
+            name: name.to_owned(),
+            body: ProfileBody::Span(SpanProfile {
+                source: SpanSource::Slideshow {
+                    images: ImageSet::Folder {
+                        path: folder.to_path_buf(),
+                        recursive: false,
+                    },
+                    config: SlideshowCfg {
+                        interval: Duration::from_secs(60),
+                        sort: SlideshowSort::Alphabetical,
+                        recent_history_size: 4,
+                        on_start: SlideshowStart::Resume,
+                        pause_when_active: false,
+                        skip_on_unavailable: false,
+                    },
+                },
+                fit: LayoutFitMode::Fill,
+                offset: [0, 0],
+            }),
+            bezels: BezelConfig {
+                horizontal_mm: 0.0,
+                vertical_mm: 0.0,
+            },
+            backend_override: Some(BackendKind::Custom),
+            schedule: None,
+        }
+    }
+
+    fn picker_with_history(history: Vec<PathBuf>) -> SlideshowPicker {
+        let mut picker = SlideshowPicker::new(PickerCfg {
+            interval: Duration::from_secs(60),
+            sort: PickerSort::Alphabetical,
+            recent_history_size: 10,
+            on_start: PickerStart::Resume,
+            pause_when_active: false,
+            skip_on_unavailable: false,
+        });
+        for path in history.into_iter().rev() {
+            picker.state_mut().history.push_front(path);
+        }
+        picker
+    }
+
+    fn make_state_arc(state: DaemonState) -> Arc<Mutex<DaemonState>> {
+        Arc::new(Mutex::new(state))
+    }
+
+    fn timer_pair() -> watch::Sender<Option<Duration>> {
+        watch::channel::<Option<Duration>>(None).0
+    }
+
+    #[tokio::test]
+    async fn current_state_includes_active_profile_and_slideshow_summary() {
+        // Arrange
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.profiles.push(slideshow_profile("p", dir.path()));
+        let mut s = DaemonState::for_tests(config);
+        s.active_profile = Some("p".to_owned());
+        s.slideshow_picker = Some(picker_with_history(vec![PathBuf::from("/walls/a.png")]));
+        let state = make_state_arc(s);
+
+        // Act
+        let req = IpcRequest {
+            v: PROTOCOL_VERSION,
+            method: "current_state".to_owned(),
+            params: json!({}),
+        };
+        let resp = dispatch_for_tests(req, Arc::clone(&state), timer_pair()).await;
+
+        // Assert
+        assert!(resp.is_ok(), "got: {:?}", resp.error);
+        let result = resp.result.unwrap();
+        assert_eq!(result["active_profile"], json!("p"));
+        let summary = &result["slideshow"];
+        assert_eq!(summary["history_len"], json!(1));
+        assert_eq!(summary["paused"], json!(false));
+    }
+
+    #[tokio::test]
+    async fn slideshow_pause_toggles_when_no_explicit_value() {
+        // Arrange
+        let mut config = Config::default();
+        config
+            .profiles
+            .push(slideshow_profile("p", &PathBuf::from("/walls")));
+        let mut s = DaemonState::for_tests(config);
+        s.active_profile = Some("p".to_owned());
+        s.slideshow_picker = Some(picker_with_history(vec![]));
+        let state = make_state_arc(s);
+
+        // Act 1 — toggle from default false → true.
+        let resp = dispatch_for_tests(
+            IpcRequest {
+                v: PROTOCOL_VERSION,
+                method: "slideshow_pause".to_owned(),
+                params: json!({}),
+            },
+            Arc::clone(&state),
+            timer_pair(),
+        )
+        .await;
+
+        // Assert
+        assert!(resp.is_ok());
+        assert_eq!(resp.result.unwrap()["paused"], json!(true));
+        assert!(
+            state
+                .lock()
+                .await
+                .slideshow_picker
+                .as_ref()
+                .unwrap()
+                .state()
+                .paused
+        );
+
+        // Act 2 — toggle back.
+        let resp = dispatch_for_tests(
+            IpcRequest {
+                v: PROTOCOL_VERSION,
+                method: "slideshow_pause".to_owned(),
+                params: json!({}),
+            },
+            Arc::clone(&state),
+            timer_pair(),
+        )
+        .await;
+        assert_eq!(resp.result.unwrap()["paused"], json!(false));
+        assert!(
+            !state
+                .lock()
+                .await
+                .slideshow_picker
+                .as_ref()
+                .unwrap()
+                .state()
+                .paused
+        );
+    }
+
+    #[tokio::test]
+    async fn slideshow_pause_honours_explicit_value() {
+        // Arrange
+        let mut config = Config::default();
+        config
+            .profiles
+            .push(slideshow_profile("p", &PathBuf::from("/walls")));
+        let mut s = DaemonState::for_tests(config);
+        s.active_profile = Some("p".to_owned());
+        s.slideshow_picker = Some(picker_with_history(vec![]));
+        let state = make_state_arc(s);
+
+        // Act — explicit set to true, twice (idempotent).
+        for _ in 0..2 {
+            let resp = dispatch_for_tests(
+                IpcRequest {
+                    v: PROTOCOL_VERSION,
+                    method: "slideshow_pause".to_owned(),
+                    params: json!({"paused": true}),
+                },
+                Arc::clone(&state),
+                timer_pair(),
+            )
+            .await;
+            assert_eq!(resp.result.unwrap()["paused"], json!(true));
+        }
+        assert!(
+            state
+                .lock()
+                .await
+                .slideshow_picker
+                .as_ref()
+                .unwrap()
+                .state()
+                .paused
+        );
+    }
+
+    #[tokio::test]
+    async fn slideshow_pause_errors_when_no_active_slideshow() {
+        let state = make_state_arc(DaemonState::for_tests(Config::default()));
+        let resp = dispatch_for_tests(
+            IpcRequest {
+                v: PROTOCOL_VERSION,
+                method: "slideshow_pause".to_owned(),
+                params: json!({}),
+            },
+            state,
+            timer_pair(),
+        )
+        .await;
+        assert!(!resp.is_ok());
+        assert!(resp.error.unwrap().contains("no active slideshow"));
+    }
+
+    #[tokio::test]
+    async fn slideshow_prev_returns_history_at_index_one() {
+        // Arrange — picker with 2 entries in history; history[1] is the one prev points at.
+        let dir = tempdir().unwrap();
+        let a = dir.path().join("a.png");
+        write_dummy_image(&a);
+        let mut config = Config::default();
+        config.profiles.push(slideshow_profile("p", dir.path()));
+        let mut s = DaemonState::for_tests(config);
+        s.active_profile = Some("p".to_owned());
+        // history[0] = current, history[1] = previous
+        s.slideshow_picker = Some(picker_with_history(vec![a.clone(), a.clone()]));
+        let state = make_state_arc(s);
+
+        // Act — apply will likely fail (Custom backend with empty cmd) but we
+        // assert the dispatcher reaches the apply step rather than erroring on
+        // "no previous image". A failing apply produces a failure response
+        // whose error mentions "backend"; the success path returns
+        // `monitors_set`. Either way we can distinguish from missing-history.
+        let resp = dispatch_for_tests(
+            IpcRequest {
+                v: PROTOCOL_VERSION,
+                method: "slideshow_prev".to_owned(),
+                params: json!({}),
+            },
+            Arc::clone(&state),
+            timer_pair(),
+        )
+        .await;
+
+        // Assert — definitely not the "no previous image in history" branch.
+        if let Some(err) = &resp.error {
+            assert!(
+                !err.contains("no previous image"),
+                "unexpected missing-history error: {err}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn slideshow_prev_errors_when_history_empty() {
+        // Arrange — picker exists but history < 2.
+        let mut config = Config::default();
+        config
+            .profiles
+            .push(slideshow_profile("p", &PathBuf::from("/walls")));
+        let mut s = DaemonState::for_tests(config);
+        s.active_profile = Some("p".to_owned());
+        s.slideshow_picker = Some(picker_with_history(vec![]));
+        let state = make_state_arc(s);
+
+        // Act
+        let resp = dispatch_for_tests(
+            IpcRequest {
+                v: PROTOCOL_VERSION,
+                method: "slideshow_prev".to_owned(),
+                params: json!({}),
+            },
+            state,
+            timer_pair(),
+        )
+        .await;
+
+        // Assert
+        assert!(!resp.is_ok());
+        assert!(resp.error.unwrap().contains("no previous image"));
+    }
+
+    #[tokio::test]
+    async fn apply_profile_unknown_name_returns_failure() {
+        let state = make_state_arc(DaemonState::for_tests(Config::default()));
+        let resp = dispatch_for_tests(
+            IpcRequest {
+                v: PROTOCOL_VERSION,
+                method: "apply_profile".to_owned(),
+                params: json!({"name": "ghost"}),
+            },
+            state,
+            timer_pair(),
+        )
+        .await;
+        assert!(!resp.is_ok());
+        assert!(resp.error.unwrap().contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn apply_profile_advances_picker_history_for_slideshow_profile() {
+        // Arrange — slideshow folder with one image.
+        let dir = tempdir().unwrap();
+        let a = dir.path().join("a.png");
+        write_dummy_image(&a);
+        let mut config = Config::default();
+        config.profiles.push(slideshow_profile("p", dir.path()));
+        let state = make_state_arc(DaemonState::for_tests(config));
+
+        // Act — apply will likely fail (no real backend) but the picker must
+        // have been advanced: history len becomes 1.
+        let _ = dispatch_for_tests(
+            IpcRequest {
+                v: PROTOCOL_VERSION,
+                method: "apply_profile".to_owned(),
+                params: json!({"name": "p"}),
+            },
+            Arc::clone(&state),
+            timer_pair(),
+        )
+        .await;
+
+        // Assert
+        let guard = state.lock().await;
+        let picker = guard.slideshow_picker.as_ref().expect("picker created");
+        assert_eq!(picker.state().history.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn slideshow_advance_errors_when_no_active_profile() {
+        let state = make_state_arc(DaemonState::for_tests(Config::default()));
+        let resp = dispatch_for_tests(
+            IpcRequest {
+                v: PROTOCOL_VERSION,
+                method: "slideshow_next".to_owned(),
+                params: json!({}),
+            },
+            state,
+            timer_pair(),
+        )
+        .await;
+        assert!(!resp.is_ok());
+        assert!(resp.error.unwrap().contains("no active profile"));
+    }
+
+    #[tokio::test]
+    async fn redetect_returns_a_response_payload_and_does_not_panic() {
+        let state = make_state_arc(DaemonState::for_tests(Config::default()));
+        let resp = dispatch_for_tests(
+            IpcRequest {
+                v: PROTOCOL_VERSION,
+                method: "redetect".to_owned(),
+                params: json!({}),
+            },
+            state,
+            timer_pair(),
+        )
+        .await;
+        // Detection may succeed or fail depending on host; we only assert the
+        // dispatch path produces a well-formed response (one of result/error).
+        assert!(resp.is_ok() || resp.error.is_some());
+        if resp.is_ok() {
+            assert!(resp.result.unwrap().get("monitors").is_some());
+        }
+    }
+
+    #[tokio::test]
+    async fn set_requires_image_param() {
+        let state = make_state_arc(DaemonState::for_tests(Config::default()));
+        let resp = dispatch_for_tests(
+            IpcRequest {
+                v: PROTOCOL_VERSION,
+                method: "set".to_owned(),
+                params: json!({}),
+            },
+            state,
+            timer_pair(),
+        )
+        .await;
+        assert!(!resp.is_ok());
+        assert!(resp.error.unwrap().contains("params.image"));
+    }
+
+    #[tokio::test]
+    async fn unknown_method_returns_failure() {
+        let state = make_state_arc(DaemonState::for_tests(Config::default()));
+        let resp = dispatch_for_tests(
+            IpcRequest {
+                v: PROTOCOL_VERSION,
+                method: "no_such_method".to_owned(),
+                params: json!({}),
+            },
+            state,
+            timer_pair(),
+        )
+        .await;
+        assert!(!resp.is_ok());
+        assert!(resp.error.unwrap().contains("unknown method"));
     }
 }
