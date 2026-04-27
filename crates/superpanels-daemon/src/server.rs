@@ -9,6 +9,7 @@ use serde_json::json;
 use superpanels_core::backends::AppliedReport;
 use superpanels_core::config::{ProfileBody, SpanSource};
 use superpanels_core::ipc::{IpcRequest, IpcResponse, PROTOCOL_VERSION};
+use superpanels_core::layout::{BezelConfig, FitMode};
 use superpanels_core::library::scan_folder;
 use superpanels_core::slideshow::SlideshowPicker;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -16,7 +17,9 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{Mutex, watch};
 use tracing::{debug, error, info};
 
-use crate::apply::{profile_to_picker_config, run_per_monitor_apply, run_span_apply};
+use crate::apply::{
+    profile_to_picker_config, run_immediate_set, run_per_monitor_apply, run_span_apply,
+};
 use crate::state::DaemonState;
 
 /// Runs until the socket encounters a fatal error. Spawns a task per connection.
@@ -92,6 +95,7 @@ async fn dispatch(
     timer_tx: watch::Sender<Option<Duration>>,
 ) -> IpcResponse {
     match req.method.as_str() {
+        "set" => cmd_set(req, state).await,
         "apply_profile" => cmd_apply_profile(req, state, timer_tx).await,
         "slideshow_next" => cmd_slideshow_advance(state, timer_tx, false).await,
         "slideshow_prev" => cmd_slideshow_prev(state).await,
@@ -99,6 +103,58 @@ async fn dispatch(
         "redetect" => cmd_redetect(state).await,
         "current_state" => cmd_current_state(state).await,
         other => IpcResponse::failure(format!("unknown method: {other}")),
+    }
+}
+
+async fn cmd_set(req: IpcRequest, state: Arc<Mutex<DaemonState>>) -> IpcResponse {
+    let image_path = match req.params.get("image").and_then(|v| v.as_str()) {
+        Some(s) => PathBuf::from(s),
+        None => return IpcResponse::failure("params.image (string) required"),
+    };
+    let bezel_h: f32 = req
+        .params
+        .get("bezel_h")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or(0.0_f32);
+    let bezel_v: f32 = req
+        .params
+        .get("bezel_v")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or(0.0_f32);
+    let fit: FitMode = req
+        .params
+        .get("fit")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+
+    let (monitors, backend_kind, custom_cmd) = {
+        let guard = state.lock().await;
+        (
+            guard.monitors.clone(),
+            guard.config.backend.prefer,
+            guard.config.backend.custom_command.clone(),
+        )
+    };
+    let bezels = BezelConfig {
+        horizontal_mm: bezel_h,
+        vertical_mm: bezel_v,
+    };
+
+    let report = tokio::task::spawn_blocking(move || {
+        run_immediate_set(
+            &image_path,
+            &monitors,
+            bezels,
+            fit,
+            backend_kind,
+            &custom_cmd,
+        )
+    })
+    .await;
+    match report {
+        Ok(Ok(r)) => IpcResponse::success(applied_json(&r)),
+        Ok(Err(e)) => IpcResponse::failure(e.to_string()),
+        Err(e) => IpcResponse::failure(format!("task panic: {e}")),
     }
 }
 

@@ -1,14 +1,15 @@
 //! `superpanels set` subcommand: end-to-end apply pipeline (`SPEC.md` §11.1).
 
 use std::io::Write as _;
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, bail};
 use serde_json::{Value, json};
-use superpanels_core::backends::{KdeBackend, WallpaperBackend};
-use superpanels_core::config::Config;
+use superpanels_core::backends::{WallpaperBackend, detect_backend};
+use superpanels_core::config::{BackendKind, Config};
 use superpanels_core::detect;
-use superpanels_core::display::{Availability, Monitor, MonitorRef};
+use superpanels_core::display::{Monitor, MonitorRef};
 use superpanels_core::image::{
     FitMode as ImageFitMode, clear_temp_dir, crop, load, rotate, save_temp, scale_to_fit,
 };
@@ -34,6 +35,38 @@ pub(crate) struct SetArgs {
     pub dry_run: bool,
 }
 
+/// Forward `set` args to the daemon via `stream` and print the result.
+pub(crate) fn run_via_ipc(args: &SetArgs, stream: &mut UnixStream) -> Result<()> {
+    let params = json!({
+        "image": args.image,
+        "bezel_h": args.bezel_h.unwrap_or(0.0_f32),
+        "bezel_v": args.bezel_v.unwrap_or(0.0_f32),
+        "fit": args.fit,
+    });
+    let resp = crate::ipc_client::call(stream, "set", params)?;
+    if !resp.is_ok() {
+        bail!(
+            "{}",
+            resp.error.as_deref().unwrap_or("daemon returned error")
+        );
+    }
+    let r = resp.result.unwrap_or_default();
+    let backend = r.get("backend").and_then(|v| v.as_str()).unwrap_or("?");
+    let n = r
+        .get("monitors_set")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    let ms = r
+        .get("elapsed_ms")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    println!(
+        "Set wallpaper on {n} monitor{s} via {backend} in {ms}ms",
+        s = if n == 1 { "" } else { "s" },
+    );
+    Ok(())
+}
+
 pub(crate) fn run(
     args: &SetArgs,
     config_path: Option<&Path>,
@@ -41,18 +74,18 @@ pub(crate) fn run(
 ) -> Result<()> {
     if !args.extra_images.is_empty() {
         bail!(
-            "multiple-image `set` (one per monitor) is not yet supported in Phase 1; \
+            "multiple-image `set` (one per monitor) is not yet supported; \
              see PLAN.md §2"
         );
     }
     if !args.pins.is_empty() {
         bail!(
-            "`--monitor NAME=PATH` per-monitor pinning is not yet supported in Phase 1; \
+            "`--monitor NAME=PATH` per-monitor pinning is not yet supported; \
              see PLAN.md §2"
         );
     }
     if args.offset.is_some() {
-        info!("--offset is accepted but not yet honoured in Phase 1");
+        info!("--offset accepted but not yet honoured");
     }
 
     let cfg = load_config(config_path)?;
@@ -73,7 +106,7 @@ pub(crate) fn run(
 
     let backend: Box<dyn WallpaperBackend> = match backend_override {
         Some(b) => b,
-        None => pick_backend(args.backend.as_deref())?,
+        None => pick_backend(args.backend.as_deref(), &cfg)?,
     };
 
     clear_temp_dir()?;
@@ -114,31 +147,14 @@ fn resolve_bezels(args: &SetArgs) -> BezelConfig {
     }
 }
 
-fn pick_backend(requested: Option<&str>) -> Result<Box<dyn WallpaperBackend>> {
-    match requested {
-        None | Some("kde" | "auto") => {
-            let kde = KdeBackend::new();
-            match kde.availability() {
-                Availability::Available => Ok(Box::new(kde)),
-                other => Err(anyhow!(BackendUnavailable {
-                    backend: "kde",
-                    detail: format!("{other:?}"),
-                })),
-            }
-        }
-        Some(other) => bail!(
-            "backend `{other}` is not implemented in Phase 1 (only `kde`); \
-             see PLAN.md §2.1"
-        ),
-    }
-}
-
-/// `main` downcasts on this to map to exit code 4.
-#[derive(Debug, thiserror::Error)]
-#[error("backend `{backend}` is not available: {detail}")]
-pub(crate) struct BackendUnavailable {
-    pub(crate) backend: &'static str,
-    pub(crate) detail: String,
+fn pick_backend(requested: Option<&str>, cfg: &Config) -> Result<Box<dyn WallpaperBackend>> {
+    let kind = match requested {
+        None => cfg.backend.prefer,
+        Some(s) => s
+            .parse::<BackendKind>()
+            .map_err(|e| anyhow::anyhow!("unknown backend `{s}`: {e}"))?,
+    };
+    Ok(detect_backend(kind, &cfg.backend.custom_command))
 }
 
 fn print_dry_run(
@@ -213,7 +229,7 @@ fn monitor_for_spec<'a>(monitors: &'a [Monitor], spec: &CropSpec) -> Result<&'a 
         .iter()
         .find(|m| m.id == spec.monitor_id)
         .ok_or_else(|| {
-            anyhow!(
+            anyhow::anyhow!(
                 "crop spec references unknown monitor id {:?}",
                 spec.monitor_id
             )
@@ -439,14 +455,16 @@ mod tests {
 
     #[test]
     fn pick_backend_rejects_unknown_name() {
+        // Arrange
+        let cfg = superpanels_core::config::Config::default();
+
         // Act
-        let result = pick_backend(Some("gnome"));
+        let result = pick_backend(Some("unicorn"), &cfg);
 
         // Assert
         let Err(err) = result else {
             panic!("expected Err for unknown backend, got Ok");
         };
-        let msg = err.to_string();
-        assert!(msg.contains("not implemented"), "msg was {msg}");
+        assert!(err.to_string().contains("unknown backend"), "msg was {err}");
     }
 }

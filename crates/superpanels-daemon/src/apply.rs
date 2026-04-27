@@ -58,7 +58,19 @@ pub(crate) fn run_span_apply(
         ProfileBody::Span(s) => s.fit,
         ProfileBody::PerMonitor(pm) => pm.fit,
     };
+    run_immediate_set(image_path, monitors, bezels, fit, backend_kind, custom_cmd)
+}
 
+/// Apply a single image immediately without a profile context (used by the
+/// `set` IPC command). Designed to run inside `tokio::task::spawn_blocking`.
+pub(crate) fn run_immediate_set(
+    image_path: &Path,
+    monitors: &[Monitor],
+    bezels: superpanels_core::layout::BezelConfig,
+    fit: FitMode,
+    backend_kind: BackendKind,
+    custom_cmd: &str,
+) -> Result<AppliedReport> {
     let source =
         load(image_path).with_context(|| format!("loading image {}", image_path.display()))?;
     let image_size = (source.width(), source.height());
