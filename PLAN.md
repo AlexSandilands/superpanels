@@ -199,22 +199,22 @@ This validates: the parser is feasible; physical-mm data is actually present; th
 - [x] Auto-detection ordering per SPEC §10.2; pinning via config.
 
 ### 2.2 Additional detectors
-- [ ] `WlrRandrDetector` parsing `wlr-randr --json`.
-- [ ] `HyprctlDetector` parsing `hyprctl monitors -j`.
-- [ ] `XrandrDetector` parsing `xrandr --verbose` for X11. Physical-mm extraction.
+- [x] `WlrRandrDetector` parsing `wlr-randr --json`.
+- [x] `HyprctlDetector` parsing `hyprctl monitors -j`.
+- [x] `XrandrDetector` parsing `xrandr --verbose` for X11. Physical-mm extraction.
 
 ### 2.3 `slideshow.rs`
-- [ ] `SlideshowConfig` per SPEC §9.2.
-- [ ] Picker: respects `sort`, `recent_history_size`, `ImageFilters`.
-- [ ] State persisted to `$XDG_STATE_HOME/superpanels/state.json` (history, current index, paused).
-- [ ] Skip-on-unavailable handling.
-- [ ] Tests: a fake clock + a fake folder source proves rotation, history suppression, and resume-after-restart.
+- [x] `SlideshowConfig` per SPEC §9.2.
+- [x] Picker: respects `sort`, `recent_history_size`, `ImageFilters`.
+- [x] State persisted to `$XDG_STATE_HOME/superpanels/state.json` (history, current index, paused).
+- [x] Skip-on-unavailable handling.
+- [x] Tests: a fake clock + a fake folder source proves rotation, history suppression, and resume-after-restart.
 
 ### 2.4 Folder source & `library.rs` (lite)
-- [ ] Folder scanning (recursive flag) producing `Vec<LibraryEntry>` with resolution, aspect ratio, mtime.
-- [ ] `notify`-backed FS watch on configured roots; incremental index updates.
-- [ ] Rayon-parallel initial scan with a progress callback (for the GUI to consume later).
-- [ ] No SQLite yet — flat in-memory index serialised to its own file at `$XDG_STATE_HOME/superpanels/library-index.json`. **Not** mixed into `state.json` (different write cadence, different migration concerns; the library index is rebuildable from disk while `state.json` is not). SQLite replaces this in Phase 4b with tags.
+- [x] Folder scanning (recursive flag) producing `Vec<LibraryEntry>` with resolution, aspect ratio, mtime.
+- [x] `notify`-backed FS watch on configured roots; incremental index updates.
+- [x] Rayon-parallel initial scan with a progress callback (for the GUI to consume later).
+- [x] No SQLite yet — flat in-memory index serialised to its own file at `$XDG_STATE_HOME/superpanels/library-index.json`. **Not** mixed into `state.json` (different write cadence, different migration concerns; the library index is rebuildable from disk while `state.json` is not). SQLite replaces this in Phase 4b with tags.
 
 ### 2.5 `daemon/` binary
 - [ ] `superpanels daemon [--foreground]`.
