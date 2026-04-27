@@ -254,10 +254,11 @@ mod tests {
 
     #[test]
     fn downscale_scales_long_edge_to_cap() {
-        let canvas = RgbaImage::new(16384, 4096);
-        let out = downscale_if_needed(canvas, 8192);
-        assert_eq!(out.width(), 8192);
-        assert_eq!(out.height(), 2048);
+        // Use small dimensions (same 4:1 ratio) — verifies the math, not allocation size.
+        let canvas = RgbaImage::new(128, 32);
+        let out = downscale_if_needed(canvas, 64);
+        assert_eq!(out.width(), 64);
+        assert_eq!(out.height(), 16);
     }
 
     #[test]

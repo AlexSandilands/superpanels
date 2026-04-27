@@ -166,7 +166,8 @@ pub(crate) fn export_cmd(
     let text = toml::to_string(&bundle).context("serialising profile bundle")?;
     match output {
         Some(path) => {
-            std::fs::write(path, &text).with_context(|| format!("writing to {}", path.display()))?
+            std::fs::write(path, &text)
+                .with_context(|| format!("writing to {}", path.display()))?;
         }
         None => print!("{text}"),
     }
