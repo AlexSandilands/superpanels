@@ -18,6 +18,15 @@ The spec and plan are split into per-section files to keep token usage low. **Do
 
 Code comments and other docs reference the spec by section (e.g. `SPEC.md §6.4`). The number is the file: `§6` → `docs/spec/06-detection.md`, `§14.1` → `docs/spec/14-config-state.md`. The same applies to plan phases: `PLAN.md` Phase 2.5 → `docs/plan/phase-2-multi-backend.md` (§2.5 within it). The legacy `SPEC.md` and `PLAN.md` files are stub redirects only — don't read them.
 
+## MCP context tools — check first, prefer over raw file reads
+
+At session start, check whether the `jcodemunch` and `jdocmunch` MCP servers are connected. When available, prefer them for repo context — they return targeted slices instead of whole files, which keeps the working set small.
+
+- **`jcodemunch`** — code: structure, symbols, references, importers, call hierarchies, blast radius. Use before any non-trivial refactor or impact analysis, and to fetch only the relevant code instead of reading whole files.
+- **`jdocmunch`** — docs in `docs/`: section search, "is this already documented?", and finding which sections need updating after a code change.
+
+**Rule of thumb:** before a significant refactor or structural change, query `jcodemunch` for affected code and `jdocmunch` for affected docs. Fall back to `Read` / `grep` only when MCP is unavailable or the query is too narrow to benefit.
+
 ## Stack
 
 Rust workspace: `crates/superpanels-{core,cli,daemon,gui}`. **Core is pure logic** — no UI, no IPC, no runtime construction. CLI / daemon / GUI are thin wrappers around core.
