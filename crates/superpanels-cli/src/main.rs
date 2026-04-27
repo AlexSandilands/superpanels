@@ -84,6 +84,9 @@ enum Command {
         /// Process image but don't apply; print what would happen.
         #[arg(long)]
         dry_run: bool,
+        /// Save the current settings as a named profile before applying.
+        #[arg(long, value_name = "NAME")]
+        save_as: Option<String>,
     },
     /// Advance the slideshow to the next wallpaper (requires a running daemon).
     Next,
@@ -295,6 +298,7 @@ fn run(cli: &Cli) -> Result<()> {
             monitors,
             monitor,
             dry_run,
+            save_as,
         } => {
             let mut images = images.clone();
             let first = images.remove(0);
@@ -309,11 +313,12 @@ fn run(cli: &Cli) -> Result<()> {
                 monitors: monitors.clone(),
                 pins: monitor.clone(),
                 dry_run: *dry_run,
+                save_as: save_as.clone(),
             };
             // Forward to daemon unless dry-run, manual --monitors, or --no-daemon.
             if !dry_run && monitors.is_none() && !cli.no_daemon {
                 if let Some(mut stream) = try_ipc() {
-                    return set_cmd::run_via_ipc(&args, &mut stream);
+                    return set_cmd::run_via_ipc(&args, cli.config.as_deref(), &mut stream);
                 }
             }
             set_cmd::run(&args, cli.config.as_deref(), None)

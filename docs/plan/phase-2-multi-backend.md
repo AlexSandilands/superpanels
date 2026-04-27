@@ -49,14 +49,14 @@
 - [x] `superpanels profile apply` / `list` / `delete` / `rename` / `export` / `import`.
 
 ## 2.7 Schedules
-- [ ] `Schedule::Daily { at, profile }` (timezone: system local).
-- [ ] `Schedule::Sunset { offset, profile }` — uses a small algorithmic sunrise/sunset crate; lat/long configured manually (no IP geolocation).
-- [ ] `Schedule::Cron(expr)` — `cron`-crate parsing.
-- [ ] Daemon evaluates schedules on a 60-second tick.
-- [ ] Tests: a fake clock + a fake config drives every schedule kind.
+- [x] `Schedule::Daily { at, profile }` (timezone: system local).
+- [x] `Schedule::Sunset { offset, profile }` — uses a small algorithmic sunrise/sunset crate; lat/long configured manually (no IP geolocation).
+- [x] `Schedule::Cron(expr)` — `cron`-crate parsing.
+- [x] Daemon evaluates schedules on a 60-second tick.
+- [x] Tests: a fake clock + a fake config drives every schedule kind.
 
 ## 2.8 Save-as profile
-- [ ] `superpanels set --save-as NAME [...args]` writes a profile and applies it.
+- [x] `superpanels set --save-as NAME [...args]` writes a profile and applies it.
 
 **Risks for this phase.**
 - Hyprland's `hyprctl` JSON shape changes between minor versions. Track latest stable; capture multi-version fixtures.

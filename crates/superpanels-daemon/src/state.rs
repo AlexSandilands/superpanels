@@ -12,6 +12,8 @@ use superpanels_core::slideshow::{SlideshowPicker, load_state};
 use superpanels_core::{detect, ipc};
 use tracing::{debug, info, warn};
 
+use crate::schedule::ScheduleChecker;
+
 pub(crate) struct DaemonState {
     pub config: Config,
     pub monitors: Vec<Monitor>,
@@ -21,6 +23,7 @@ pub(crate) struct DaemonState {
     /// active profile has no slideshow source.
     pub slideshow_picker: Option<SlideshowPicker>,
     pub last_apply_unix_secs: Option<u64>,
+    pub schedule_checker: ScheduleChecker,
 }
 
 impl DaemonState {
@@ -46,6 +49,7 @@ impl DaemonState {
             active_profile: None,
             slideshow_picker: None,
             last_apply_unix_secs: None,
+            schedule_checker: ScheduleChecker::new(),
         })
     }
 

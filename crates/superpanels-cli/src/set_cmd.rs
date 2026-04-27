@@ -4,10 +4,12 @@ use std::io::Write as _;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 use superpanels_core::backends::{WallpaperBackend, detect_backend};
-use superpanels_core::config::{BackendKind, Config};
+use superpanels_core::config::{
+    BackendKind, Config, Profile, ProfileBody, SpanProfile, SpanSource,
+};
 use superpanels_core::detect;
 use superpanels_core::display::{Monitor, MonitorRef};
 use superpanels_core::image::{
@@ -33,10 +35,20 @@ pub(crate) struct SetArgs {
     /// `--monitor DP-1=PATH` pins. Phase 2 feature; rejected here.
     pub pins: Vec<String>,
     pub dry_run: bool,
+    /// Write the current args as a named profile before applying.
+    pub save_as: Option<String>,
 }
 
 /// Forward `set` args to the daemon via `stream` and print the result.
-pub(crate) fn run_via_ipc(args: &SetArgs, stream: &mut UnixStream) -> Result<()> {
+/// `config_path` is used only when `--save-as` is provided.
+pub(crate) fn run_via_ipc(
+    args: &SetArgs,
+    config_path: Option<&Path>,
+    stream: &mut UnixStream,
+) -> Result<()> {
+    if let Some(ref name) = args.save_as {
+        save_profile(args, name, config_path)?;
+    }
     let params = json!({
         "image": args.image,
         "bezel_h": args.bezel_h.unwrap_or(0.0_f32),
@@ -72,6 +84,10 @@ pub(crate) fn run(
     config_path: Option<&Path>,
     backend_override: Option<Box<dyn WallpaperBackend>>,
 ) -> Result<()> {
+    if let Some(ref name) = args.save_as {
+        save_profile(args, name, config_path)?;
+    }
+
     if !args.extra_images.is_empty() {
         bail!(
             "multiple-image `set` (one per monitor) is not yet supported; \
@@ -155,6 +171,54 @@ fn pick_backend(requested: Option<&str>, cfg: &Config) -> Result<Box<dyn Wallpap
             .map_err(|e| anyhow::anyhow!("unknown backend `{s}`: {e}"))?,
     };
     Ok(detect_backend(kind, &cfg.backend.custom_command))
+}
+
+/// Write (or overwrite) a profile named `name` built from `args` into the
+/// config file. The profile uses a `Single` span source pointing at the image.
+fn save_profile(args: &SetArgs, name: &str, config_path: Option<&Path>) -> Result<()> {
+    let cfg_path = match config_path {
+        Some(p) => p.to_owned(),
+        None => Config::default_path()?,
+    };
+    let mut cfg = Config::load_or_default_from(&cfg_path)?;
+
+    let backend_override = args
+        .backend
+        .as_deref()
+        .map(|s| {
+            s.parse::<BackendKind>()
+                .map_err(|e| anyhow::anyhow!("unknown backend `{s}`: {e}"))
+        })
+        .transpose()?;
+
+    let profile = Profile {
+        name: name.to_owned(),
+        body: ProfileBody::Span(SpanProfile {
+            source: SpanSource::Single {
+                path: args.image.clone(),
+            },
+            fit: args.fit,
+            offset: args.offset.map_or([0, 0], |(x, y)| [x, y]),
+        }),
+        bezels: BezelConfig {
+            horizontal_mm: args.bezel_h.unwrap_or(0.0),
+            vertical_mm: args.bezel_v.unwrap_or(0.0),
+        },
+        backend_override,
+        schedule: None,
+    };
+
+    // Upsert: replace existing profile with the same name, or append.
+    if let Some(existing) = cfg.profiles.iter_mut().find(|p| p.name == name) {
+        *existing = profile;
+    } else {
+        cfg.profiles.push(profile);
+    }
+    cfg.save_to(&cfg_path)
+        .with_context(|| format!("saving profile '{name}' to {}", cfg_path.display()))?;
+    info!(name, path = %cfg_path.display(), "saved profile");
+    println!("Saved profile '{name}'.");
+    Ok(())
 }
 
 fn print_dry_run(
@@ -262,6 +326,7 @@ fn sanitise_filename(name: &str) -> String {
 #[allow(clippy::panic)] // reason: panic on unexpected Result variant is the test failure
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
     fn sanitise_filename_replaces_path_separators() {
@@ -295,6 +360,7 @@ mod tests {
             monitors: None,
             pins: vec![],
             dry_run: false,
+            save_as: None,
         };
 
         // Act
@@ -319,6 +385,7 @@ mod tests {
             monitors: None,
             pins: vec![],
             dry_run: false,
+            save_as: None,
         };
 
         // Act
@@ -442,6 +509,7 @@ mod tests {
             monitors: Some("1920x1080+0+0?480x270".to_owned()),
             pins: vec![],
             dry_run: false,
+            save_as: None,
         };
 
         // Act
@@ -451,6 +519,44 @@ mod tests {
         if let Err(e) = result {
             panic!("pipeline failed: {e:#}");
         }
+    }
+
+    #[test]
+    fn save_as_writes_profile_to_config_then_removes_it() {
+        // Arrange
+        use superpanels_core::config::Config;
+
+        let dir = tempdir().unwrap();
+        let cfg_path = dir.path().join("config.toml");
+        std::fs::write(&cfg_path, "").unwrap();
+        let args = SetArgs {
+            image: dir.path().join("w.jpg"),
+            extra_images: vec![],
+            bezel_h: Some(8.0),
+            bezel_v: Some(5.0),
+            fit: LayoutFitMode::Fill,
+            offset: None,
+            backend: None,
+            monitors: None,
+            pins: vec![],
+            dry_run: false,
+            save_as: Some("my-profile".to_owned()),
+        };
+
+        // Act
+        save_profile(&args, "my-profile", Some(&cfg_path)).unwrap();
+
+        // Assert — profile was persisted
+        let cfg = Config::load_from(&cfg_path).unwrap();
+        assert_eq!(cfg.profiles.len(), 1);
+        let p = &cfg.profiles[0];
+        assert_eq!(p.name, "my-profile");
+        assert!((p.bezels.horizontal_mm - 8.0).abs() < f32::EPSILON);
+
+        // Act again — upsert overwrites
+        save_profile(&args, "my-profile", Some(&cfg_path)).unwrap();
+        let cfg2 = Config::load_from(&cfg_path).unwrap();
+        assert_eq!(cfg2.profiles.len(), 1, "upsert must not duplicate");
     }
 
     #[test]

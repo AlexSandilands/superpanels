@@ -22,6 +22,7 @@ use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
 mod apply;
+mod schedule;
 mod server;
 mod state;
 mod timer;
@@ -158,6 +159,10 @@ async fn run_daemon(cli: Cli) -> Result<()> {
 
     let watcher_state = Arc::clone(&state);
     tokio::spawn(async move { watcher::run_watcher(watcher_state, watcher_rx).await });
+
+    let sched_state = Arc::clone(&state);
+    let sched_timer_tx = timer_tx.clone();
+    tokio::spawn(async move { schedule::run_schedule_checker(sched_state, sched_timer_tx).await });
 
     // Apply the default profile (if set) after a short delay to allow compositor readiness.
     if let Some(profile_name) = initial_profile {

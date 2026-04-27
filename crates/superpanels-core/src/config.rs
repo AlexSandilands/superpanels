@@ -53,6 +53,9 @@ pub struct GeneralConfig {
     /// `"auto"` | `"light"` | `"dark"`.
     #[serde(default = "default_theme")]
     pub theme: String,
+    /// `[latitude, longitude]` in decimal degrees. Required for `Sunset` schedules.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lat_lon: Option<[f64; 2]>,
 }
 
 impl Default for GeneralConfig {
@@ -62,6 +65,7 @@ impl Default for GeneralConfig {
             autostart: false,
             notifications: default_notifications(),
             theme: default_theme(),
+            lat_lon: None,
         }
     }
 }
@@ -243,6 +247,7 @@ mod tests {
                 autostart: false,
                 notifications: "errors".to_owned(),
                 theme: "auto".to_owned(),
+                lat_lon: None,
             },
             backend: BackendConfig {
                 prefer: BackendKind::Auto,
