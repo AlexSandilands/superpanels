@@ -1,0 +1,33 @@
+[
+  {
+    "name": "DP-1",
+    "make": "Dell",
+    "model": "U2723QE",
+    "serial": "ABC1234567",
+    "physical_size": { "width": 597, "height": 336 },
+    "enabled": true,
+    "modes": [
+      { "width": 1920, "height": 1080, "refresh": 60.0, "preferred": false, "current": false },
+      { "width": 2560, "height": 1440, "refresh": 144.0, "preferred": true, "current": true }
+    ],
+    "position": { "x": 0, "y": 0 },
+    "transform": "normal",
+    "scale": 1.0,
+    "adaptive_sync": false
+  },
+  {
+    "name": "HDMI-A-1",
+    "make": "LG",
+    "model": "27GP850",
+    "serial": "XYZ9876543",
+    "physical_size": { "width": 597, "height": 336 },
+    "enabled": true,
+    "modes": [
+      { "width": 1920, "height": 1080, "refresh": 60.0, "preferred": true, "current": true }
+    ],
+    "position": { "x": 2560, "y": 0 },
+    "transform": "normal",
+    "scale": 1.0,
+    "adaptive_sync": false
+  }
+]

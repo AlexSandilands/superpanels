@@ -11,11 +11,16 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+pub mod hyprctl;
 pub mod kscreen;
 pub mod manual;
+mod stable_id;
+mod subprocess;
+pub mod wlr_randr;
 
 use kscreen::KscreenDoctorDetector;
 use manual::parse_manual_monitors;
+pub(crate) use subprocess::{run as run_subprocess, which};
 
 /// A physical display normalised into Superpanels' internal model.
 ///
