@@ -108,17 +108,43 @@ async fn run_daemon(cli: Cli) -> Result<()> {
     if let Some(parent) = sock_path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating socket directory {}", parent.display()))?;
-        // Best-effort chmod 0700; not fatal if it fails (e.g. /tmp on some systems).
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
+            // XDG_RUNTIME_DIR is already 0700 by spec; only the fallback
+            // /tmp/superpanels-$UID directory needs us to enforce 0700, and
+            // there a permission-set failure is fatal — the socket would be
+            // world-reachable on a multi-user host.
+            let in_xdg_runtime = std::env::var_os("XDG_RUNTIME_DIR")
+                .filter(|v| !v.is_empty())
+                .is_some_and(|v| sock_path.starts_with(std::path::PathBuf::from(v)));
+            let perms = std::fs::Permissions::from_mode(0o700);
+            if let Err(e) = std::fs::set_permissions(parent, perms) {
+                if in_xdg_runtime {
+                    warn!(
+                        dir = %parent.display(),
+                        error = %e,
+                        "could not chmod socket dir; trusting XDG_RUNTIME_DIR's own 0700"
+                    );
+                } else {
+                    return Err(anyhow::Error::from(e)
+                        .context(format!("setting 0700 on socket dir {}", parent.display())));
+                }
+            }
         }
     }
 
     let listener = bind_exclusive(&sock_path)
         .await
         .context("binding IPC socket")?;
+    // Restrict the socket file itself to 0600 so even if the parent dir
+    // becomes traversable the connect() is owner-only.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&sock_path, std::fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("setting 0600 on socket {}", sock_path.display()))?;
+    }
     info!(socket = %sock_path.display(), "daemon IPC socket bound");
 
     let mut daemon_state = DaemonState::load(cli.config.as_deref())?;

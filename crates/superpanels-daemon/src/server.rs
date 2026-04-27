@@ -493,10 +493,25 @@ fn applied_json(report: &AppliedReport) -> serde_json::Value {
 
 // --- frame I/O ---
 
+/// Hard cap on a single IPC frame body. Requests are tiny JSON objects;
+/// anything larger is treated as a hostile or malformed sender.
+pub(crate) const MAX_FRAME_BYTES: usize = 1024 * 1024;
+
 pub(crate) async fn read_frame(stream: &mut UnixStream) -> std::io::Result<Vec<u8>> {
     let mut len_buf = [0u8; 4];
     stream.read_exact(&mut len_buf).await?;
-    let len = u32::from_be_bytes(len_buf) as usize;
+    let len = usize::try_from(u32::from_be_bytes(len_buf)).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "frame length overflows usize",
+        )
+    })?;
+    if len > MAX_FRAME_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("frame length {len} exceeds {MAX_FRAME_BYTES}-byte cap"),
+        ));
+    }
     let mut body = vec![0u8; len];
     stream.read_exact(&mut body).await?;
     Ok(body)
@@ -509,4 +524,32 @@ pub(crate) async fn write_frame(stream: &mut UnixStream, data: &[u8]) -> std::io
     stream.write_all(&len.to_be_bytes()).await?;
     stream.write_all(data).await?;
     Ok(())
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)] // reason: tests fail loudly on harness errors
+mod tests {
+    use super::*;
+    use tokio::io::AsyncWriteExt;
+
+    #[tokio::test]
+    async fn read_frame_rejects_oversize_length_before_allocating() {
+        // Arrange — pair of streams; writer sends a hostile length prefix.
+        let (mut writer, mut reader) = UnixStream::pair().unwrap();
+        let oversize = u32::try_from(MAX_FRAME_BYTES + 1).unwrap();
+        writer.write_all(&oversize.to_be_bytes()).await.unwrap();
+        // Close the writer so the reader does not block waiting for body bytes.
+        drop(writer);
+
+        // Act
+        let result = read_frame(&mut reader).await;
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        assert!(
+            err.to_string().contains("exceeds"),
+            "unexpected error: {err}"
+        );
+    }
 }

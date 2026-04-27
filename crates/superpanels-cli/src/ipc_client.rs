@@ -13,6 +13,11 @@ use superpanels_core::ipc::{IpcRequest, IpcResponse, PROTOCOL_VERSION};
 
 const TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Hard cap on inbound frame bodies. Daemon responses are tiny JSON; larger
+/// frames signal a corrupt stream or hostile peer, and a `Vec` allocation of
+/// that size should not be attempted.
+const MAX_FRAME_BYTES: usize = 1024 * 1024;
+
 /// Try to connect to the daemon socket at `socket_path`.
 ///
 /// Returns `None` if the file doesn't exist or nothing is listening — this is
@@ -56,8 +61,15 @@ fn write_frame(stream: &mut UnixStream, data: &[u8]) -> Result<()> {
 fn read_frame(stream: &mut UnixStream) -> Result<Vec<u8>> {
     let mut len_buf = [0u8; 4];
     stream.read_exact(&mut len_buf)?;
-    // u32 always fits in usize on supported 32/64-bit Linux targets.
-    let len = u32::from_be_bytes(len_buf) as usize;
+    let len =
+        usize::try_from(u32::from_be_bytes(len_buf)).context("frame length overflows usize")?;
+    if len > MAX_FRAME_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("frame length {len} exceeds {MAX_FRAME_BYTES}-byte cap"),
+        )
+        .into());
+    }
     let mut body = vec![0u8; len];
     stream.read_exact(&mut body)?;
     Ok(body)
@@ -80,6 +92,27 @@ mod tests {
 
         // Assert
         assert_eq!(&got, payload);
+    }
+
+    #[test]
+    fn frame_with_oversize_length_is_rejected_before_allocation() {
+        // Arrange — write a hostile length prefix without any body bytes.
+        let (mut writer, mut reader) = UnixStream::pair().unwrap();
+        let oversize = u32::try_from(MAX_FRAME_BYTES + 1).unwrap();
+        writer.write_all(&oversize.to_be_bytes()).unwrap();
+        // Close writer to ensure the reader doesn't block on body bytes.
+        drop(writer);
+
+        // Act
+        let result = read_frame(&mut reader);
+
+        // Assert — InvalidData chained from io::Error.
+        let err = result.unwrap_err();
+        let chain = format!("{err:#}");
+        assert!(
+            chain.contains("exceeds") && chain.contains("cap"),
+            "unexpected error: {chain}"
+        );
     }
 
     #[test]
