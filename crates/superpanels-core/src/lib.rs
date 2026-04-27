@@ -10,6 +10,10 @@ pub mod display;
 pub mod image;
 pub mod layout;
 
+pub use backends::{
+    AppliedReport, BackendError, CustomBackend, FehBackend, GnomeBackend, HyprlandBackend,
+    KdeBackend, MockBackend, SwayBackend, UnavailableBackend, WallpaperBackend, detect_backend,
+};
 pub use config::{
     BackendConfig, BackendKind, Config, ConfigError, GeneralConfig, LibraryConfig, MonitorConfig,
     Profile,
