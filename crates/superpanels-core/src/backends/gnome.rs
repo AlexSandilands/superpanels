@@ -9,6 +9,7 @@ use image::{DynamicImage, GenericImageView, RgbaImage, imageops};
 use tracing::{debug, info};
 
 use crate::display::{Availability, MonitorRef};
+use crate::image::load as load_with_budget;
 
 use super::subprocess::{DEFAULT_TIMEOUT, run, which};
 use super::{AppliedReport, BackendError, WallpaperBackend};
@@ -107,7 +108,7 @@ pub(crate) fn composite_to_tempfile(
 ) -> Result<PathBuf, BackendError> {
     let mut decoded: Vec<DynamicImage> = Vec::with_capacity(assignments.len());
     for (_, path) in assignments {
-        let img = image::open(path).map_err(|e| {
+        let img = load_with_budget(path).map_err(|e| {
             BackendError::Encode(format!("could not decode crop `{}`: {e}", path.display()))
         })?;
         decoded.push(img);
@@ -271,5 +272,28 @@ mod tests {
     fn path_to_file_uri_prefixes_correctly() {
         let s = path_to_file_uri(Path::new("/walls/x.png"));
         assert_eq!(s, "file:///walls/x.png");
+    }
+
+    #[test]
+    fn composite_rejects_unreadable_input_with_encode_error() {
+        // Arrange — a non-image file is what the budget-aware loader sees
+        // when an over-budget image header is rejected; both surface as
+        // BackendError::Encode through the same path used by composite.
+        let dir = tempfile::tempdir().unwrap();
+        let bogus = dir.path().join("not-a-png.png");
+        std::fs::write(&bogus, b"not a png").unwrap();
+        let assignment = (
+            MonitorRef {
+                stable_id: "x-id".to_owned(),
+                name: "x".to_owned(),
+            },
+            bogus,
+        );
+
+        // Act
+        let err = composite_to_tempfile(&[assignment]).unwrap_err();
+
+        // Assert
+        assert!(matches!(err, BackendError::Encode(_)), "got: {err:?}");
     }
 }

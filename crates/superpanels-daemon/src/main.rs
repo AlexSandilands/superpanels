@@ -22,6 +22,7 @@ use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
 mod apply;
+mod pool;
 mod schedule;
 mod server;
 mod state;

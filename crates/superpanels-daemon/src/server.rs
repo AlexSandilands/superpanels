@@ -7,10 +7,9 @@ use std::time::Duration;
 use anyhow::Result;
 use serde_json::json;
 use superpanels_core::backends::AppliedReport;
-use superpanels_core::config::{ProfileBody, SpanSource};
+use superpanels_core::config::{ImageSet, ProfileBody, SpanSource};
 use superpanels_core::ipc::{IpcRequest, IpcResponse, PROTOCOL_VERSION};
 use superpanels_core::layout::{BezelConfig, FitMode};
-use superpanels_core::library::scan_folder;
 use superpanels_core::slideshow::SlideshowPicker;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
@@ -20,6 +19,7 @@ use tracing::{debug, error, info};
 use crate::apply::{
     profile_to_picker_config, run_immediate_set, run_per_monitor_apply, run_span_apply,
 };
+use crate::pool::{pool_from_cache, scan_blocking};
 use crate::state::DaemonState;
 
 /// Runs until the socket encounters a fatal error. Spawns a task per connection.
@@ -211,7 +211,9 @@ async fn cmd_apply_profile(
         ProfileBody::Span(span) => match &span.source {
             SpanSource::Single { path } => path.clone(),
             SpanSource::Slideshow { images, .. } => {
-                let pool = pool_for_image_set(images);
+                let Some(pool) = resolve_pool(&state, images).await else {
+                    return IpcResponse::failure("slideshow pool is empty");
+                };
                 let mut guard = state.lock().await;
                 init_picker_if_needed(&mut guard, &name);
                 match guard
@@ -258,8 +260,9 @@ async fn cmd_slideshow_advance(
 ) -> IpcResponse {
     use superpanels_core::config::SpanSource;
 
-    let (profile, monitors, backend_kind, custom_cmd, image_path) = {
-        let mut guard = state.lock().await;
+    // Snapshot the inputs we need without holding the lock across any blocking work.
+    let snapshot = {
+        let guard = state.lock().await;
         let Some(name) = guard.active_profile.clone() else {
             return IpcResponse::failure("no active profile");
         };
@@ -272,9 +275,9 @@ async fn cmd_slideshow_advance(
         else {
             return IpcResponse::failure("active profile no longer in config");
         };
-        let (images, _slideshow_cfg) = match &profile.body {
+        let images = match &profile.body {
             ProfileBody::Span(span) => match &span.source {
-                SpanSource::Slideshow { images, config } => (images.clone(), config.clone()),
+                SpanSource::Slideshow { images, .. } => images.clone(),
                 SpanSource::Single { .. } => {
                     return IpcResponse::failure("active profile has no slideshow");
                 }
@@ -283,15 +286,25 @@ async fn cmd_slideshow_advance(
                 return IpcResponse::failure("active profile has no slideshow");
             }
         };
-        let pool = pool_for_image_set(&images);
         let backend_kind = profile
             .backend_override
             .unwrap_or(guard.config.backend.prefer);
         let custom_cmd = guard.config.backend.custom_command.clone();
         let monitors = guard.monitors.clone();
+        (profile, monitors, backend_kind, custom_cmd, name, images)
+    };
+    let (profile, monitors, backend_kind, custom_cmd, name, images) = snapshot;
 
+    // Resolve the slideshow pool with the lock dropped.
+    let Some(pool) = resolve_pool(&state, &images).await else {
+        return IpcResponse::failure("slideshow pool is empty");
+    };
+
+    // Briefly re-acquire the lock to advance the picker.
+    let image_path = {
+        let mut guard = state.lock().await;
         init_picker_if_needed(&mut guard, &name);
-        let path = if is_prev {
+        if is_prev {
             guard
                 .slideshow_picker
                 .as_ref()
@@ -301,24 +314,15 @@ async fn cmd_slideshow_advance(
                 .slideshow_picker
                 .as_mut()
                 .and_then(|p| p.next(&pool).ok())
-        };
-        (profile, monitors, backend_kind, custom_cmd, path)
+        }
     };
 
     let Some(image_path) = image_path else {
         return IpcResponse::failure("slideshow pool is empty or no previous image");
     };
 
-    let profile_clone = profile.clone();
-    let monitors_clone = monitors.clone();
     let report = tokio::task::spawn_blocking(move || {
-        run_span_apply(
-            &image_path,
-            &monitors_clone,
-            &profile_clone,
-            backend_kind,
-            &custom_cmd,
-        )
+        run_span_apply(&image_path, &monitors, &profile, backend_kind, &custom_cmd)
     })
     .await;
     let report = match report {
@@ -327,7 +331,6 @@ async fn cmd_slideshow_advance(
         Err(e) => return IpcResponse::failure(format!("task panic: {e}")),
     };
 
-    let name = profile.name.clone();
     update_active_profile(&state, &name).await;
     // Reset timer so the interval counts from this manual advance.
     update_timer(&state, &timer_tx).await;
@@ -436,16 +439,40 @@ async fn cmd_current_state(state: Arc<Mutex<DaemonState>>) -> IpcResponse {
 
 // --- helpers ---
 
-fn pool_for_image_set(images: &superpanels_core::config::ImageSet) -> Vec<PathBuf> {
-    match images {
-        superpanels_core::config::ImageSet::Folder { path, recursive } => {
-            scan_folder(path, *recursive, |_| {})
-                .into_iter()
-                .map(|e| e.path)
-                .collect()
+/// Resolve `images` to a list of paths without holding `state` locked across
+/// any disk walk. Tries the cached library first; if that misses, runs
+/// `scan_folder` in `spawn_blocking` and updates the cache on completion.
+/// Returns `None` only when the resulting pool is empty.
+async fn resolve_pool(state: &Arc<Mutex<DaemonState>>, images: &ImageSet) -> Option<Vec<PathBuf>> {
+    // 1. Read cache under the lock and drop the guard.
+    let cached = {
+        let guard = state.lock().await;
+        pool_from_cache(images, &guard.library)
+    };
+    if let Some(pool) = cached {
+        if !pool.is_empty() {
+            return Some(pool);
         }
-        superpanels_core::config::ImageSet::Playlist { paths } => paths.clone(),
     }
+
+    // 2. Cache miss / empty — scan the disk with the lock dropped.
+    let images_clone = images.clone();
+    let scanned = match tokio::task::spawn_blocking(move || scan_blocking(&images_clone)).await {
+        Ok(p) => p,
+        Err(e) => {
+            error!(error = %e, "pool resolver task panicked");
+            return None;
+        }
+    };
+    if scanned.is_empty() {
+        return None;
+    }
+
+    // The persisted library cache is owned by the FS watcher / explicit
+    // rescans; we don't pollute it with thin shells from ad-hoc slideshow
+    // folders. Subsequent calls fall back to spawn_blocking the same way,
+    // which still costs nothing while the lock is dropped.
+    Some(scanned)
 }
 
 /// Initialise the slideshow picker for `profile_name` if it isn't already set.

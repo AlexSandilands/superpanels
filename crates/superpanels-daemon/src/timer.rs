@@ -1,17 +1,16 @@
 //! Slideshow timer task: fires `slideshow_tick` when the active profile has a
 //! slideshow and the timer is not paused.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 use superpanels_core::config::{ProfileBody, SpanSource};
-use superpanels_core::library::scan_folder;
 use tokio::sync::{Mutex, watch};
 use tokio::time::MissedTickBehavior;
 use tracing::{debug, info, warn};
 
 use crate::apply::run_span_apply;
+use crate::pool::{pool_from_cache, scan_blocking};
 use crate::state::DaemonState;
 
 /// Runs forever. Watches `ctrl_rx` for the active slideshow interval.
@@ -61,10 +60,10 @@ pub(crate) async fn run_timer(
 
 /// Pick and apply the next slideshow image for the active profile. Skips if
 /// the slideshow is paused or the pool is empty.
-async fn slideshow_tick(state: Arc<Mutex<DaemonState>>) {
-    // Collect everything needed from state under lock, then release.
-    let (profile, monitors, backend_kind, custom_cmd, image_path) = {
-        let mut guard = state.lock().await;
+pub(crate) async fn slideshow_tick(state: Arc<Mutex<DaemonState>>) {
+    // Snapshot inputs needed from state, plus try to serve the pool from cache.
+    let snapshot = {
+        let guard = state.lock().await;
 
         if guard
             .slideshow_picker
@@ -94,29 +93,47 @@ async fn slideshow_tick(state: Arc<Mutex<DaemonState>>) {
             },
             ProfileBody::PerMonitor(_) => return,
         };
-
-        let pool: Vec<PathBuf> = match &images {
-            superpanels_core::config::ImageSet::Folder { path, recursive } => {
-                scan_folder(path, *recursive, |_| {})
-                    .into_iter()
-                    .map(|e| e.path)
-                    .collect()
-            }
-            superpanels_core::config::ImageSet::Playlist { paths } => paths.clone(),
-        };
-
+        let cached_pool = pool_from_cache(&images, &guard.library);
         let backend_kind = profile
             .backend_override
             .unwrap_or(guard.config.backend.prefer);
         let custom_cmd = guard.config.backend.custom_command.clone();
         let monitors = guard.monitors.clone();
+        (
+            profile,
+            monitors,
+            backend_kind,
+            custom_cmd,
+            images,
+            cached_pool,
+        )
+    };
+    let (profile, monitors, backend_kind, custom_cmd, images, cached_pool) = snapshot;
 
-        let path = guard
+    // Resolve the pool with the lock dropped — scan_folder is Rayon-blocking
+    // work; holding state.lock() across it would stall every other handler.
+    let pool = match cached_pool {
+        Some(p) if !p.is_empty() => p,
+        _ => match tokio::task::spawn_blocking(move || scan_blocking(&images)).await {
+            Ok(p) if !p.is_empty() => p,
+            Ok(_) => {
+                warn!("slideshow tick: pool is empty");
+                return;
+            }
+            Err(e) => {
+                warn!(error = %e, "slideshow tick: pool resolver task panicked");
+                return;
+            }
+        },
+    };
+
+    // Briefly re-acquire the lock to advance the picker.
+    let image_path = {
+        let mut guard = state.lock().await;
+        guard
             .slideshow_picker
             .as_mut()
-            .and_then(|p| p.next(&pool).ok());
-
-        (profile, monitors, backend_kind, custom_cmd, path)
+            .and_then(|p| p.next(&pool).ok())
     };
 
     let Some(image_path) = image_path else {
