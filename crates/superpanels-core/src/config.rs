@@ -15,7 +15,10 @@ mod profile;
 mod validate;
 
 pub use monitor_edit::{MonitorEditError, MonitorIdentifier, diagonal_to_mm, write_monitor_block};
-pub use profile::{ImageSet, ProfileBody, Schedule, SlideshowConfig, SpanSource};
+pub use profile::{
+    ImageSet, PerMonitorAssignment, PerMonitorProfile, ProfileBody, Schedule, SlideshowConfig,
+    SlideshowSort, SlideshowStart, SpanProfile, SpanSource,
+};
 
 const APP_DIR: &str = "superpanels";
 const CONFIG_FILE: &str = "config.toml";

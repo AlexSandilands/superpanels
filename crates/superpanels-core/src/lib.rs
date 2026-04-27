@@ -6,6 +6,7 @@ pub mod backends;
 pub mod config;
 pub mod display;
 pub mod image;
+pub mod ipc;
 pub mod layout;
 pub mod library;
 pub mod slideshow;

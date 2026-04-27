@@ -217,13 +217,13 @@ This validates: the parser is feasible; physical-mm data is actually present; th
 - [x] No SQLite yet — flat in-memory index serialised to its own file at `$XDG_STATE_HOME/superpanels/library-index.json`. **Not** mixed into `state.json` (different write cadence, different migration concerns; the library index is rebuildable from disk while `state.json` is not). SQLite replaces this in Phase 4b with tags.
 
 ### 2.5 `daemon/` binary
-- [ ] `superpanels daemon [--foreground]`.
-- [ ] Single-instance lock at `$XDG_RUNTIME_DIR/superpanels/daemon.sock`.
-- [ ] IPC server (length-prefixed JSON) handling: `apply_profile`, `slideshow_next`, `slideshow_prev`, `slideshow_pause`, `redetect`, `current_state`.
-- [ ] Tokio runtime; slideshow timer via `tokio::time::interval`; cancel-safe.
-- [ ] FS watcher hooked to library updates.
-- [ ] Logout-friendly: traps `SIGTERM`, persists state, exits cleanly.
-- [ ] Optional systemd user unit file generated on demand: `superpanels daemon --install-unit`.
+- [x] `superpanels daemon [--foreground]`.
+- [x] Single-instance lock at `$XDG_RUNTIME_DIR/superpanels/daemon.sock`.
+- [x] IPC server (length-prefixed JSON) handling: `apply_profile`, `slideshow_next`, `slideshow_prev`, `slideshow_pause`, `redetect`, `current_state`.
+- [x] Tokio runtime; slideshow timer via `tokio::time::interval`; cancel-safe.
+- [x] FS watcher hooked to library updates.
+- [x] Logout-friendly: traps `SIGTERM`, persists state, exits cleanly.
+- [x] Optional systemd user unit file generated on demand: `superpanels daemon --install-unit`.
 
 ### 2.6 CLI ↔ daemon
 - [ ] `superpanels set` etc. detect a running daemon and forward via IPC.
