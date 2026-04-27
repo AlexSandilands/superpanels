@@ -33,6 +33,14 @@ Tooling: `cargo`, `rustfmt`, `clippy`, `cargo-deny`, `typos`, `pre-commit`, `pre
 - **Modules:** `module.rs` + `module/sub.rs` — never `module/mod.rs`.
 - **No `#[allow(...)]`** without an inline `// reason: ...` comment.
 - **Subprocesses:** `Command::arg()` per arg, never shell interpolation. Always with timeout + stderr capture.
+- **Comments earn their place.** Default to none. A comment is justified only when the *why* is non-obvious — a hidden constraint, an external-API quirk, a workaround, a spec cross-ref for math that pixel-thinking gets wrong. Do **not** write comments that restate the type, name, or signature.
+  - Module headers: one line, optional `SPEC.md §X` ref. No design essays.
+  - Public items: one-line summary. Add detail only when behavior is surprising.
+  - Field / enum-variant docs: omit unless the name is genuinely ambiguous.
+  - `# Errors`: list a variant only if its trigger isn't obvious from its name.
+  - `# Examples`: only for non-obvious usage (edge cases, gotchas). Skip "construct and read default" demos — `cargo test --doc` doesn't need filler.
+  - Inline: explain *why*, never *what*. If naming makes the *what* clear, the comment is noise.
+  - See `docs/style-rust.md` §Comments for examples of good vs. bad.
 
 ## Testing
 

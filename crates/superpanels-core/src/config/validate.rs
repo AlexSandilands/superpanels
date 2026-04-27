@@ -5,11 +5,7 @@ use std::path::Path;
 
 use super::{Config, ConfigError};
 
-/// Run every cross-field invariant against `cfg`.
-///
-/// Bails on the first failure so the caller gets a single, focused error
-/// message — TOML parsing already gives a single error per call, so we
-/// preserve that ergonomic.
+/// Bails on the first failure for a focused error message.
 pub(super) fn validate(cfg: &Config, path: &Path) -> Result<(), ConfigError> {
     validate_monitors(cfg, path)?;
     validate_profiles(cfg, path)?;

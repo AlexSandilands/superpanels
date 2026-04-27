@@ -1,8 +1,4 @@
 //! Internal helpers for [`super::compute_crop_specs`].
-//!
-//! The split is structural — the public API and data types live in
-//! `layout.rs`, the mm/px arithmetic and helpers live here — so each file
-//! stays under the 600-line hard limit (`docs/architecture.md`).
 
 use crate::display::{Monitor, MonitorRef, Rotation};
 
@@ -10,14 +6,9 @@ use super::{BezelConfig, FitMode, LayoutError, Rect};
 
 pub(super) const MM_PER_INCH: f64 = 25.4;
 
-/// Tolerance for sub-pixel floating-point error when collapsing values that
-/// should be exactly zero (e.g. an image origin computed from a self-cancelling
-/// product). Sized at one millionth of a pixel — well below any meaningful
-/// rounding effect on a u32 dimension.
+/// One millionth of a pixel — used to collapse self-cancelling products to zero.
 const FLOAT_PIXEL_EPSILON: f64 = 1e-6;
 
-/// Pre-flight checks: monitor list, missing/zero physical sizes, supported
-/// fit mode, non-zero image dims.
 pub(super) fn validate_inputs(
     monitors: &[Monitor],
     fit: FitMode,
@@ -71,26 +62,19 @@ pub(super) fn validate_inputs(
 
 /// Per-monitor data with rotation already applied.
 pub(super) struct EffectiveMonitor {
-    /// Width in mm with rotation applied (post-rotation).
     pub(super) width_mm: f64,
-    /// Height in mm with rotation applied.
     pub(super) height_mm: f64,
-    /// Pixel width post-rotation.
     pub(super) pixel_w: u32,
-    /// Pixel height post-rotation.
     pub(super) pixel_h: u32,
     /// Logical-pixel y-extent on the desktop, used for row grouping.
     pos_y: i64,
-    /// Logical-pixel y-extent (top-exclusive).
     pos_y_end: i64,
-    /// Logical-pixel x-origin, used for left-to-right ordering within a row.
     pos_x: i64,
 }
 
 impl EffectiveMonitor {
     pub(super) fn from_monitor(m: &Monitor) -> Self {
-        // Presence validated by `validate_inputs`; default to (1, 1)
-        // defensively so accidental misuse never divides by zero.
+        // Presence validated by `validate_inputs`; (1, 1) keeps us out of div-by-zero.
         let phys_mm = m.physical_size_mm.unwrap_or((1, 1));
         let res_px = m.resolution;
 
@@ -101,12 +85,8 @@ impl EffectiveMonitor {
 
         let pos_x = i64::from(m.position.0);
         let pos_y = i64::from(m.position.1);
-        // Logical pixels = post-rotation pixels divided by scale, rounded.
-        // Tiny mismatches don't affect overlap detection.
         let scale = if m.scale > 0.0 { m.scale } else { 1.0 };
         let logical_h_f = (f64::from(h_px) / scale).round_ties_even();
-        // f64::from(u32::MAX) is exactly representable; the bounded range
-        // makes the `as i64` cast lossless.
         let logical_h =
             if logical_h_f.is_finite() && (0.0..=f64::from(u32::MAX)).contains(&logical_h_f) {
                 #[allow(clippy::cast_possible_truncation)] // reason: range checked above
@@ -129,19 +109,12 @@ impl EffectiveMonitor {
     }
 
     pub(super) fn ppi(&self) -> f64 {
-        // One PPI per monitor: width-axis density. Pixel aspect and physical
-        // aspect agree by design on real panels (modulo mm being recorded as
-        // integers); using a single axis keeps canvas dimensions consistent
-        // with each monitor's own pixel count instead of inflating them by
-        // per-axis rounding noise.
+        // Width-axis density. Per-axis rounding noise would inflate canvas dims.
         f64::from(self.pixel_w) / (self.width_mm / MM_PER_INCH)
     }
 }
 
-/// Group monitors into rows by y-overlap of their logical-pixel extents.
-///
-/// Returns a `Vec<row>` where each row is a `Vec<usize>` of indices into
-/// `effs`, sorted top-to-bottom (rows) then left-to-right (within row).
+/// Group monitors into rows by y-overlap. Rows top-to-bottom, monitors left-to-right.
 pub(super) fn group_into_rows(effs: &[EffectiveMonitor]) -> Vec<Vec<usize>> {
     let mut order: Vec<usize> = (0..effs.len()).collect();
     order.sort_by_key(|&i| effs[i].pos_y);
@@ -175,7 +148,6 @@ pub(super) fn group_into_rows(effs: &[EffectiveMonitor]) -> Vec<Vec<usize>> {
     sorted_rows
 }
 
-/// Build a reverse index: monitor index → row index.
 pub(super) fn build_row_index(rows: &[Vec<usize>], n: usize) -> Vec<usize> {
     let mut idx = vec![0usize; n];
     for (r, row) in rows.iter().enumerate() {
@@ -186,8 +158,7 @@ pub(super) fn build_row_index(rows: &[Vec<usize>], n: usize) -> Vec<usize> {
     idx
 }
 
-/// Mm-space layout: per-monitor x-origin and per-row y-origin/height,
-/// plus the canvas extents. All fields are in millimetres.
+/// Mm-space layout (all fields in millimetres).
 #[allow(clippy::struct_field_names)] // reason: `_mm` makes units unambiguous in arithmetic
 pub(super) struct CanvasLayout {
     pub(super) x_origin_mm: Vec<f64>,
@@ -240,9 +211,8 @@ pub(super) fn compute_canvas_layout(
     }
 }
 
-/// Reference-PPI pixel dimensions of the canvas, both as floats (for the
-/// downstream src-mapping arithmetic) and as the rounded `u32` values that
-/// appear in error reports.
+/// Reference-PPI pixel dimensions of the canvas, as floats (for downstream
+/// src-mapping) and as rounded `u32`s (for error reports).
 #[allow(clippy::struct_field_names)] // reason: per-axis fields share width/height suffixes by design
 pub(super) struct CanvasPixels {
     pub(super) width_f: f64,
@@ -269,9 +239,8 @@ pub(super) fn compute_canvas_pixels(
     })
 }
 
-/// Linear mapping from canvas-pixel coordinates to source-image-pixel
-/// coordinates. Each axis has its own scale and origin so Stretch (axis-
-/// independent) and Fill (uniform cover, centered) are both expressible.
+/// Canvas-pixel → source-pixel mapping. Per-axis so Stretch (axis-independent)
+/// and Fill (uniform cover, centred) are both expressible.
 pub(super) struct SrcMapping {
     src_per_canvas: (f64, f64),
     src_origin: (f64, f64),
@@ -292,7 +261,6 @@ impl SrcMapping {
                 src_origin: (0.0, 0.0),
             }),
             FitMode::Fill => {
-                // Cover ratio: source image scaled by `s` covers the canvas.
                 let s_w = canvas.width_f / img_width;
                 let s_h = canvas.height_f / img_height;
                 let s = s_w.max(s_h);
@@ -340,13 +308,8 @@ impl SrcMapping {
     }
 }
 
-/// Convert a non-negative float pixel dimension to `u32`, returning
-/// [`LayoutError::ImageTooSmall`] if it is non-finite or out of range.
-///
-/// Tiny negative values (within `FLOAT_PIXEL_EPSILON`) are clamped to zero
-/// — they originate from arithmetic that should mathematically yield zero
-/// (e.g. `(image_w - image_w * scale * inv_scale) / 2`) but accumulates a
-/// sub-pixel rounding error.
+/// Tiny negatives within `FLOAT_PIXEL_EPSILON` clamp to zero — they come from
+/// self-cancelling products like `(image_w - image_w * scale * inv_scale) / 2`.
 fn float_to_u32(
     v: f64,
     image_w: u32,
@@ -376,8 +339,6 @@ fn float_to_u32(
         });
     }
     let rounded = v.round_ties_even();
-    // Bound to a range where the `as i64` cast is exact (any f64 outside
-    // [0.0, u32::MAX] is rejected as `ImageTooSmall`).
     if !(0.0..=f64::from(u32::MAX)).contains(&rounded) {
         return Err(LayoutError::ImageTooSmall {
             image_w,
@@ -396,8 +357,7 @@ fn float_to_u32(
     })
 }
 
-/// `float_to_u32` specialised to canvas dimensions where we don't yet know
-/// the canvas-px values themselves (the report prints `0` in that case).
+/// `float_to_u32` for canvas dimensions; the report prints `0` for canvas-px.
 fn mm_to_px_dim(v: f64, image_w: u32, image_h: u32) -> Result<u32, LayoutError> {
     float_to_u32(v, image_w, image_h, 0, 0)
 }

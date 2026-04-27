@@ -7,11 +7,7 @@ use super::MonitorConfig;
 
 const MM_PER_INCH: f64 = 25.4;
 
-/// Apply each `MonitorConfig` to whichever detected `Monitor` it matches.
-///
-/// Match priority: `stable_id` first, then `name`. Each config block is
-/// applied at most once, but multiple monitors may match the same block
-/// only if their `stable_id` collides — undefined hardware territory.
+/// Match priority: `stable_id` first, then `name`.
 pub(super) fn merge_monitor_config(blocks: &[MonitorConfig], monitors: &mut [Monitor]) {
     for block in blocks {
         let matched = monitors.iter_mut().find(|m| matches_block(block, m));

@@ -1,10 +1,4 @@
-//! X11 `feh` backend (`SPEC.md` §10.4).
-//!
-//! Runs `feh --bg-fill IMAGE1 IMAGE2 …` with one image per monitor in
-//! assignment order. `feh` itself composites the images across screens, so
-//! [`FehBackend::supports_per_monitor`] reports `false` even though the
-//! user provides per-monitor crops — Superpanels does the splitting, `feh`
-//! does the placement.
+//! X11 `feh` backend via `feh --bg-fill IMAGE…` (`SPEC.md` §10.4).
 
 use std::ffi::OsStr;
 use std::path::PathBuf;
@@ -20,14 +14,10 @@ use super::{AppliedReport, BackendError, WallpaperBackend};
 const NAME: &str = "feh";
 const TOOL: &str = "feh";
 
-/// `WallpaperBackend` for X11 sessions using `feh --bg-fill`.
-///
-/// Available only when `$DISPLAY` is set and `feh` is on `$PATH`.
 #[derive(Debug, Default)]
 pub struct FehBackend;
 
 impl FehBackend {
-    /// Construct a `FehBackend`.
     #[must_use]
     pub fn new() -> Self {
         Self
@@ -111,8 +101,7 @@ mod tests {
         // Arrange
         let backend = FehBackend::new();
 
-        // Act — empty assignments must short-circuit before the
-        // availability check, so this works even with no $DISPLAY.
+        // Act — must short-circuit before the availability check.
         let report = backend.apply(&[]).expect("empty apply is infallible");
 
         // Assert

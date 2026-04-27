@@ -1,8 +1,4 @@
-//! Initial config-file content written when the user has none yet.
-//!
-//! The text below is what `Config::load_or_default` writes to disk; it
-//! intentionally includes commented-out examples so users can flip them on
-//! without consulting the spec. Keep in sync with `SPEC.md` §14.1.
+//! Initial config-file content (`SPEC.md` §14.1).
 
 const DEFAULT_TOML: &str = "\
 # Superpanels configuration file. See SPEC.md §14.1 for the full schema.
@@ -35,8 +31,6 @@ auto_scan        = true
 # physical_mm = [597, 336]
 ";
 
-/// Default config text used by `Config::load_or_default` when the on-disk
-/// file is missing.
 pub(super) fn default_document() -> String {
     DEFAULT_TOML.to_owned()
 }

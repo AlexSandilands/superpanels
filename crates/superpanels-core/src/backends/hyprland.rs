@@ -1,10 +1,4 @@
-//! Hyprland backend (`SPEC.md` §10.4).
-//!
-//! For each `(monitor, image)` pair: `hyprctl hyprpaper preload PATH`
-//! followed by `hyprctl hyprpaper wallpaper "MONITOR,PATH"`. Requires
-//! `hyprpaper` to be running; if it isn't, [`HyprlandBackend::apply`]
-//! returns [`BackendError::Unavailable`] with the start command in the
-//! `reason` so the user can act on it.
+//! Hyprland backend via `hyprctl hyprpaper` (`SPEC.md` §10.4).
 
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
@@ -21,15 +15,10 @@ const NAME: &str = "hyprland";
 const TOOL: &str = "hyprctl";
 const START_HINT: &str = "start it with `hyprpaper &` (or via your hyprland.conf `exec-once`)";
 
-/// `WallpaperBackend` for Hyprland sessions via `hyprctl hyprpaper`.
-///
-/// Stateless. The `hyprpaper` daemon must already be running; this backend
-/// never starts it.
 #[derive(Debug, Default)]
 pub struct HyprlandBackend;
 
 impl HyprlandBackend {
-    /// Construct a `HyprlandBackend`.
     #[must_use]
     pub fn new() -> Self {
         Self
@@ -113,9 +102,6 @@ fn set_wallpaper(monitor: &MonitorRef, path: &std::path::Path) -> Result<(), Bac
         .map_err(map_unavailable_subprocess)
 }
 
-/// Build the `MONITOR,PATH` argument hyprpaper expects. The monitor name
-/// comes from a [`MonitorRef`] so it cannot contain a comma; even so we
-/// do not escape — this is hyprpaper's own format and we follow it literally.
 fn format_wallpaper_spec(monitor_name: &str, path: &std::path::Path) -> OsString {
     let mut out = OsString::new();
     out.push(monitor_name);
@@ -124,9 +110,7 @@ fn format_wallpaper_spec(monitor_name: &str, path: &std::path::Path) -> OsString
     out
 }
 
-/// Translate `Subprocess` failures from `hyprctl` whose stderr suggests
-/// hyprpaper is not running into [`BackendError::Unavailable`] with the
-/// start hint, so the user gets an actionable message.
+/// Promote "hyprpaper not running" stderr to `Unavailable` with a start hint.
 fn map_unavailable_subprocess(err: BackendError) -> BackendError {
     if let BackendError::Subprocess { stderr, .. } = &err
         && stderr_indicates_no_hyprpaper(stderr)

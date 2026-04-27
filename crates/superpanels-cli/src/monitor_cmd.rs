@@ -30,12 +30,6 @@ pub(crate) fn monitor_configure_cmd(
     Ok(())
 }
 
-/// Resolve the four valid `(--mm, --diagonal, --aspect)` combinations into
-/// a single `[w_mm, h_mm]` pair, or surface the user-facing error for an
-/// invalid combination.
-///
-/// Pure helper extracted from [`monitor_configure_cmd`] so each arm of the
-/// `match` is unit-testable without touching disk or env.
 pub(crate) fn resolve_physical_mm(
     mm: Option<&str>,
     diagonal: Option<&str>,
@@ -232,8 +226,7 @@ mod tests {
 
     #[test]
     fn resolve_physical_mm_arm_diagonal_and_aspect_returns_computed_pair() {
-        // Arrange — 27" 16:9 → ~597x336 mm; allow generous tolerance.
-        // Act
+        // Arrange + Act — 27" 16:9 → ~597x336 mm.
         let got = resolve_physical_mm(None, Some("27in"), Some("16:9")).unwrap();
 
         // Assert

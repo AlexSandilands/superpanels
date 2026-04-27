@@ -1,9 +1,6 @@
 #![forbid(unsafe_code)]
 
 //! Superpanels CLI entry point.
-//!
-//! Subcommand dispatch is the CLI's only job — every command body is a thin
-//! wrapper around `superpanels-core` (`docs/architecture.md`).
 
 // reason: the CLI is the program's user-facing surface; printing structured
 // output to stdout (plain table, JSON) is exactly its job.
@@ -46,9 +43,7 @@ struct Cli {
     /// Use an alternate config file instead of `$XDG_CONFIG_HOME/superpanels/config.toml`.
     #[arg(long, value_name = "PATH", global = true)]
     config: Option<PathBuf>,
-    /// Do not contact the running daemon; run in-process. (No-op in Phase 1
-    /// — the daemon arrives in Phase 2 — but accepted so scripts written
-    /// against the spec do not error.)
+    /// Do not contact the running daemon; run in-process. (No-op until Phase 2.)
     #[arg(long, global = true)]
     no_daemon: bool,
     #[command(subcommand)]
@@ -59,9 +54,7 @@ struct Cli {
 enum Command {
     /// Set wallpaper from one or more image paths (`SPEC.md` §11.1).
     Set {
-        /// One or more source image paths. Phase 1 supports a single image
-        /// (spanned across all monitors with bezel correction); multi-image
-        /// per-monitor mode arrives in Phase 2.
+        /// One or more source image paths. Phase 1 takes a single image.
         #[arg(value_name = "IMAGE", required = true, num_args = 1..)]
         images: Vec<PathBuf>,
         /// Horizontal gap between monitors (mm).
@@ -70,38 +63,32 @@ enum Command {
         /// Vertical gap between monitors (mm).
         #[arg(long, value_name = "MM")]
         bezel_v: Option<f32>,
-        /// How to fit the source image to the canvas.
         #[arg(long, value_enum, default_value_t = FitArg::Fill)]
         fit: FitArg,
-        /// Image offset within the canvas (signed pixels). Accepted in
-        /// Phase 1 but not yet honoured.
+        /// Accepted in Phase 1 but not yet honoured.
         #[arg(long, value_name = "X,Y", value_parser = parse_offset)]
         offset: Option<(i32, i32)>,
-        /// Override backend detection. Phase 1: only `kde` is implemented.
         #[arg(long, value_name = "NAME")]
         backend: Option<String>,
-        /// Manual monitor spec (see `SPEC.md` §6.2).
+        /// Manual monitor spec (`SPEC.md` §6.2).
         #[arg(long, value_name = "SPEC")]
         monitors: Option<String>,
-        /// Pin a specific image to a specific monitor. Repeatable. Phase 2
-        /// feature; Phase 1 returns a friendly "not yet supported".
+        /// Pin an image to a monitor. Phase 2 feature.
         #[arg(long = "monitor", value_name = "NAME=PATH", action = clap::ArgAction::Append)]
         monitor: Vec<String>,
-        /// Process the image but don't apply; print the computed crop
-        /// specs (and the resolved monitor / bezel context) as JSON.
+        /// Print computed crop specs as JSON; do not apply.
         #[arg(long)]
         dry_run: bool,
     },
     /// Print the detected monitor layout and exit.
     Detect {
-        /// Emit Vec<Monitor> as JSON instead of a human-readable table.
         #[arg(long)]
         json: bool,
         /// Print which detectors were tried and their availability reason.
         #[arg(long)]
         debug: bool,
     },
-    /// Print the resolved configuration as TOML (debug aid).
+    /// Print the resolved configuration as TOML.
     Config,
     /// Manage monitor-config blocks in `$XDG_CONFIG_HOME/superpanels/config.toml`.
     Monitor {
@@ -112,24 +99,19 @@ enum Command {
 
 #[derive(Subcommand, Debug)]
 enum MonitorAction {
-    /// Add or update a [[monitor]] block giving the named monitor its
-    /// physical millimetres. Existing comments and unrelated blocks are
-    /// preserved. Pass exactly one of `--mm` or `--diagonal`.
+    /// Add or update a [[monitor]] block. Pass exactly one of `--mm` or `--diagonal`.
     Configure {
-        /// Output name (`DP-1`) or stable id; the value chooses which
-        /// field the [[monitor]] block keys on.
+        /// Output name (`DP-1`) or stable id; flag below selects which.
         identifier: String,
-        /// Treat `IDENTIFIER` as a stable id (KDE per-output UUID, EDID
-        /// hash) instead of a name.
         #[arg(long)]
         stable_id: bool,
-        /// Direct mm: e.g. `597x336`.
+        /// Direct mm, e.g. `597x336`.
         #[arg(long, value_name = "WxH", conflicts_with_all = ["diagonal", "aspect"])]
         mm: Option<String>,
-        /// Panel diagonal, e.g. `27in` (`in` suffix optional).
+        /// Panel diagonal, e.g. `27in`.
         #[arg(long, value_name = "DIAGONAL", requires = "aspect")]
         diagonal: Option<String>,
-        /// Aspect ratio, e.g. `16:9`. Required with `--diagonal`.
+        /// Aspect ratio, e.g. `16:9`.
         #[arg(long, value_name = "W:H", requires = "diagonal")]
         aspect: Option<String>,
     },
@@ -178,8 +160,7 @@ fn main() -> ExitCode {
 }
 
 fn init_tracing(verbose: u8, quiet: bool) {
-    // RUST_LOG wins when set so the user can always force it. Otherwise,
-    // map the verbosity flags to a sensible default level per `SPEC.md` §11.
+    // RUST_LOG wins when set; otherwise map -v / --quiet to a level (`SPEC.md` §11).
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         let level = if quiet {
             "error"
@@ -198,13 +179,8 @@ fn init_tracing(verbose: u8, quiet: bool) {
         .try_init();
 }
 
-/// Map an `anyhow::Error` to its `SPEC.md` §11.6 exit code by inspecting
-/// the underlying typed error chain.
-///
-/// Clap argument errors (`ErrorKind::Format`, `MissingRequiredArgument`,
-/// …) never reach this function — clap handles them in `Cli::parse()` and
-/// exits with code 2 itself, matching `SPEC.md` §11.6 entry "2: Bad
-/// arguments".
+/// Map an `anyhow::Error` to its `SPEC.md` §11.6 exit code. Clap argument
+/// errors short-circuit in `Cli::parse()` and never reach here.
 fn map_exit_code(err: &anyhow::Error) -> u8 {
     for cause in err.chain() {
         if cause.is::<ConfigError>() {
@@ -217,10 +193,7 @@ fn map_exit_code(err: &anyhow::Error) -> u8 {
             return 5;
         }
         if cause.is::<LayoutError>() {
-            // PhysicalSizeMissing is the user-actionable case the brief
-            // calls out — it shares exit code 5 with detection failures
-            // because both indicate "we don't know the layout well enough
-            // to apply", and the user fixes both via `monitor configure`.
+            // Shares code 5 with detection: both mean "layout unknown; run `monitor configure`".
             return 5;
         }
         if cause.is::<ImageError>() {

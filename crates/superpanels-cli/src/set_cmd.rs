@@ -1,15 +1,4 @@
 //! `superpanels set` subcommand: end-to-end apply pipeline (`SPEC.md` §11.1).
-//!
-//! Carved out of `main.rs` to keep that file under the 600-line cap. The
-//! pipeline orchestrated here matches the brief in `PLAN.md` §1.7:
-//!
-//! 1. load config (or `--config PATH`) and merge per-monitor physical mm
-//!    into the detected layout,
-//! 2. compute crop specs in source-image pixel space,
-//! 3. on `--dry-run`, print specs as JSON and stop,
-//! 4. otherwise crop, resize-to-monitor-pixels, rotate, and save each slice
-//!    to the cleared temp dir,
-//! 5. dispatch the per-monitor temp files to the auto-selected backend.
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -28,39 +17,23 @@ use superpanels_core::layout::{
 };
 use tracing::{debug, info};
 
-/// All flags `superpanels set` accepts (`SPEC.md` §11.1, minus `--save-as`
-/// which is Phase 2).
 #[derive(Debug, Clone)]
 pub(crate) struct SetArgs {
-    /// First positional argument: the (only, in Phase 1) source image.
     pub image: PathBuf,
-    /// Extra positional images — accepted for forward-compat with the spec
-    /// but rejected with a friendly message in Phase 1.
+    /// Forward-compat with multi-image; rejected in Phase 1.
     pub extra_images: Vec<PathBuf>,
-    /// `--bezel-h MM` override.
     pub bezel_h: Option<f32>,
-    /// `--bezel-v MM` override.
     pub bezel_v: Option<f32>,
-    /// `--fit MODE`.
     pub fit: LayoutFitMode,
-    /// `--offset X,Y`. Accepted for spec compat; informational in Phase 1.
+    /// Accepted for spec compat; not yet honoured.
     pub offset: Option<(i32, i32)>,
-    /// `--backend NAME`. Only `"kde"` is meaningful in Phase 1.
     pub backend: Option<String>,
-    /// `--monitors SPEC`: pass-through to the manual override parser.
     pub monitors: Option<String>,
-    /// `--monitor DP-1=PATH` pin pairs. Phase 2 feature; rejected here.
+    /// `--monitor DP-1=PATH` pins. Phase 2 feature; rejected here.
     pub pins: Vec<String>,
-    /// `--dry-run`: print computed crop specs as JSON, skip apply.
     pub dry_run: bool,
 }
 
-/// Run the `set` pipeline.
-///
-/// # Errors
-///
-/// Bubbles every step's typed error up as `anyhow::Error`; `main` downcasts
-/// to map to the `SPEC.md` §11.6 exit code.
 pub(crate) fn run(
     args: &SetArgs,
     config_path: Option<&Path>,
@@ -108,8 +81,7 @@ pub(crate) fn run(
 
     let report = backend.apply(&assignments)?;
     let elapsed_ms = report.duration.as_millis();
-    // reason: u128 elapsed ms; u64::MAX ≈ 584 million years — saturation is
-    // lossless for any real wallpaper apply and is used only for the log field.
+    // u64::MAX ms ≈ 584 million years; saturation is lossless for any real apply.
     let elapsed_ms_log = u64::try_from(elapsed_ms).unwrap_or(u64::MAX);
     info!(
         backend = report.backend,
@@ -135,9 +107,7 @@ fn load_config(config_path: Option<&Path>) -> Result<Config> {
 }
 
 fn resolve_bezels(args: &SetArgs) -> BezelConfig {
-    // Phase 1 has no notion of an "active profile" yet (profile machinery
-    // arrives with PLAN §2.6). Until then, CLI flags are the only source of
-    // bezel mm; the default of zero matches the spec's §3.2 fallback.
+    // Phase 1: no profile machinery yet — CLI flags are the only source.
     BezelConfig {
         horizontal_mm: args.bezel_h.unwrap_or(0.0),
         vertical_mm: args.bezel_v.unwrap_or(0.0),
@@ -163,14 +133,11 @@ fn pick_backend(requested: Option<&str>) -> Result<Box<dyn WallpaperBackend>> {
     }
 }
 
-/// Marker error returned when the requested backend's `availability()` is
-/// not `Available`. `main` downcasts on this to map to exit code 4.
+/// `main` downcasts on this to map to exit code 4.
 #[derive(Debug, thiserror::Error)]
 #[error("backend `{backend}` is not available: {detail}")]
 pub(crate) struct BackendUnavailable {
-    /// Backend short name (`"kde"`).
     pub(crate) backend: &'static str,
-    /// Human-readable reason (the `Debug` of the `Availability` variant).
     pub(crate) detail: String,
 }
 
@@ -188,8 +155,6 @@ fn print_dry_run(
     Ok(())
 }
 
-/// Build the `--dry-run` JSON payload. Pure (no I/O) so the on-disk shape
-/// scripts will consume can be unit-tested directly.
 fn dry_run_payload(
     specs: &[CropSpec],
     monitors: &[Monitor],
@@ -220,19 +185,14 @@ fn render_per_monitor(
     for spec in specs {
         let monitor = monitor_for_spec(monitors, spec)?;
         let cropped = crop(source, spec.src_rect)?;
-        // The crop already matches the monitor's physical aspect, so a
-        // Stretch resize to dst_size is the right and only thing to do —
-        // any other fit would re-introduce letterboxing / re-cropping
-        // we've already done correctly upstream.
+        // Crop already matches the monitor's physical aspect — Stretch to dst_size
+        // avoids re-introducing letterboxing.
         let resized = scale_to_fit(&cropped, spec.dst_size, ImageFitMode::Stretch);
         let rotated = rotate(&resized, spec.rotation);
         let safe = sanitise_filename(&monitor.name);
-        // The `-{token}` suffix is a per-apply cache-buster: Plasma's
-        // org.kde.image plugin caches by URL, so re-writing the same path
-        // with new bytes does not trigger a redraw on a desktop that was
-        // already showing the previous slice. Giving each apply a unique
-        // filename forces the URL to change. `clear_temp_dir()` runs
-        // before this loop, so stale tokens never accumulate on disk.
+        // Per-apply cache-buster: Plasma's org.kde.image plugin caches by URL,
+        // so a unique filename per apply forces a redraw. `clear_temp_dir()`
+        // ran above so tokens don't accumulate.
         let filename = format!("{safe}-{token}.png");
         let path = save_temp(&rotated, &filename)?;
         debug!(monitor = %monitor.name, file = %path.display(), "set: wrote temp slice");
@@ -241,10 +201,7 @@ fn render_per_monitor(
     Ok(out)
 }
 
-/// Per-apply cache-buster token. Wall-clock nanos are monotonic enough at
-/// the granularity of a `set` call (you can't run the CLI twice in the
-/// same nanosecond), and they survive process restarts so a fresh process
-/// still produces a new value.
+/// Per-apply cache-buster token; wall-clock nanos.
 fn apply_token() -> u128 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -270,10 +227,8 @@ fn to_monitor_ref(m: &Monitor) -> MonitorRef {
     }
 }
 
-/// Replace any character that isn't `[A-Za-z0-9._-]` with `_` so the temp
-/// filename can't escape the temp dir or contain shell-meaningful bytes.
-/// `MonitorRef.name` strings come from compositor output, not user input,
-/// but defence in depth is cheap.
+/// Replace any non-`[A-Za-z0-9._-]` with `_`. Defence in depth — names come
+/// from compositor output, not user input.
 fn sanitise_filename(name: &str) -> String {
     name.chars()
         .map(|c| {
@@ -360,9 +315,7 @@ mod tests {
 
     #[test]
     fn dry_run_payload_serialises_both_physical_mm_branches() {
-        // Arrange — two monitors: one with physical mm set, one without, so
-        // the test pins both the `[w, h]` and the `null` branch of the
-        // payload that scripts consume.
+        // Arrange — pins both `[w, h]` and `null` branches of physical_mm.
         use superpanels_core::display::{MonitorId, Rotation};
         use superpanels_core::layout::{CropSpec, Rect};
 
@@ -414,8 +367,7 @@ mod tests {
         // Act
         let payload = dry_run_payload(&specs, &monitors, bezels, (3840, 2160));
 
-        // Assert — exact shape, including `physical_mm: null` for the second
-        // monitor.
+        // Assert
         let expected = serde_json::json!({
             "image_size": [3840, 2160],
             "bezels": { "horizontal_mm": 8.0, "vertical_mm": 5.0 },
@@ -450,20 +402,16 @@ mod tests {
 
     #[test]
     fn set_pipeline_with_mock_backend_runs_end_to_end() {
-        // Arrange — one-monitor manual spec with physical mm so
-        // compute_crop_specs can run; MockBackend avoids needing a KDE session.
+        // Arrange
         use image::{DynamicImage, RgbaImage};
         use superpanels_core::backends::MockBackend;
         use tempfile::tempdir;
 
         let dir = tempdir().unwrap();
         let img_path = dir.path().join("pano.png");
-        // Solid-colour image matching the monitor resolution.
         DynamicImage::ImageRgba8(RgbaImage::new(1920, 1080))
             .save(&img_path)
             .unwrap();
-        // Empty TOML deserialises to Config::default(); no [[monitor]] blocks
-        // needed because the manual spec carries physical mm directly.
         let cfg_path = dir.path().join("config.toml");
         std::fs::write(&cfg_path, "").unwrap();
 
@@ -475,7 +423,6 @@ mod tests {
             fit: LayoutFitMode::Fill,
             offset: None,
             backend: None,
-            // 1920x1080 at origin with 480x270 mm — enough for the pipeline.
             monitors: Some("1920x1080+0+0?480x270".to_owned()),
             pins: vec![],
             dry_run: false,
@@ -495,8 +442,7 @@ mod tests {
         // Act
         let result = pick_backend(Some("gnome"));
 
-        // Assert — `Box<dyn WallpaperBackend>` doesn't implement Debug so
-        // we can't unwrap_err; match on the error directly instead.
+        // Assert
         let Err(err) = result else {
             panic!("expected Err for unknown backend, got Ok");
         };

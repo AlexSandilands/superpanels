@@ -1,12 +1,5 @@
-//! Folder-driven library index (`SPEC.md` §7.1–7.2, PLAN.md §2.4).
-//!
-//! Stores a flat in-memory list of [`LibraryEntry`]s built by walking one or
-//! more roots in parallel via `rayon`. Tags / favourites / show counts live
-//! on each entry and are persisted to a single JSON file
-//! (`$XDG_STATE_HOME/superpanels/library-index.json`); a `notify`-backed
-//! [`FolderWatcher`] forwards FS events for the daemon to handle in Phase
-//! 2.5. `SQLite` arrives in Phase 4b — Phase 2 deliberately stays JSON-only
-//! per PLAN.md §2.4.
+//! Folder-driven library index (`SPEC.md` §7.1–7.2). JSON-only in Phase 2;
+//! `SQLite` lands in Phase 4b.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
@@ -18,79 +11,50 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::debug;
 
-/// Cached metadata for a single image found by [`scan_folder`].
-///
-/// Mirrors `SPEC.md` §7.1. `tags`, `favourite`, `last_shown` and
-/// `show_count` start empty / false / `None` / `0` and are mutated by the
-/// GUI / daemon as the user interacts with the library.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LibraryEntry {
-    /// Absolute path to the image file.
     pub path: PathBuf,
-    /// Pixel resolution `(width, height)` read via `image::image_dimensions`
-    /// — does not decode the full image.
+    /// `(width, height)` from `image::image_dimensions` — header read, not
+    /// a full decode.
     pub resolution: (u32, u32),
-    /// Aspect ratio `width / height`, cached for filter convenience.
     pub aspect_ratio: f32,
-    /// File size in bytes from `std::fs::metadata`.
     pub file_size: u64,
-    /// Last-modified time from the filesystem.
     pub modified: SystemTime,
-    /// User-applied free-text tags (`SPEC.md` §7.3).
     #[serde(default)]
     pub tags: Vec<String>,
-    /// User-applied favourite flag (the special boolean tag).
     #[serde(default)]
     pub favourite: bool,
-    /// Most recent time this entry was shown by the slideshow, or `None` if
-    /// it has never been shown.
     #[serde(default)]
     pub last_shown: Option<SystemTime>,
-    /// Cumulative number of times the entry has been shown.
     #[serde(default)]
     pub show_count: u32,
 }
 
 const SUPPORTED_EXTS: &[&str] = &["jpg", "jpeg", "png", "webp", "bmp", "tiff"];
 
-/// Errors raised by the library index API.
 #[derive(Debug, Error)]
 pub enum LibraryError {
-    /// The persisted index file existed but contained malformed JSON.
     #[error("library index at {path} is corrupt: {source}")]
     Corrupt {
-        /// Path that failed to parse.
         path: PathBuf,
-        /// Underlying serde error.
         #[source]
         source: serde_json::Error,
     },
-    /// I/O failure while reading or writing the index.
     #[error("library index I/O at {path}: {source}")]
     Io {
-        /// Path involved in the failed I/O.
         path: PathBuf,
-        /// Underlying error.
         #[source]
         source: std::io::Error,
     },
-    /// FS-watch setup failed (missing inotify, permissions, …).
     #[error("watcher setup failed: {0}")]
     Watch(#[from] notify::Error),
 }
 
-/// Walk `root` (recursively when `recursive` is `true`) and return a
-/// [`LibraryEntry`] for every supported image found.
-///
-/// Reads `image::image_dimensions` (header only — does not decode pixels)
-/// so 100k images scan in seconds. The closure `progress` is invoked
-/// periodically with the count of entries processed so far for GUI
-/// progress reporting; it must be `Send + Sync` because `rayon` calls it
-/// from worker threads.
-///
-/// Files with unsupported extensions are skipped silently (logged at
-/// `debug!`). Image header reads that fail are also skipped — a corrupt
-/// JPEG shouldn't crash the scan.
+/// Walk `root` and return a [`LibraryEntry`] per supported image. Uses
+/// header-only image reads via `rayon`, so 100k files scan in seconds.
+/// Unsupported extensions and unreadable files are skipped (logged at
+/// `debug!`) — a corrupt JPEG shouldn't crash the scan. `progress` is
+/// called from worker threads, hence `Send + Sync`.
 pub fn scan_folder(
     root: &Path,
     recursive: bool,
@@ -180,9 +144,8 @@ fn build_entry(path: &Path) -> Option<LibraryEntry> {
     })
 }
 
-/// Persist `entries` to `path` as JSON. The file is rewritten atomically:
-/// we serialise to `<path>.tmp` first then rename, so a crashing scan
-/// never leaves a half-written index in place.
+/// Persist `entries` as JSON. Writes via `<path>.tmp` then renames, so a
+/// crash mid-write never leaves a half-written index.
 pub fn persist_index(entries: &[LibraryEntry], path: &Path) -> Result<(), LibraryError> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|source| LibraryError::Io {
@@ -206,8 +169,7 @@ pub fn persist_index(entries: &[LibraryEntry], path: &Path) -> Result<(), Librar
     Ok(())
 }
 
-/// Read the persisted index back from `path`. Returns an empty `Vec` when
-/// the file is absent — a fresh install has no index until the first scan.
+/// Returns an empty `Vec` when `path` doesn't exist (fresh install).
 pub fn load_index(path: &Path) -> Result<Vec<LibraryEntry>, LibraryError> {
     if !path.exists() {
         return Ok(Vec::new());
@@ -224,22 +186,16 @@ pub fn load_index(path: &Path) -> Result<Vec<LibraryEntry>, LibraryError> {
     Ok(entries)
 }
 
-/// Thin wrapper around [`notify::RecommendedWatcher`] that forwards every
-/// raw FS event onto a channel.
-///
-/// The watcher does *not* update the index itself — the daemon (Phase 2.5)
-/// owns the debounce / coalesce logic. Splitting it this way keeps the
-/// core pure: tests can drive the channel directly without spinning up
-/// inotify.
+/// Forwards raw FS events onto a channel. Debounce / coalesce belongs to
+/// the daemon — keeping it out of here lets tests drive the channel
+/// directly without spinning up inotify.
 pub struct FolderWatcher {
     watcher: RecommendedWatcher,
     roots: Vec<PathBuf>,
 }
 
 impl FolderWatcher {
-    /// Create a watcher subscribed to every path in `roots`. Each root is
-    /// watched recursively. Events are sent on `tx`; the receiver lives in
-    /// the caller (typically the daemon's event loop).
+    /// Each root is watched recursively.
     pub fn new(roots: &[PathBuf], tx: Sender<notify::Event>) -> Result<Self, LibraryError> {
         let mut watcher =
             notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
@@ -256,21 +212,18 @@ impl FolderWatcher {
         })
     }
 
-    /// Add `path` to the watch set; recursive.
     pub fn watch(&mut self, path: &Path) -> Result<(), LibraryError> {
         self.watcher.watch(path, RecursiveMode::Recursive)?;
         self.roots.push(path.to_path_buf());
         Ok(())
     }
 
-    /// Remove `path` from the watch set. No-op if it wasn't being watched.
     pub fn unwatch(&mut self, path: &Path) -> Result<(), LibraryError> {
         self.watcher.unwatch(path)?;
         self.roots.retain(|r| r != path);
         Ok(())
     }
 
-    /// Currently-watched roots (read-only snapshot).
     pub fn roots(&self) -> &[PathBuf] {
         &self.roots
     }

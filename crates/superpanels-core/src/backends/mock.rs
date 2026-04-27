@@ -1,7 +1,4 @@
-//! In-memory `WallpaperBackend` for tests.
-//!
-//! Records every `apply` call so integration tests can assert that the
-//! pipeline handed the right `(MonitorRef, PathBuf)` pairs to the backend.
+//! Test-only `WallpaperBackend` that records every `apply` call.
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -11,39 +8,18 @@ use crate::display::{Availability, MonitorRef};
 
 use super::{AppliedReport, BackendError, WallpaperBackend};
 
-/// Test-only backend that records each `apply` call instead of touching a
-/// real desktop.
-///
-/// # Example
-///
-/// ```
-/// # use std::path::PathBuf;
-/// # use superpanels_core::backends::{MockBackend, WallpaperBackend};
-/// # use superpanels_core::display::MonitorRef;
-/// let backend = MockBackend::new();
-/// let pairs = vec![(
-///     MonitorRef { stable_id: "id".into(), name: "DP-1".into() },
-///     PathBuf::from("/tmp/x.png"),
-/// )];
-/// let report = backend.apply(&pairs)?;
-/// assert_eq!(report.monitors_set, 1);
-/// assert_eq!(backend.recorded().len(), 1);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
-/// ```
 #[derive(Debug, Default)]
 pub struct MockBackend {
     applied: Mutex<Vec<(MonitorRef, PathBuf)>>,
 }
 
 impl MockBackend {
-    /// Construct an empty `MockBackend`.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Snapshot the recorded `apply` calls. Tests typically assert on the
-    /// length / contents of this vector.
+    /// Snapshot of recorded `apply` calls.
     #[must_use]
     pub fn recorded(&self) -> Vec<(MonitorRef, PathBuf)> {
         // reason: poisoning would mean a previous test panicked while

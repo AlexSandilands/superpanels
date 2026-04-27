@@ -1,9 +1,4 @@
-//! Bezel-aware layout types and the [`compute_crop_specs`] entry point.
-//!
-//! Defines the foundational data types ([`BezelConfig`], [`Rect`], [`CropSpec`],
-//! [`FitMode`]) that describe how a source image maps onto a multi-monitor
-//! physical canvas, plus the [`compute_crop_specs`] algorithm (`SPEC.md` §4)
-//! and its [`LayoutError`] type.
+//! Bezel-aware layout (`SPEC.md` §4).
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -17,153 +12,77 @@ use algorithm::{
     group_into_rows, validate_inputs,
 };
 
-/// Physical gap sizes between adjacent screens, in millimetres.
-///
-/// Mirrors `SPEC.md` §3.2. The uniform `horizontal_mm` / `vertical_mm` pair
-/// covers the typical setup where every adjacency uses the same bezel.
+/// Uniform horizontal/vertical bezel gaps in millimetres.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct BezelConfig {
-    /// Uniform gap between any pair of horizontally adjacent monitors.
     pub horizontal_mm: f32,
-    /// Uniform gap between any pair of vertically adjacent monitors.
     pub vertical_mm: f32,
 }
 
-/// An axis-aligned pixel rectangle within a source image.
-///
-/// Coordinates and dimensions are in source-image pixels (`SPEC.md` §3.3).
+/// Source-image pixel rectangle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Rect {
-    /// Left edge, in source-image pixels.
     pub x: u32,
-    /// Top edge, in source-image pixels.
     pub y: u32,
-    /// Width, in source-image pixels.
     pub w: u32,
-    /// Height, in source-image pixels.
     pub h: u32,
 }
 
-/// The slice of the source image that maps to one monitor, plus the
-/// per-monitor render parameters needed to produce its temp file.
-///
-/// Mirrors `SPEC.md` §3.3. One [`CropSpec`] is produced per monitor by the
-/// layout algorithm (`SPEC.md` §4).
+/// Per-monitor crop and render parameters.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CropSpec {
-    /// The runtime monitor this crop is for.
     pub monitor_id: MonitorId,
-    /// Source-image rectangle to crop.
     pub src_rect: Rect,
-    /// Target monitor pixel dimensions, post-rotation.
+    /// Post-rotation pixel dimensions of the saved image.
     pub dst_size: (u32, u32),
-    /// Rotation applied during render so the saved file is right-side-up
-    /// (see `SPEC.md` §4.3).
     pub rotation: Rotation,
-    /// Fit mode used when choosing `src_rect`. Informational; useful to the
-    /// GUI for reflecting the user's choice.
     pub fit: FitMode,
 }
 
-/// How a source image is fit to the physical desktop canvas.
-///
-/// Mirrors `SPEC.md` §3.4. The default is [`FitMode::Fill`], which matches
-/// the assumption used in the `SPEC.md` §4 worked example.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum FitMode {
-    /// Cover the canvas, cropping any overflow.
     #[default]
     Fill,
-    /// Fit the canvas, letterboxing any shortfall.
     Fit,
-    /// Stretch to the canvas, ignoring aspect ratio.
     Stretch,
-    /// Centre at native resolution, no scaling.
     Center,
 }
 
-/// Errors returned from the bezel-math entry point.
-///
-/// Mirrors `SPEC.md` §3 and §4.5. Each variant is something a caller can
-/// surface specifically (the CLI prints a hint, the GUI shows a dedicated
-/// toast) — flattening to a single string would lose that.
 #[derive(Debug, Error)]
 pub enum LayoutError {
-    /// `compute_crop_specs` was called with an empty monitor slice.
     #[error("monitor list cannot be empty")]
     EmptyMonitorList,
 
-    /// One or more monitors lack a configured `physical_size_mm`.
-    ///
     /// `kscreen-doctor` and most compositor CLIs do not expose physical mm,
-    /// so the user must declare it once via a `[[monitor]]` config block
-    /// (see `SPEC.md` §14.1).
+    /// so the user must declare it once via a `[[monitor]]` config block.
     #[error(
         "the following monitors are missing physical size; configure them with \
          `superpanels monitor configure <name>`: {monitors:?}"
     )]
-    PhysicalSizeMissing {
-        /// Monitors whose `physical_size_mm` is `None`.
-        monitors: Vec<MonitorRef>,
-    },
+    PhysicalSizeMissing { monitors: Vec<MonitorRef> },
 
-    /// The source image is too small for the canvas under the chosen fit mode.
-    ///
-    /// Also covers numeric out-of-range cases when mapping canvas mm to
-    /// source-image pixels (e.g. floats that overflow `u32`); we fail loud
-    /// rather than truncate silently.
+    /// Also covers mm→px math that overflows `u32` — we fail loud rather than
+    /// truncate silently.
     #[error("image too small for canvas: {image_w}x{image_h} vs canvas {canvas_w}x{canvas_h}")]
     ImageTooSmall {
-        /// Source image width in pixels.
         image_w: u32,
-        /// Source image height in pixels.
         image_h: u32,
-        /// Computed canvas width in pixels.
         canvas_w: u32,
-        /// Computed canvas height in pixels.
         canvas_h: u32,
     },
 
-    /// A monitor declared `physical_size_mm` with a zero in either axis.
     #[error("monitor `{name}` has invalid physical size (zero in one or both dimensions)")]
-    InvalidPhysicalSize {
-        /// The offending monitor's `name` (e.g. `"DP-1"`).
-        name: String,
-    },
+    InvalidPhysicalSize { name: String },
 
-    /// The requested fit mode is not yet implemented.
-    ///
-    /// `Fill` and `Stretch` are implemented; `Fit` and `Center` defer to a
-    /// later commit per the Phase 1.3 brief — the caller gets an explicit
-    /// error rather than a silently miscomputed crop.
+    /// `Fit` and `Center` are deferred (Phase 1.3); explicit error beats a
+    /// silently miscomputed crop.
     #[error("fit mode `{mode:?}` is not yet implemented")]
-    FitModeUnsupported {
-        /// The mode the caller requested.
-        mode: FitMode,
-    },
+    FitModeUnsupported { mode: FitMode },
 }
 
-/// Compute one [`CropSpec`] per monitor for the given image and bezel config.
-///
-/// The image is mapped onto the *physical* desktop plane in millimetres,
-/// including bezel gaps, so the returned crops form a continuous spanning
-/// composition when laid out across the actual screens (`SPEC.md` §4).
-///
-/// `image_size` is `(width, height)` in source-image pixels. `monitors` must
-/// be non-empty and every monitor's `physical_size_mm` must be `Some`;
-/// otherwise the function returns the corresponding [`LayoutError`].
-///
-/// # Errors
-///
-/// - [`LayoutError::EmptyMonitorList`] when `monitors` is empty.
-/// - [`LayoutError::PhysicalSizeMissing`] when any monitor has
-///   `physical_size_mm: None`.
-/// - [`LayoutError::InvalidPhysicalSize`] when any monitor declares a zero
-///   axis in `physical_size_mm`.
-/// - [`LayoutError::FitModeUnsupported`] for [`FitMode::Fit`] or
-///   [`FitMode::Center`] (deferred to a later commit).
-/// - [`LayoutError::ImageTooSmall`] when source-image dimensions are zero or
-///   when the mm→px math produces values that don't fit in `u32`.
+/// Compute one [`CropSpec`] per monitor; the image is mapped onto the physical
+/// desktop plane in mm including bezels, so crops form a continuous spanning
+/// composition (`SPEC.md` §4). `image_size` is `(width, height)` in pixels.
 pub fn compute_crop_specs(
     monitors: &[Monitor],
     bezels: &BezelConfig,

@@ -1,13 +1,5 @@
-//! GNOME Shell backend (`SPEC.md` §10.4).
-//!
-//! GNOME's `gsettings` API only models a single desktop wallpaper, so this
-//! backend composites the per-monitor crops into one canvas image, writes
-//! it to a tempfile, and points
-//! `org.gnome.desktop.background.picture-uri[-dark]` at the result. The
-//! canvas is sized to the sum of the per-crop pixel widths × the maximum
-//! per-crop height (a left-to-right band that matches the order
-//! `assignments` came in). If either edge exceeds [`MAX_LONG_EDGE`], the
-//! canvas is downscaled proportionally before save to bound memory.
+//! GNOME Shell backend (`SPEC.md` §10.4). Composites per-monitor crops into
+//! one image and points `picture-uri[-dark]` at it via `gsettings`.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -26,20 +18,13 @@ const TOOL: &str = "gsettings";
 const SCHEMA: &str = "org.gnome.desktop.background";
 const KEY_LIGHT: &str = "picture-uri";
 const KEY_DARK: &str = "picture-uri-dark";
-/// Per Phase 2.1 brief: cap composite long edge at 8K to keep memory bounded.
+/// Composite long-edge cap to keep memory bounded.
 pub(crate) const MAX_LONG_EDGE: u32 = 8192;
 
-/// `WallpaperBackend` for GNOME Shell sessions.
-///
-/// Composites the per-monitor crops into a single image and sets it as the
-/// desktop wallpaper via `gsettings`. Reports
-/// `supports_per_monitor() == false` because GNOME itself only knows about
-/// one wallpaper.
 #[derive(Debug, Default)]
 pub struct GnomeBackend;
 
 impl GnomeBackend {
-    /// Construct a `GnomeBackend`.
     #[must_use]
     pub fn new() -> Self {
         Self
@@ -104,12 +89,9 @@ impl WallpaperBackend for GnomeBackend {
 }
 
 fn gsettings_set(key: &str, value: &str) -> Result<(), BackendError> {
-    // `gsettings set` parses its value argument as GVariant; for a string
-    // it must be wrapped in single quotes. When invoked through a shell
-    // that's done by the shell; here we're using `Command::arg` (no shell)
-    // so we wrap explicitly. The wrap is safe because `value` is a
-    // `file://` URI we constructed from a path under our cache dir — no
-    // user-controlled quotes inside.
+    // gsettings parses its value as GVariant; strings need single quotes.
+    // `Command::arg` is shell-free so we wrap explicitly. Safe here because
+    // `value` is a `file://` URI we built under our own cache dir.
     let value_arg = format!("'{value}'");
     let args: [&OsStr; 4] = [
         OsStr::new("set"),
@@ -120,9 +102,6 @@ fn gsettings_set(key: &str, value: &str) -> Result<(), BackendError> {
     run(TOOL, &args, DEFAULT_TIMEOUT).map(|_| ())
 }
 
-/// Decode each per-monitor crop, lay them out left-to-right (top-aligned),
-/// downscale the canvas if needed, and write the result to a PNG in
-/// `$XDG_CACHE_HOME/superpanels/temp/`.
 pub(crate) fn composite_to_tempfile(
     assignments: &[(MonitorRef, PathBuf)],
 ) -> Result<PathBuf, BackendError> {
@@ -153,9 +132,8 @@ pub(crate) fn composite_to_tempfile(
     Ok(out_path)
 }
 
-/// Build the canvas: width is the sum of per-crop pixel widths, height is
-/// the max per-crop pixel height. Each crop is pasted at the running
-/// horizontal offset, top-aligned.
+/// Width = sum of per-crop widths, height = max per-crop height; each crop
+/// is pasted top-aligned at the running horizontal offset.
 pub(crate) fn composite_band(decoded: &[DynamicImage]) -> Result<RgbaImage, BackendError> {
     if decoded.is_empty() {
         return Err(BackendError::Encode(
@@ -191,8 +169,6 @@ pub(crate) fn composite_band(decoded: &[DynamicImage]) -> Result<RgbaImage, Back
     Ok(canvas)
 }
 
-/// If either dimension of `canvas` is over `cap`, scale proportionally so
-/// the long edge equals `cap`. Otherwise return it unchanged.
 pub(crate) fn downscale_if_needed(canvas: RgbaImage, cap: u32) -> DynamicImage {
     let (w, h) = (canvas.width(), canvas.height());
     let long = w.max(h);
@@ -204,11 +180,8 @@ pub(crate) fn downscale_if_needed(canvas: RgbaImage, cap: u32) -> DynamicImage {
     DynamicImage::ImageRgba8(canvas).resize_exact(new_w, new_h, imageops::FilterType::Lanczos3)
 }
 
-/// Compute `dim * cap / long`, clamped into `1..=cap`.
-///
-/// Done in `u64` so the intermediate product can't overflow for any
-/// `u32` input, then narrowed back via `try_from`. Returns at least `1`
-/// so neither dimension collapses to zero on extreme aspect ratios.
+/// `dim * cap / long`, clamped into `1..=cap` so extreme aspect ratios don't
+/// collapse a dimension to zero. u64 intermediate avoids overflow.
 fn scale_dim(dim: u32, cap: u32, long: u32) -> u32 {
     let scaled = u64::from(dim).saturating_mul(u64::from(cap)) / u64::from(long.max(1));
     let scaled_u32 = u32::try_from(scaled).unwrap_or(cap);
@@ -231,9 +204,7 @@ fn pick_output_path() -> Result<PathBuf, BackendError> {
 }
 
 fn path_to_file_uri(path: &Path) -> String {
-    // `file://` + the path. We don't percent-encode here — gsettings
-    // accepts unencoded paths and Superpanels writes the composite to a
-    // path it controls (no spaces or odd bytes in the cache dir name).
+    // No percent-encoding: gsettings accepts unencoded paths and we control the path.
     format!("file://{}", path.display())
 }
 
@@ -264,9 +235,7 @@ mod tests {
         let canvas = composite_band(&imgs).unwrap();
         assert_eq!(canvas.width(), 17);
         assert_eq!(canvas.height(), 8);
-        // First image occupies x=0..10
         assert_eq!(canvas.get_pixel(0, 0), &Rgba([255, 0, 0, 255]));
-        // Second image starts at x=10
         assert_eq!(canvas.get_pixel(10, 0), &Rgba([0, 255, 0, 255]));
     }
 
@@ -288,7 +257,6 @@ mod tests {
         let canvas = RgbaImage::new(16384, 4096);
         let out = downscale_if_needed(canvas, 8192);
         assert_eq!(out.width(), 8192);
-        // 4096 * (8192/16384) == 2048, floor + at least 1.
         assert_eq!(out.height(), 2048);
     }
 

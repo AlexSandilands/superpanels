@@ -1,12 +1,4 @@
-//! KDE Plasma backend: applies wallpapers via
-//! `org.kde.PlasmaShell.evaluateScript` over zbus (`SPEC.md` §10.4).
-//!
-//! The JS payload is built from a versioned template (`TEMPLATE_VERSION`)
-//! with image paths injected as JSON-quoted string literals via
-//! [`serde_json::to_string`] — never string-concatenated — so a path
-//! containing quotes, backslashes, or non-ASCII bytes can't escape the
-//! containing JS string. The script's monitor lookup uses the output name
-//! (`MonitorRef.name`) since Plasma's `Image` plugin keys on it.
+//! KDE Plasma backend via `org.kde.PlasmaShell.evaluateScript` (`SPEC.md` §10.4).
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -48,16 +40,12 @@ const SCRIPT_HEADER: &str = "// superpanels evaluateScript template v2\n\
                              }\n\
                              print(applied);\n";
 
-/// `WallpaperBackend` for KDE Plasma sessions.
-///
-/// Stateless; cheap to construct. Holds no D-Bus connection — one is
-/// opened per `apply` so the daemon can survive a Plasma restart without
-/// stale handles.
+/// `WallpaperBackend` for KDE Plasma. A fresh D-Bus connection is opened per
+/// `apply` so the daemon survives a Plasma restart without stale handles.
 #[derive(Debug, Default)]
 pub struct KdeBackend;
 
 impl KdeBackend {
-    /// Construct a `KdeBackend`.
     #[must_use]
     pub fn new() -> Self {
         Self
@@ -129,12 +117,8 @@ impl WallpaperBackend for KdeBackend {
     }
 }
 
-/// Pure helper: given the captured values of `$KDE_FULL_SESSION` and
-/// `$XDG_CURRENT_DESKTOP`, decide whether the running session is KDE.
-///
-/// Pulled out of [`KdeBackend::availability`] so unit tests can pass
-/// concrete values without mutating the process env (which is `unsafe`
-/// under Rust 2024 std).
+/// Pure helper: tests can call this without mutating the process env
+/// (`std::env::set_var` is `unsafe` in Rust 2024).
 pub(crate) fn env_indicates_kde(
     kde_full_session: Option<&str>,
     xdg_current_desktop: Option<&str>,
@@ -145,9 +129,8 @@ pub(crate) fn env_indicates_kde(
     xdg_current_desktop.is_some_and(|d| d.split(':').any(|s| s.eq_ignore_ascii_case("KDE")))
 }
 
-/// Build the JS payload for an evaluateScript call given the per-monitor
-/// assignments. Pulled out so unit tests can assert on the rendered script
-/// without bringing up D-Bus.
+/// Build the JS payload. Image paths are JSON-quoted so quotes/backslashes
+/// in paths can't break out of the containing string literal.
 pub(crate) fn build_script(assignments: &[(MonitorRef, PathBuf)]) -> Result<String, BackendError> {
     let mut map = serde_json::Map::with_capacity(assignments.len());
     for (m, path) in assignments {
@@ -165,9 +148,6 @@ fn path_to_json_string(path: &Path) -> Result<String, BackendError> {
         .ok_or_else(|| BackendError::Encode(format!("non-UTF-8 path: {}", path.display())))
 }
 
-/// Parse the script's printed output (a single integer in the v2 template)
-/// into the count of desktops it actually wrote. Anything else is treated
-/// as a malformed reply and surfaces as `BackendError::DBus`.
 pub(crate) fn parse_applied_count(output: &str) -> Result<usize, BackendError> {
     let trimmed = output.trim();
     trimmed.parse::<usize>().map_err(|_| {
@@ -181,11 +161,8 @@ pub(crate) fn parse_applied_count(output: &str) -> Result<usize, BackendError> {
 fn evaluate_script(script: &str) -> Result<String, BackendError> {
     let connection =
         zbus::blocking::Connection::session().map_err(|e| BackendError::DBus(e.to_string()))?;
-    // zbus's blocking call_method blocks indefinitely; enforce our own
-    // wall-clock cap by running the call on a worker thread and joining
-    // with a recv timeout. The connection isn't Send across awaits but is
-    // Send across threads, so the channel pattern is the simplest option
-    // that respects SPEC §10.3's timeout rule.
+    // zbus's blocking call_method has no built-in timeout; enforce SPEC §10.3
+    // by running the call on a worker thread and joining via recv_timeout.
     let (tx, rx) = std::sync::mpsc::channel();
     let conn = connection;
     let s = script.to_owned();
@@ -241,10 +218,7 @@ mod tests {
         // Act
         let script = build_script(&pairs).unwrap();
 
-        // Assert — the literal is a valid JSON object whose keys are
-        // monitor names and whose values are the paths. The presence of
-        // the JSON-escaped path strings (with no manual quoting) is the
-        // safety property we care about.
+        // Assert
         assert!(
             script.contains("\"DP-1\":\"/walls/a.png\"")
                 || script.contains("\"DP-1\": \"/walls/a.png\"")
@@ -254,16 +228,13 @@ mod tests {
                 || script.contains("\"DP-2\": \"/walls/b.png\"")
         );
         assert!(script.contains("evaluateScript template v2"));
-        // v2 looks up desktops by connector via the inverse-direction APIs
-        // Plasma 6 exposes (no `screenName` / `outputName` in 6.x).
         assert!(script.contains("screenForConnector"));
         assert!(script.contains("desktopForScreen"));
     }
 
     #[test]
     fn build_script_escapes_special_characters_in_path() {
-        // Arrange — path with a quote and a backslash, the kinds of bytes
-        // that would break naive string concat.
+        // Arrange
         let nasty = PathBuf::from("/walls/with \"quote\"\\and\\backslash.png");
         let pairs = vec![(
             MonitorRef {
@@ -276,19 +247,13 @@ mod tests {
         // Act
         let script = build_script(&pairs).unwrap();
 
-        // Assert — the dangerous characters appear as their JSON escapes,
-        // and the bare `"quote"` substring does not appear in the script
-        // (which would mean the literal had been broken open).
+        // Assert
         assert!(script.contains("\\\"quote\\\""));
         assert!(script.contains("\\\\and\\\\backslash"));
     }
 
     #[test]
     fn availability_decides_purely_from_env_string_inputs() {
-        // The availability check is exercised from-env in the integration
-        // pass; here we only assert the helper that decides *given* the
-        // two values is the rule from SPEC §10.2 (`KDE` token in
-        // colon-list, or `KDE_FULL_SESSION` set).
         assert!(env_indicates_kde(Some(""), Some("KDE")));
         assert!(env_indicates_kde(Some("true"), None));
         assert!(env_indicates_kde(None, Some("X-Cinnamon:KDE")));
@@ -308,10 +273,6 @@ mod tests {
         assert!(matches!(err, BackendError::DBus(_)), "got {err:?}");
     }
 
-    /// Full apply against a live KDE session. Only meaningful on a real
-    /// desktop with `org.kde.plasmashell` running on the session bus, so
-    /// it's `#[ignore]`d in the default test run. To exercise:
-    /// `cargo test -p superpanels-core kde_apply -- --ignored`.
     #[test]
     #[ignore = "requires a live KDE Plasma session bus"]
     fn apply_against_live_session_succeeds() {

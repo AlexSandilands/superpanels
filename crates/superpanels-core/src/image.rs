@@ -1,15 +1,4 @@
-//! Image load / scale / crop / rotate / `save_temp` pipeline.
-//!
-//! Mirrors `SPEC.md` §8. The functions here are the only place
-//! `superpanels-core` touches the `image` crate; everything else handles
-//! [`image::DynamicImage`] handles by reference.
-//!
-//! Pipeline shape:
-//!
-//! 1. [`load`] decodes (memory-capped per `SPEC.md` §8.6).
-//! 2. [`scale_to_fit`] / [`crop`] / [`rotate`] transform.
-//! 3. [`save_temp`] writes to the temp dir, after [`clear_temp_dir`] has
-//!    swept the previous run's files (`SPEC.md` §8.5).
+//! Image load / scale / crop / rotate / `save_temp` pipeline (`SPEC.md` §8).
 
 use std::fs;
 use std::io;
@@ -28,111 +17,60 @@ pub use temp::{clear_temp_dir, clear_temp_dir_at, default_temp_dir, save_temp, s
 const DEFAULT_DECODE_BUDGET_BYTES: u64 = 512 * 1024 * 1024;
 const BYTES_PER_PIXEL: u64 = 4;
 
-/// Errors returned from any image-pipeline operation.
 #[derive(Debug, Error)]
 pub enum ImageError {
-    /// The image file (or temp output) could not be opened / read / written.
     #[error("io on {path}: {source}")]
     Io {
-        /// File the I/O attempt was against.
         path: PathBuf,
-        /// Underlying I/O error.
         #[source]
         source: io::Error,
     },
-    /// The format was unrecognised or the file was malformed.
     #[error("could not decode {path}: {message}")]
-    Decode {
-        /// File the decode attempt was against.
-        path: PathBuf,
-        /// `image`-supplied reason.
-        message: String,
-    },
-    /// `load` refused to decode because the image's pixel count exceeds the
-    /// configured memory budget (`SPEC.md` §8.6).
+    Decode { path: PathBuf, message: String },
+    /// Pixel count exceeds the configured memory budget (`SPEC.md` §8.6).
     #[error(
         "image {path} would need {needed_bytes} bytes ({width}x{height}) — over the {budget_bytes}-byte cap"
     )]
     TooBig {
-        /// File the cap rejection was against.
         path: PathBuf,
-        /// Image width in pixels.
         width: u32,
-        /// Image height in pixels.
         height: u32,
-        /// Bytes needed at 4 bpp.
         needed_bytes: u64,
-        /// Cap that was exceeded.
         budget_bytes: u64,
     },
-    /// [`crop`] was given a [`Rect`] that runs past the image bounds.
     #[error(
         "crop rect {rect_x},{rect_y} {rect_w}x{rect_h} runs outside image bounds {image_w}x{image_h}"
     )]
     CropOutOfBounds {
-        /// Rect x.
         rect_x: u32,
-        /// Rect y.
         rect_y: u32,
-        /// Rect width.
         rect_w: u32,
-        /// Rect height.
         rect_h: u32,
-        /// Image width.
         image_w: u32,
-        /// Image height.
         image_h: u32,
     },
-    /// `$XDG_CACHE_HOME` and `$HOME` were both unset, so we couldn't pick
-    /// a temp-dir location.
     #[error("could not determine cache dir: $XDG_CACHE_HOME and $HOME both unset")]
     NoCacheDir,
 }
 
-/// How [`scale_to_fit`] adapts a source image to the target dimensions.
-///
-/// Mirrors [`crate::layout::FitMode`] but lives here too because the image
-/// op needs the same names. See `SPEC.md` §8.2.
+/// How [`scale_to_fit`] adapts a source image to the target dimensions (`SPEC.md` §8.2).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum FitMode {
-    /// Scale to cover, cropping overflow. Default.
     #[default]
     Fill,
-    /// Scale to fit; pad with black to fill remainder.
     Fit,
-    /// Distort to fill exactly.
     Stretch,
-    /// No scaling; centre on a black canvas.
     Center,
 }
 
 /// Decode the image at `path`, refusing files whose decoded pixel count
 /// exceeds the default memory budget (512 MiB at 4 bpp).
-///
-/// # Errors
-///
-/// Returns [`ImageError::Io`] if the file can't be opened, [`ImageError::Decode`]
-/// if the format isn't recognised, or [`ImageError::TooBig`] if the
-/// dimensions estimate over the budget.
-///
-/// # Example
-///
-/// ```no_run
-/// # use std::path::Path;
-/// # use superpanels_core::image::load;
-/// let img = load(Path::new("photo.jpg"))?;
-/// # Ok::<(), Box<dyn std::error::Error>>(())
-/// ```
 pub fn load(path: &Path) -> Result<DynamicImage, ImageError> {
     load_with_budget(path, DEFAULT_DECODE_BUDGET_BYTES)
 }
 
 /// Variant of [`load`] with an explicit budget — used by tests to exercise
 /// the [`ImageError::TooBig`] path without crafting a multi-gigapixel file.
-///
-/// # Errors
-///
-/// As [`load`].
 pub fn load_with_budget(path: &Path, budget_bytes: u64) -> Result<DynamicImage, ImageError> {
     let dims_reader = open_reader(path)?;
     let (w, h) = dims_reader
@@ -171,22 +109,7 @@ fn open_reader(path: &Path) -> Result<ImageReader<std::io::BufReader<fs::File>>,
         })
 }
 
-/// Scale `img` to `target` according to `mode`.
-///
-/// `Fill` preserves aspect by *cropping* the overflow after the scale;
-/// `Fit` letterboxes onto a black canvas; `Stretch` distorts; `Center`
-/// places the image at native size on a black canvas of `target` size.
-/// Lanczos3 is the default sampling filter.
-///
-/// # Example
-///
-/// ```
-/// # use image::{DynamicImage, RgbaImage};
-/// # use superpanels_core::image::{scale_to_fit, FitMode};
-/// let src = DynamicImage::ImageRgba8(RgbaImage::new(8, 8));
-/// let out = scale_to_fit(&src, (4, 4), FitMode::Fill);
-/// assert_eq!((out.width(), out.height()), (4, 4));
-/// ```
+/// Scale `img` to `target` according to `mode`. Lanczos3 sampling.
 #[must_use]
 pub fn scale_to_fit(img: &DynamicImage, target: (u32, u32), mode: FitMode) -> DynamicImage {
     let (tw, th) = target;
@@ -240,25 +163,7 @@ fn paste_onto_black(img: &DynamicImage, target: (u32, u32)) -> DynamicImage {
     DynamicImage::ImageRgba8(canvas)
 }
 
-/// Crop `img` to the given source-image rectangle.
-///
-/// # Errors
-///
-/// Returns [`ImageError::CropOutOfBounds`] if the rect runs past the image
-/// edges (zero-width / zero-height rects are also rejected — the caller
-/// almost certainly has a bug).
-///
-/// # Example
-///
-/// ```
-/// # use image::{DynamicImage, RgbaImage};
-/// # use superpanels_core::image::crop;
-/// # use superpanels_core::layout::Rect;
-/// let src = DynamicImage::ImageRgba8(RgbaImage::new(10, 10));
-/// let out = crop(&src, Rect { x: 0, y: 0, w: 5, h: 5 })?;
-/// assert_eq!((out.width(), out.height()), (5, 5));
-/// # Ok::<(), Box<dyn std::error::Error>>(())
-/// ```
+/// Crop `img` to `rect`. Zero-sized rects are rejected.
 pub fn crop(img: &DynamicImage, rect: Rect) -> Result<DynamicImage, ImageError> {
     let (iw, ih) = (img.width(), img.height());
     let x_end = rect.x.saturating_add(rect.w);
@@ -276,19 +181,7 @@ pub fn crop(img: &DynamicImage, rect: Rect) -> Result<DynamicImage, ImageError> 
     Ok(img.crop_imm(rect.x, rect.y, rect.w, rect.h))
 }
 
-/// Rotate `img` by `rotation` (90/180/270 °). `Rotation::None` returns a
-/// clone (no work to do, but ownership keeps the API uniform).
-///
-/// # Example
-///
-/// ```
-/// # use image::{DynamicImage, RgbaImage};
-/// # use superpanels_core::image::rotate;
-/// # use superpanels_core::Rotation;
-/// let src = DynamicImage::ImageRgba8(RgbaImage::new(2, 4));
-/// let out = rotate(&src, Rotation::Right);
-/// assert_eq!((out.width(), out.height()), (4, 2));
-/// ```
+/// Rotate `img` by 90/180/270 °. `Rotation::None` clones.
 #[must_use]
 pub fn rotate(img: &DynamicImage, rotation: Rotation) -> DynamicImage {
     match rotation {

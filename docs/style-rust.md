@@ -331,50 +331,42 @@ It auto-creates a span with arg names + values. `skip` for big arguments (images
 
 ## Comments and documentation
 
+**Default to no comment.** A comment is justified only when the *why* is non-obvious — a hidden constraint, an external-API quirk, a workaround, or a spec cross-ref for math the reader would otherwise get wrong (e.g. mm vs. pixels). If a future reader could derive the information from the signature, the type, or the name, the comment is noise. Token-cost matters: every line of fluff is a line every agent reads on every pass.
+
 ### Rustdoc on public items
 
-Every `pub` item in `superpanels-core` has a doc comment. Format:
+Every `pub` item in `superpanels-core` gets a **one-line** doc summary. Add more only when behavior is surprising.
 
 ```rust
-/// Computes one [`CropSpec`] per monitor for the given image and bezel config.
-///
-/// The image is mapped onto the *physical* desktop plane (in millimetres),
-/// including bezel gaps, so the returned crops form a continuous spanning
-/// composition when laid out across the actual screens.
-///
-/// # Errors
-///
-/// Returns [`LayoutError::EmptyMonitorList`] if `monitors` is empty.
-/// Returns [`LayoutError::ImageTooSmall`] in `Fill` mode if the image is
-/// smaller than the canvas in either dimension.
-///
-/// # Example
-///
-/// ```
-/// # use superpanels_core::{Monitor, BezelConfig, FitMode, compute_crop_specs};
-/// # let monitors: Vec<Monitor> = vec![];
-/// # let image_size = (1920, 1080);
-/// let bezels = BezelConfig::uniform(8.0, 5.0);
-/// let crops = compute_crop_specs(&monitors, &bezels, FitMode::Fill, image_size)?;
-/// # Ok::<(), Box<dyn std::error::Error>>(())
-/// ```
-pub fn compute_crop_specs(/* ... */) -> Result<Vec<CropSpec>, LayoutError> { /* ... */ }
+✅ /// Computes one [`CropSpec`] per monitor; the image is mapped onto the
+   /// physical desktop plane in mm including bezels (`SPEC.md` §4).
+   pub fn compute_crop_specs(/* ... */) -> Result<Vec<CropSpec>, LayoutError>
 ```
 
-The example must compile (`cargo test --doc` runs it). If a real example needs a lot of setup, hide most of it with `# `.
+Rules:
+
+- **No field or enum-variant docs that restate the name.** Skip them entirely; the name and type already say it. Add a doc only when the field's meaning is genuinely ambiguous (units, sentinel values, ordering invariants).
+- **`# Errors`**: list a variant only when its trigger isn't obvious from its name. `EmptyMonitorList` doesn't need an `# Errors` line — the name is the doc. `ImageTooSmall` *might*, because the threshold isn't obvious.
+- **`# Examples`**: only when the usage has a non-obvious edge case worth pinning with a doctest. Do *not* write tutorial examples ("construct a default and read a field") — they cost tokens and prove nothing the type system doesn't already.
+- **Module headers**: one line. Optional `SPEC.md §X` ref. No design essays — that belongs in `SPEC.md` or `architecture.md`.
 
 ### Inline comments
 
-Inline comments explain *why*, not *what*. Code that explains *what* it does should be self-evident from naming.
+Explain *why*, never *what*.
 
 ```rust
-✅ // Reference PPI is the max across monitors so the image renders at the
-   //   same physical size on every screen, regardless of pixel density.
-   let reference_ppi = monitors.iter().map(|m| m.ppi).fold(0.0, f64::max);
+✅ // Plasma 6 has no `outputName` on Desktop; iterate assignments by connector
+   // and resolve via `screenForConnector` instead.
+   for (connector, image) in assignments { /* ... */ }
+
+❌ // Loop over the assignments.
+   for (connector, image) in assignments { /* ... */ }
 
 ❌ // Set reference_ppi to the maximum PPI of all monitors.
    let reference_ppi = monitors.iter().map(|m| m.ppi).fold(0.0, f64::max);
 ```
+
+If the *what* needs explaining, rename the binding. If the *why* is obvious from local context, omit the comment.
 
 ### Don't comment-out code; delete it
 

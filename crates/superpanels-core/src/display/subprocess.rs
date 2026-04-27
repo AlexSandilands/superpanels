@@ -1,9 +1,4 @@
-//! Shared subprocess helper for display detectors.
-//!
-//! `SPEC.md` §6 mandates a 5-second wall-clock timeout on every detector
-//! tool, plus `LC_ALL=C` so parsers see locale-independent output. The
-//! `NO_COLOR=1` env is added unconditionally — text-output tools strip ANSI
-//! when it is set, and JSON-output tools ignore it.
+//! Shared subprocess helper for display detectors (`SPEC.md` §6).
 
 use std::ffi::OsStr;
 use std::path::PathBuf;
@@ -12,9 +7,7 @@ use std::time::{Duration, Instant};
 
 use super::DetectError;
 
-/// Spawn `program` with `args`, wait up to `timeout`, capture stdout and
-/// return it on a clean exit. `cmd_display` is used in error messages so
-/// callers can format a stable diagnostic string without re-quoting args.
+/// Spawn with `LC_ALL=C` and `NO_COLOR=1`, wait up to `timeout`, return stdout.
 pub(crate) fn run(
     program: &str,
     args: &[&OsStr],
@@ -71,8 +64,6 @@ pub(crate) fn run(
     }
 }
 
-/// Look up `bin` on `$PATH`. Returns `Some(absolute path)` on the first
-/// regular-file match.
 pub(crate) fn which(bin: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
     for dir in std::env::split_paths(&path) {

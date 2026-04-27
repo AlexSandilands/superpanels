@@ -15,7 +15,8 @@ authors      = ["Alex Sandilands <profile.alex@proton.me>"]
 
 [workspace.lints.rust]
 unsafe_code        = "forbid"        # we forbid unsafe — `forbid` is stronger than `deny`
-missing_docs       = "warn"          # public items in libraries should be documented
+# missing_docs deliberately not enforced: docs are added when the *why* is
+# non-obvious, not as a per-item ritual. See docs/style-rust.md §Comments.
 # Lint groups need an explicit lower priority so individual lints in the same
 # table can coexist (cargo enforces this since Rust 1.95).
 unused             = { level = "warn", priority = -1 }

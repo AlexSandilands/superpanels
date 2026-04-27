@@ -1,12 +1,5 @@
-//! Sway / wlroots backend (`SPEC.md` §10.4).
-//!
-//! Prefers `swww` for smooth transitions; falls back to `swaybg` when
-//! `swww` isn't installed. Per-monitor support is offered through
-//! `swww img --outputs MON path`. With `swaybg` we lose per-monitor
-//! granularity (each instance owns one output), so the implementation
-//! spawns one detached `swaybg -o MON -i PATH -m fill` per monitor and
-//! relies on the shell to keep them alive — same approach `swaymsg` users
-//! take by hand.
+//! Sway / wlroots backend (`SPEC.md` §10.4). Prefers `swww`; falls back to
+//! one detached `swaybg` per monitor.
 
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
@@ -23,24 +16,16 @@ const NAME: &str = "sway";
 const TOOL_PREFERRED: &str = "swww";
 const TOOL_FALLBACK: &str = "swaybg";
 
-/// Which underlying tool the backend resolved to at availability time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SwayTool {
-    /// `swww` (preferred — smooth transitions, reliable per-monitor).
     Swww,
-    /// `swaybg` (fallback — one process per monitor).
     Swaybg,
 }
 
-/// `WallpaperBackend` for Sway / wlroots compositors.
-///
-/// Picks `swww` when present and falls back to `swaybg`. Both tools must
-/// already be installed; this backend never installs anything.
 #[derive(Debug, Default)]
 pub struct SwayBackend;
 
 impl SwayBackend {
-    /// Construct a `SwayBackend`.
     #[must_use]
     pub fn new() -> Self {
         Self
@@ -141,12 +126,8 @@ fn apply_with_swww(assignments: &[(MonitorRef, PathBuf)]) -> Result<(), BackendE
 }
 
 fn apply_with_swaybg(assignments: &[(MonitorRef, PathBuf)]) -> Result<(), BackendError> {
-    // `swaybg` is long-running by design (one process per output that
-    // owns the surface). Spawning it synchronously and waiting would
-    // deadlock the apply, so we fire-and-forget — `Command::spawn`
-    // without a `wait`. The caller should kill stale instances if the
-    // wallpaper is later replaced; that's the same expectation `swaybg`
-    // documents for its own users.
+    // swaybg is long-running (owns the surface), so we fire-and-forget per output.
+    // Caller is responsible for killing stale instances on replacement.
     use std::process::{Command, Stdio};
     for (monitor, path) in assignments {
         debug!(monitor = %monitor.name, backend = NAME, "swaybg");
@@ -184,9 +165,7 @@ mod tests {
 
     #[test]
     fn select_tool_returns_none_when_neither_present() {
-        // We can't reliably test the positive branches without polluting
-        // PATH; assert only that select_tool is a function call, not a
-        // panic, and returns one of the documented variants or None.
+        // PATH-dependent; just check it doesn't panic and returns a valid variant.
         let chosen = select_tool();
         if let Some(t) = chosen {
             assert!(matches!(t, SwayTool::Swww | SwayTool::Swaybg));

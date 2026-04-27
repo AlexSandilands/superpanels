@@ -1,9 +1,4 @@
-//! On-disk configuration: profiles, per-monitor physical sizes, backend pin.
-//!
-//! Mirrors `SPEC.md` §14.1 (TOML schema) and §3.4 (profile shape). The Rust
-//! types here are the source of truth for what the on-disk file may contain;
-//! [`Config::load_or_default`] reads `$XDG_CONFIG_HOME/superpanels/config.toml`,
-//! writing a documented default file if none exists yet.
+//! On-disk config (`SPEC.md` §14.1, §3.4).
 
 use std::path::PathBuf;
 
@@ -25,60 +20,34 @@ pub use profile::{ImageSet, ProfileBody, Schedule, SlideshowConfig, SpanSource};
 const APP_DIR: &str = "superpanels";
 const CONFIG_FILE: &str = "config.toml";
 
-/// Top-level Superpanels configuration, loaded from
-/// `$XDG_CONFIG_HOME/superpanels/config.toml`.
-///
-/// Mirrors `SPEC.md` §14.1. All sections have defaults so a missing or
-/// minimal file is valid.
-///
-/// # Example
-///
-/// ```
-/// # use superpanels_core::config::Config;
-/// let cfg = Config::default();
-/// assert_eq!(cfg.general.notifications, "errors");
-/// ```
+/// Loaded from `$XDG_CONFIG_HOME/superpanels/config.toml`. All sections have
+/// defaults, so a missing or minimal file is valid.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Config {
-    /// `[general]` table.
     #[serde(default)]
     pub general: GeneralConfig,
-    /// `[backend]` table.
     #[serde(default)]
     pub backend: BackendConfig,
-    /// `[library]` table.
     #[serde(default)]
     pub library: LibraryConfig,
-    /// Repeated `[[monitor]]` blocks giving each known monitor its physical
-    /// size in millimetres (`SPEC.md` §14.1).
     #[serde(default, rename = "monitor")]
     pub monitors: Vec<MonitorConfig>,
-    /// Repeated `[[profile]]` blocks per `SPEC.md` §3.4.
     #[serde(default, rename = "profile")]
     pub profiles: Vec<Profile>,
 }
 
-/// `[general]` settings.
-///
-/// # Example
-///
-/// ```
-/// # use superpanels_core::config::GeneralConfig;
-/// let g = GeneralConfig::default();
-/// assert_eq!(g.theme, "auto");
-/// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GeneralConfig {
-    /// Profile to apply on daemon start; `None` means "do nothing".
+    /// Profile to apply on daemon start; `None` means do nothing.
     #[serde(default)]
     pub default_profile: Option<String>,
-    /// Whether to write `~/.config/autostart/superpanels.desktop` on first run.
+    /// Write `~/.config/autostart/superpanels.desktop` on first run.
     #[serde(default)]
     pub autostart: bool,
-    /// `"off"`, `"errors"`, or `"all"`.
+    /// `"off"` | `"errors"` | `"all"`.
     #[serde(default = "default_notifications")]
     pub notifications: String,
-    /// `"auto"`, `"light"`, or `"dark"`.
+    /// `"auto"` | `"light"` | `"dark"`.
     #[serde(default = "default_theme")]
     pub theme: String,
 }
@@ -102,47 +71,26 @@ fn default_theme() -> String {
     "auto".to_owned()
 }
 
-/// `[backend]` settings.
-///
-/// # Example
-///
-/// ```
-/// # use superpanels_core::config::{BackendConfig, BackendKind};
-/// let b = BackendConfig::default();
-/// assert_eq!(b.prefer, BackendKind::Auto);
-/// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct BackendConfig {
-    /// Pinned backend; `Auto` means run the detection ladder.
     #[serde(default)]
     pub prefer: BackendKind,
-    /// Template for the custom backend (`{image_N}` / `{monitor_N}` placeholders).
-    /// Only consulted when `prefer == Custom`.
+    /// Template with `{image_N}` / `{monitor_N}` placeholders. Only used when
+    /// `prefer == Custom`.
     #[serde(default)]
     pub custom_command: String,
 }
 
-/// `[library]` settings.
-///
-/// # Example
-///
-/// ```
-/// # use superpanels_core::config::LibraryConfig;
-/// let l = LibraryConfig::default();
-/// assert!(l.recursive);
-/// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LibraryConfig {
-    /// Folders the library scanner walks.
     #[serde(default)]
     pub roots: Vec<PathBuf>,
-    /// Recurse into subdirectories under each root.
     #[serde(default = "default_recursive")]
     pub recursive: bool,
-    /// Edge length, in pixels, for cached thumbnails.
+    /// Cached thumbnail edge in pixels.
     #[serde(default = "default_thumbnail_size")]
     pub thumbnail_size: u32,
-    /// Re-scan when the FS watcher reports changes under a root.
+    /// Re-scan on FS watcher events.
     #[serde(default = "default_auto_scan")]
     pub auto_scan: bool,
 }
@@ -170,62 +118,29 @@ fn default_auto_scan() -> bool {
     true
 }
 
-/// One `[[monitor]]` block: maps a runtime monitor to its physical size
-/// in millimetres.
-///
-/// At least one of `stable_id` / `name` must be set; matching against a
-/// detected [`Monitor`] tries `stable_id` first, then falls back to `name`
-/// (`SPEC.md` §14.1).
-///
-/// # Example
-///
-/// ```
-/// # use superpanels_core::config::MonitorConfig;
-/// let m = MonitorConfig {
-///     stable_id: None,
-///     name: Some("DP-1".to_owned()),
-///     physical_mm: [597, 336],
-/// };
-/// assert_eq!(m.physical_mm, [597, 336]);
-/// ```
+/// One `[[monitor]]` block. At least one of `stable_id` / `name` must be set;
+/// matching tries `stable_id` first, then falls back to `name`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MonitorConfig {
-    /// Compositor-supplied stable ID (KDE per-output UUID, or an EDID hash).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stable_id: Option<String>,
-    /// Output name (e.g. `"DP-1"`); used when `stable_id` is unavailable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    /// Physical dimensions `[w, h]` in millimetres.
+    /// `[w, h]` in millimetres.
     pub physical_mm: [u32; 2],
 }
 
-/// Backend selection, mirrored to the on-disk `backend.prefer` string.
-///
-/// # Example
-///
-/// ```
-/// # use superpanels_core::config::BackendKind;
-/// let kind: BackendKind = "kde".parse().unwrap();
-/// assert_eq!(kind, BackendKind::Kde);
-/// ```
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BackendKind {
-    /// Run the auto-detection ladder.
     #[default]
     Auto,
-    /// KDE Plasma (zbus → `org.kde.PlasmaShell.evaluateScript`).
     Kde,
-    /// GNOME Shell (`gsettings`-backed).
     Gnome,
-    /// Sway / wlroots compositors (`swww` or `swaybg`).
     Sway,
-    /// Hyprland (`hyprctl hyprpaper`).
     Hyprland,
-    /// X11 fallback via `feh`.
     Feh,
-    /// User-provided template command from [`BackendConfig::custom_command`].
+    /// User-provided template from [`BackendConfig::custom_command`].
     Custom,
 }
 
@@ -246,71 +161,45 @@ impl std::str::FromStr for BackendKind {
     }
 }
 
-/// One `[[profile]]` block per `SPEC.md` §3.4.
-///
-/// Profiles bundle the inputs needed to apply a wallpaper: the source
-/// (single image vs slideshow vs per-monitor pinning), the bezel config,
-/// an optional backend pin, and an optional schedule trigger.
+/// One `[[profile]]` block (`SPEC.md` §3.4).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Profile {
-    /// User-facing name (must be unique across the config).
+    /// Must be unique across the config.
     pub name: String,
-    /// Span vs per-monitor.
     pub body: ProfileBody,
-    /// Per-profile bezel config (overrides nothing global; a sibling concept).
     pub bezels: BezelConfig,
-    /// Optional backend pin; `None` means honour `[backend].prefer`.
+    /// `None` honours `[backend].prefer`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backend_override: Option<BackendKind>,
-    /// Optional time-of-day trigger.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schedule: Option<Schedule>,
 }
 
-/// Errors returned from config load / save / validation.
 #[derive(Debug, Error)]
 pub enum ConfigError {
-    /// The on-disk file could not be read.
     #[error("could not read config at {path}: {source}")]
     Read {
-        /// File the I/O attempt was against.
         path: PathBuf,
-        /// Underlying I/O error.
         #[source]
         source: std::io::Error,
     },
-    /// The on-disk file could not be written.
     #[error("could not write config at {path}: {source}")]
     Write {
-        /// File the I/O attempt was against.
         path: PathBuf,
-        /// Underlying I/O error.
         #[source]
         source: std::io::Error,
     },
-    /// The TOML payload could not be deserialised.
     #[error("could not parse config at {path}: {message}")]
-    Parse {
-        /// File the parse attempt was against.
-        path: PathBuf,
-        /// Parser-supplied message (often line + column).
-        message: String,
-    },
-    /// The TOML payload could not be serialised.
+    Parse { path: PathBuf, message: String },
     #[error("could not serialise config: {0}")]
     Serialise(String),
-    /// A field-level validation rule failed.
+    /// `field` is a dotted path like `profile[0].name`.
     #[error("invalid config at {path}: {field}: {message}")]
     Invalid {
-        /// File the validation came from (or "<default>" / "<in-memory>").
         path: PathBuf,
-        /// Dotted field path (e.g. `"profile[0].name"`, `"monitor[1]"`).
         field: String,
-        /// Human-readable explanation.
         message: String,
     },
-    /// `$XDG_CONFIG_HOME` and `$HOME` were both unset, so we couldn't pick
-    /// a config-file path.
     #[error("could not determine config path: $XDG_CONFIG_HOME and $HOME both unset")]
     NoConfigDir,
 }

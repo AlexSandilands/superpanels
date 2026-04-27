@@ -1,12 +1,4 @@
-//! wlroots display detector backed by `wlr-randr --json`.
-//!
-//! Used as the generic Wayland fallback for wlroots compositors (river,
-//! Wayfire, etc.). Sway has its own dedicated detector so this one steps
-//! aside when `$SWAYSOCK` is set.
-//!
-//! `stable_id` is derived from the `make + model + serial` triple when the
-//! compositor exposes it; missing fields fall through to `None` per
-//! `SPEC.md` §6.4.
+//! wlroots display detector backed by `wlr-randr --json` (`SPEC.md` §6.4).
 
 use std::env;
 use std::time::Duration;
@@ -20,7 +12,6 @@ const TOOL: &str = "wlr-randr";
 const CMD: &str = "wlr-randr --json";
 const TIMEOUT: Duration = Duration::from_secs(5);
 
-/// `DisplayDetector` for wlroots Wayland compositors that ship `wlr-randr`.
 #[derive(Debug)]
 pub struct WlrRandrDetector;
 
@@ -101,16 +92,8 @@ struct RawMode {
     current: bool,
 }
 
-/// Parse `wlr-randr --json` stdout into [`Monitor`]s.
-///
-/// Disabled outputs are filtered out. Missing position defaults to `(0, 0)`
-/// — the compositor returns `null` for outputs whose layout has not been
-/// arranged. Missing `current` mode is a parse error.
-///
-/// # Errors
-///
-/// Returns [`DetectError::Parse`] when the JSON is malformed or an enabled
-/// output lacks an active mode.
+/// Parse `wlr-randr --json` stdout into [`Monitor`]s. Missing position defaults
+/// to `(0, 0)` — the compositor returns `null` for unarranged outputs.
 pub(crate) fn parse_wlr_randr_json(
     stdout: &str,
     cmd_name: &str,

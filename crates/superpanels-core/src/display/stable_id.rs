@@ -1,19 +1,9 @@
-//! Helpers for synthesising a `MonitorRef::stable_id` on detectors that
-//! don't emit one directly.
-//!
-//! `SPEC.md` §6.4 documents the rule: hash `make + "\0" + model + "\0" +
-//! serial` with SHA-256, encode as lowercase hex. Cable swaps and dock
-//! re-plugs change `name` but leave the EDID-derived triple intact, so
-//! per-monitor config keyed on the hash survives both.
+//! Synthesise `MonitorRef::stable_id` from EDID make/model/serial (`SPEC.md` §6.4).
 
 use sha2::{Digest, Sha256};
 
-/// Build a `stable_id` from the EDID `make + model + serial` triple.
-///
-/// Returns `None` when none of the three fields are present — the caller
-/// should fall back to the monitor's `name` per `SPEC.md` §6.4. Empty
-/// strings are treated the same as `None` so a detector that emits
-/// `"serial": ""` doesn't poison the hash.
+/// SHA-256 of `make\0model\0serial`, lowercase hex. `None` if all fields
+/// are empty; empty strings count as missing so `"serial": ""` doesn't poison the hash.
 pub(crate) fn hash_edid_triple(
     make: Option<&str>,
     model: Option<&str>,

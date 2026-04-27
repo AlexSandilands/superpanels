@@ -1,11 +1,5 @@
-//! User-supplied custom backend (`SPEC.md` §10.4).
-//!
-//! Reads a command template from `[backend].custom_command` and runs it
-//! after substituting `{image_N}` and `{monitor_N}` placeholders (1-indexed).
-//! The template is split on whitespace into `argv` — no shell, no quoting —
-//! and each argument that *exactly equals* a placeholder is replaced by the
-//! corresponding [`OsStr`]. This means paths are passed as separate args,
-//! never interpolated into a string, even if the path contains spaces.
+//! User-supplied custom backend (`SPEC.md` §10.4). Substitutes `{image_N}` /
+//! `{monitor_N}` placeholders in `[backend].custom_command`; no shell, no quoting.
 
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
@@ -20,19 +14,12 @@ use super::{AppliedReport, BackendError, WallpaperBackend};
 
 const NAME: &str = "custom";
 
-/// `WallpaperBackend` driven by a user-provided command template.
-///
-/// The template comes from [`crate::config::BackendConfig::custom_command`].
-/// `{image_N}` and `{monitor_N}` placeholders (1-indexed) are replaced
-/// with each pair's path / monitor name; non-placeholder tokens pass
-/// through verbatim. The first token is the program; the rest are args.
 #[derive(Debug, Clone)]
 pub struct CustomBackend {
     template: String,
 }
 
 impl CustomBackend {
-    /// Construct a `CustomBackend` from the user's configured template.
     #[must_use]
     pub fn new(template: impl Into<String>) -> Self {
         Self {
@@ -106,10 +93,8 @@ impl WallpaperBackend for CustomBackend {
     }
 }
 
-/// Split the template on whitespace, then substitute placeholders.
-///
-/// Returns the resolved `argv` as `OsString`s so paths with non-UTF-8
-/// bytes (rare on Linux but possible) survive unchanged.
+/// Split on whitespace and substitute placeholders. `OsString` so non-UTF-8
+/// path bytes survive intact.
 pub(crate) fn build_argv(
     template: &str,
     assignments: &[(MonitorRef, PathBuf)],

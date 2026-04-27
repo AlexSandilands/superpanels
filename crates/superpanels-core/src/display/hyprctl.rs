@@ -1,9 +1,4 @@
-//! Hyprland display detector backed by `hyprctl monitors -j`.
-//!
-//! Hyprland exposes a deeply structured JSON document; we extract just the
-//! fields the layout pipeline needs. `stable_id` is the `serial` field
-//! verbatim — Hyprland already canonicalises EDID serials per `SPEC.md`
-//! §6.4.
+//! Hyprland display detector backed by `hyprctl monitors -j` (`SPEC.md` §6.4).
 
 use std::env;
 use std::time::Duration;
@@ -16,7 +11,6 @@ const TOOL: &str = "hyprctl";
 const CMD: &str = "hyprctl monitors -j";
 const TIMEOUT: Duration = Duration::from_secs(5);
 
-/// `DisplayDetector` for Hyprland sessions.
 #[derive(Debug)]
 pub struct HyprctlDetector;
 
@@ -69,16 +63,8 @@ struct RawMonitor {
     disabled: bool,
 }
 
-/// Parse `hyprctl monitors -j` stdout into [`Monitor`]s.
-///
-/// Hyprland's `transform` field is a 0–7 integer; we map 0/1/2/3 to the
-/// matching [`Rotation`] variant and reject 4–7 (flipped variants — we
-/// don't model mirrored layouts in v1).
-///
-/// # Errors
-///
-/// Returns [`DetectError::Parse`] when the JSON is malformed or any
-/// monitor has an unsupported `transform`.
+/// Parse `hyprctl monitors -j` stdout into [`Monitor`]s. Flipped transforms
+/// (4–7) are rejected — v1 doesn't model mirrored layouts.
 pub(crate) fn parse_hyprctl_json(
     stdout: &str,
     cmd_name: &str,

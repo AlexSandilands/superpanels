@@ -1,32 +1,13 @@
 //! `--monitors` manual-override parser (`SPEC.md` §6.2).
 //!
-//! Lets the user describe a monitor layout on the command line for
-//! SSH/headless/CI environments where no compositor CLI is available, or to
-//! force a known layout while debugging.
-//!
-//! Each entry in a comma-separated list is `WxH+X+Y[@SCALE][/ROT][?WMMxHMM]`:
-//!
-//! - `1920x1080+0+0` — layout-only; physical mm comes from the `[[monitor]]`
-//!   config when the merge step runs (Phase 1.6).
-//! - `2560x1440+0+0@1.5/right?597x336` — full override including 597×336 mm
-//!   physical, skipping the config merge for that monitor.
+//! Each comma-separated entry: `WxH+X+Y[@SCALE][/ROT][?WMMxHMM]`.
 
 use super::{DetectError, Monitor, MonitorId, Rotation};
 
 const CMD: &str = "--monitors";
 
-/// Parse a `--monitors` value into a list of [`Monitor`]s.
-///
-/// Monitor IDs are assigned sequentially from `0`. Each monitor's `name`
-/// is `manual-<i>`, `stable_id` is `None`, `refresh_hz` is `None`, and
-/// `primary` is `false` (the orchestrator / config layer can promote one
-/// later).
-///
-/// # Errors
-///
-/// Returns [`DetectError::Parse`] when the input is empty, has trailing
-/// commas, or any single entry is malformed (bad number, missing field,
-/// unknown rotation).
+/// Parse a `--monitors` value into a list of [`Monitor`]s. IDs are assigned
+/// sequentially; names are `manual-<i>`.
 pub fn parse_manual_monitors(spec: &str) -> Result<Vec<Monitor>, DetectError> {
     if spec.trim().is_empty() {
         return Err(DetectError::Parse {
@@ -103,8 +84,7 @@ fn parse_one(entry: &str, idx: usize) -> Result<Monitor, DetectError> {
 }
 
 fn split_layout(s: &str, idx: usize) -> Result<(&str, &str, &str), DetectError> {
-    // Format: WxH+X+Y; X or Y may be negative. The first '+' or '-' after
-    // position 0 ends the resolution; the next one splits X from Y.
+    // WxH+X+Y; X or Y may be negative — split on the first sign past index 0.
     let res_end = s
         .char_indices()
         .find(|(i, c)| (*c == '+' || *c == '-') && *i > 0)
@@ -115,7 +95,6 @@ fn split_layout(s: &str, idx: usize) -> Result<(&str, &str, &str), DetectError> 
         .0;
     let (res_str, rest) = s.split_at(res_end);
 
-    // Skip the leading sign of X, then look for the next sign (start of Y).
     let pos_split = rest[1..]
         .char_indices()
         .find(|(_, c)| *c == '+' || *c == '-')

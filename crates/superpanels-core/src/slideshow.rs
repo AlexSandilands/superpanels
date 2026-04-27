@@ -1,11 +1,5 @@
-//! Slideshow picker (`SPEC.md` §9.2, PLAN.md §2.3).
-//!
-//! Pure logic: given a candidate pool and a [`SlideshowConfig`], the
-//! [`SlideshowPicker`] decides which image comes next, suppresses the last
-//! `recent_history_size` choices, and persists its [`SlideshowState`] so a
-//! daemon restart resumes mid-rotation. Timing is *not* part of the
-//! picker's job — that lives in the daemon (Phase 2.5) so the picker stays
-//! synchronous and trivial to test.
+//! Slideshow picker (`SPEC.md` §9.2). Pure synchronous logic — timing lives
+//! in the daemon so the picker stays trivial to test.
 
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
@@ -16,24 +10,17 @@ use rand::seq::IndexedRandom;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-/// User-facing slideshow tunables (`SPEC.md` §9.2).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SlideshowConfig {
-    /// Wall-clock interval between automatic advances. Driven by the
-    /// daemon — the picker doesn't read it.
+    /// Driven by the daemon; the picker doesn't read it.
     pub interval: Duration,
-    /// Selection order.
     pub sort: SlideshowSort,
-    /// Suppress the last *N* shown images so a small folder doesn't repeat
-    /// immediately. Default of `10` is set by callers.
+    /// Suppress the last *N* shown images.
     pub recent_history_size: usize,
-    /// What to do on daemon start (`Resume` keeps the prior history,
-    /// `NewRandom` reshuffles, `First` jumps to index 0).
     pub on_start: SlideshowStart,
     /// Pause the timer while the user is interacting with the GUI.
     pub pause_when_active: bool,
-    /// On `apply`, if a chosen file vanished between scan and apply, skip
-    /// it instead of erroring.
+    /// Skip vanished files at apply time instead of erroring.
     pub skip_on_unavailable: bool,
 }
 
@@ -50,66 +37,44 @@ impl Default for SlideshowConfig {
     }
 }
 
-/// Order in which the picker walks the pool.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SlideshowSort {
-    /// Random selection respecting recent-history suppression.
     Shuffle,
-    /// Sorted by path, ascending.
     Alphabetical,
-    /// Sorted by directory mtime, oldest first. (The daemon supplies a
-    /// pre-sorted pool — the picker does not stat files.)
+    /// Pre-sorted by the daemon (it has the `LibraryEntry` mtime); the
+    /// picker doesn't stat files.
     DateAsc,
-    /// Sorted by directory mtime, newest first.
     DateDesc,
-    /// Sorted by `last_shown` ascending — least-recently-shown first.
+    /// Least-recently-shown first.
     LastShownAsc,
 }
 
-/// Behaviour when the daemon (re-)starts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SlideshowStart {
-    /// Pick up exactly where we left off — keep the persisted history.
     Resume,
-    /// Discard history and pick a new random starting point.
     NewRandom,
-    /// Jump to index 0 (first item in the configured sort order).
     First,
 }
 
-/// Persistable slideshow state. Lives at
-/// `$XDG_STATE_HOME/superpanels/state.json` per `SPEC.md` §9.2.
+/// Persisted at `$XDG_STATE_HOME/superpanels/state.json`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct SlideshowState {
-    /// Index of the most recently chosen entry within the (sorted) pool.
-    /// `None` before the first pick.
     pub current_index: Option<usize>,
-    /// Recently-shown paths, newest first. Bounded by
-    /// `recent_history_size`.
+    /// Newest first; bounded by `recent_history_size`.
     pub history: VecDeque<PathBuf>,
-    /// User-toggled pause flag.
     pub paused: bool,
 }
 
-/// Errors raised by [`SlideshowPicker::next`].
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum SlideshowError {
-    /// The candidate pool is empty.
     #[error("slideshow pool is empty")]
     EmptyPool,
-    /// Every entry was either in the recent-history window or was skipped
-    /// because the file vanished. The caller should widen the pool, shrink
-    /// `recent_history_size`, or wait for the next scan.
+    /// Every candidate was in recent history or unavailable; caller should
+    /// widen the pool, shrink history, or wait for the next scan.
     #[error("no eligible image: every candidate was in recent history or unavailable")]
     NoEligibleEntry,
 }
 
-/// Picker over a static pool of paths.
-///
-/// Holds a [`SlideshowState`] internally so callers can iterate without
-/// threading state through every call. State is loaded with
-/// [`Self::with_state`] and the latest copy can be exfiltrated via
-/// [`Self::state`] for persistence.
 pub struct SlideshowPicker {
     config: SlideshowConfig,
     state: SlideshowState,
@@ -117,7 +82,6 @@ pub struct SlideshowPicker {
 }
 
 impl SlideshowPicker {
-    /// New picker with empty state and an OS-seeded RNG.
     pub fn new(config: SlideshowConfig) -> Self {
         Self {
             config,
@@ -126,9 +90,7 @@ impl SlideshowPicker {
         }
     }
 
-    /// New picker initialised from a previously persisted state. Honours
-    /// `config.on_start` — `NewRandom` and `First` reset history before
-    /// the first pick.
+    /// `NewRandom` and `First` reset history before the first pick.
     pub fn with_state(config: SlideshowConfig, state: SlideshowState) -> Self {
         let state = match config.on_start {
             SlideshowStart::Resume => state,
@@ -145,33 +107,24 @@ impl SlideshowPicker {
         }
     }
 
-    /// Replace the RNG with a deterministic seeded source — used by tests
-    /// and benches that want reproducible Shuffle behaviour.
+    /// Deterministic RNG for tests / benches.
     #[cfg(test)]
     pub(crate) fn with_seeded_rng(mut self, seed: u64) -> Self {
         self.rng = rand::rngs::StdRng::seed_from_u64(seed);
         self
     }
 
-    /// Snapshot the current state for persistence.
     pub fn state(&self) -> &SlideshowState {
         &self.state
     }
 
-    /// Mutable view of the state (for the daemon to flip `paused`).
     pub fn state_mut(&mut self) -> &mut SlideshowState {
         &mut self.state
     }
 
-    /// Compute the next path to display, mutating internal history.
-    ///
-    /// `pool` is the caller-managed candidate set (typically the
-    /// [`crate::library::LibraryEntry`] paths after filters apply). The
-    /// picker sorts the slice copy according to `config.sort`, picks the
-    /// next one, and records it in `state.history`. Recent-history
-    /// suppression is best-effort: if every entry is recent, the picker
-    /// returns [`SlideshowError::NoEligibleEntry`] — the daemon decides
-    /// whether to widen the pool or shrink the history window.
+    /// Pick the next path, recording it in `state.history`. If every entry
+    /// is in recent history, returns [`SlideshowError::NoEligibleEntry`] —
+    /// the daemon decides whether to widen the pool or shrink history.
     pub fn next(&mut self, pool: &[PathBuf]) -> Result<PathBuf, SlideshowError> {
         if pool.is_empty() {
             return Err(SlideshowError::EmptyPool);
@@ -281,8 +234,8 @@ fn sorted_pool(pool: &[PathBuf], sort: SlideshowSort) -> Vec<PathBuf> {
     copy
 }
 
-/// Persist `state` to `path` as JSON. The file is rewritten via a
-/// `<path>.tmp` then rename so a crash never leaves a half-written file.
+/// Writes via `<path>.tmp` then renames, so a crash never leaves a
+/// half-written file.
 pub fn persist_state(state: &SlideshowState, path: &Path) -> Result<(), SlideshowIoError> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|source| SlideshowIoError {
@@ -306,8 +259,7 @@ pub fn persist_state(state: &SlideshowState, path: &Path) -> Result<(), Slidesho
     Ok(())
 }
 
-/// Read state from `path`. Returns `Default::default()` when the file is
-/// absent — fresh install has no state until the first apply.
+/// Returns `Default::default()` when `path` doesn't exist.
 pub fn load_state(path: &Path) -> Result<SlideshowState, SlideshowIoError> {
     if !path.exists() {
         return Ok(SlideshowState::default());
@@ -322,13 +274,10 @@ pub fn load_state(path: &Path) -> Result<SlideshowState, SlideshowIoError> {
     })
 }
 
-/// I/O failure during state persistence.
 #[derive(Debug, Error)]
 #[error("slideshow state I/O at {path}: {source}")]
 pub struct SlideshowIoError {
-    /// Path that failed.
     pub path: PathBuf,
-    /// Underlying error.
     #[source]
     pub source: std::io::Error,
 }

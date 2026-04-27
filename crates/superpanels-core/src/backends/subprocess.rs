@@ -1,11 +1,4 @@
-//! Shared subprocess helper for non-D-Bus backends.
-//!
-//! Implements `SPEC.md` §10.3: every spawn goes through [`run`], which
-//! enforces a 10 s wall-clock timeout, an explicit `LC_ALL=C` env to keep
-//! parsable output stable, and converts non-zero exit / spawn / timeout
-//! into the matching [`BackendError`] variants. Args are taken as
-//! `&[&OsStr]` so callers always pass paths and strings as separate
-//! arguments — never interpolated into a shell string.
+//! Shared subprocess helper for non-D-Bus backends (`SPEC.md` §10.3).
 
 use std::ffi::OsStr;
 use std::process::{Command, Stdio};
@@ -13,10 +6,8 @@ use std::time::{Duration, Instant};
 
 use super::BackendError;
 
-/// Per-backend subprocess timeout. `SPEC.md` §10.3 mandates 10 s.
 pub(crate) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Captured outcome of a successful subprocess invocation.
 #[derive(Debug)]
 #[allow(dead_code)] // reason: stderr currently unread; preserved for future diagnostics
 pub(crate) struct CapturedOutput {
@@ -24,12 +15,7 @@ pub(crate) struct CapturedOutput {
     pub(crate) stderr: String,
 }
 
-/// Spawn `program` with `args`, wait up to `timeout`, capture stdout +
-/// stderr, and return them on a clean exit.
-///
-/// Always sets `LC_ALL=C` so parsers see locale-independent output. Args
-/// are passed as separate `OsStr`s — no shell interpolation. The exact
-/// command line is reconstructed for diagnostics only.
+/// Spawn with `LC_ALL=C`, wait up to `timeout`, capture stdout + stderr.
 pub(crate) fn run(
     program: &str,
     args: &[&OsStr],
@@ -91,8 +77,6 @@ pub(crate) fn run(
     }
 }
 
-/// Look up `bin` on `$PATH`. Returns `true` if a regular file with that
-/// name exists in any `PATH` entry.
 pub(crate) fn which(bin: &str) -> bool {
     let Some(path) = std::env::var_os("PATH") else {
         return false;
@@ -153,9 +137,6 @@ mod tests {
 
     #[test]
     fn which_finds_a_known_unix_tool_or_returns_false() {
-        // Don't assume a particular tool exists; just make sure we don't
-        // panic and that the lookup of a definitely-bogus name returns
-        // false.
         assert!(!which("definitely-not-a-real-binary-xyz-superpanels"));
     }
 

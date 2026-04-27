@@ -1,12 +1,4 @@
-//! Display detection data model and detector orchestration.
-//!
-//! Defines the foundational types ([`Monitor`], [`MonitorId`], [`Rotation`],
-//! [`MonitorRef`]) that the rest of the core uses to talk about screens, plus
-//! the [`DisplayDetector`] trait, [`Availability`] enum, [`DetectError`] enum,
-//! and the [`detect`] orchestrator that walks detectors in priority order.
-//!
-//! Concrete detector implementations live in submodules ([`kscreen`] for
-//! KDE Plasma, [`manual`] for the `--monitors` CLI override).
+//! Display detection (`SPEC.md` §6).
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -26,197 +18,96 @@ pub(crate) use subprocess::{run as run_subprocess, which};
 use wlr_randr::WlrRandrDetector;
 use xrandr::XrandrDetector;
 
-/// A physical display normalised into Superpanels' internal model.
-///
-/// Mirrors `SPEC.md` §3.1. Field ordering and semantics are part of the
-/// spec; `Monitor` values are produced by detectors and consumed by the
-/// layout module.
+/// A physical display normalised into Superpanels' internal model
+/// (`SPEC.md` §3.1).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Monitor {
-    /// Runtime-only identity, assigned at detection time. Never persisted —
-    /// use [`MonitorRef`] for data that must survive reboots and dock
-    /// re-plugs.
+    /// Runtime-only; never persisted — use [`MonitorRef`] for that.
     pub id: MonitorId,
-    /// Compositor-supplied output name (e.g. `"DP-1"`, `"HDMI-A-1"`).
     pub name: String,
-    /// Compositor-supplied stable identifier (KDE per-output UUID, or a
-    /// hash of EDID `manufacturer + model + serial` on other backends).
-    /// `None` when the detector cannot supply one.
+    /// KDE per-output UUID, or hash of EDID `manufacturer + model + serial`.
     pub stable_id: Option<String>,
-    /// Top-left corner in the logical desktop, in pixels (post-scale).
+    /// Top-left in logical desktop pixels (post-scale).
     pub position: (i32, i32),
-    /// Pixel dimensions `(w, h)` in the monitor's native orientation.
+    /// Native-orientation pixel dimensions.
     pub resolution: (u32, u32),
-    /// Physical dimensions `(w, h)` in millimetres, native orientation.
-    ///
-    /// Sourced from per-monitor config (`SPEC.md` §14.1), **not** detection
-    /// — `kscreen-doctor` and most compositor CLIs do not expose this.
-    /// Remains `None` until the user has provided a `[[monitor]]` block;
-    /// bezel math returns `LayoutError::PhysicalSizeMissing` while it is
-    /// `None`.
+    /// Native-orientation mm. Sourced from `[[monitor]]` config — detectors
+    /// don't expose this. `None` until the user fills it in; bezel math
+    /// returns `LayoutError::PhysicalSizeMissing` until then.
     pub physical_size_mm: Option<(u32, u32)>,
-    /// `HiDPI` scale factor (`1.0`, `1.25`, `1.5`, `2.0`, …).
     pub scale: f64,
-    /// Display rotation applied by the compositor.
     pub rotation: Rotation,
-    /// Refresh rate in Hz, for display in `superpanels detect` output. Not
-    /// used by the layout math.
     pub refresh_hz: Option<f32>,
-    /// Whether the compositor reports this monitor as primary.
     pub primary: bool,
-    /// Pixels per inch, derived post-rotation from `resolution` and
-    /// `physical_size_mm`. `None` whenever `physical_size_mm` is `None`.
+    /// Post-rotation, derived from `resolution` and `physical_size_mm`.
     pub ppi: Option<f64>,
 }
 
-/// Newtype wrapping the runtime monitor identifier.
-///
-/// Distinct from `u32` so `fn apply(profile: ProfileId, monitor: MonitorId)`
-/// cannot be called with the arguments swapped. Assigned during detection
-/// and never persisted — see [`MonitorRef`] for the persistent counterpart.
+/// Runtime monitor id. Newtype so `fn apply(profile: ProfileId, monitor: MonitorId)`
+/// can't be called with arguments swapped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct MonitorId(pub u32);
 
-/// Display rotation applied by the compositor.
-///
-/// `None` is the default (matches `SPEC.md` §3.1, which uses `Rotation::None`
-/// rather than `Normal`). Detector-specific numeric encodings (e.g. KDE's
-/// `1`/`2`/`4`/`8` bitmask) are mapped to this enum by the parser, not baked
-/// into the type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum Rotation {
-    /// No rotation (landscape, the panel's native orientation).
     #[default]
     None,
-    /// Rotated 90° clockwise.
     Right,
-    /// Rotated 180°.
     Inverted,
-    /// Rotated 90° counter-clockwise.
     Left,
 }
 
-/// Persistent reference to a monitor, stable across reboots and dock
-/// re-plugs.
-///
-/// See `SPEC.md` §6.4. `stable_id` is a compositor-supplied identifier (KDE
-/// per-output UUID, or a hash of EDID `manufacturer + model + serial`);
-/// `name` (e.g. `"DP-1"`) is the fallback when the detector cannot supply a
-/// stable id. Per-monitor config, profile assignments, and bezel overrides
-/// all key on `MonitorRef` rather than the runtime [`MonitorId`].
+/// Persistent monitor reference (`SPEC.md` §6.4). All persisted data —
+/// per-monitor config, profile assignments, bezel overrides — keys on this
+/// rather than the runtime [`MonitorId`]. `name` is the fallback when the
+/// detector can't supply a `stable_id`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct MonitorRef {
-    /// Compositor-supplied stable identifier.
     pub stable_id: String,
-    /// Output name (e.g. `"DP-1"`); used as the human-readable fallback.
     pub name: String,
 }
 
-/// A source of [`Monitor`] data — typically a thin wrapper around a compositor
-/// CLI tool (`kscreen-doctor`, `wlr-randr`, `xrandr`, …).
-///
-/// Mirrors `SPEC.md` §6.1. The orchestrator [`detect`] walks detectors in the
-/// priority order defined by `SPEC.md` §6, calling [`Self::availability`]
-/// first to skip detectors whose tool is missing or whose environment doesn't
-/// match before paying the subprocess cost of [`Self::detect`].
+/// A source of [`Monitor`] data — usually a thin wrapper around a compositor
+/// CLI. [`detect`] walks implementations in `SPEC.md` §6 priority order.
 pub trait DisplayDetector {
-    /// Short, stable identifier (e.g. `"kscreen-doctor"`). Used by
-    /// `superpanels detect --debug` to label per-detector output.
     fn name(&self) -> &str;
-    /// Cheap, non-spawning check — env-var presence and `PATH` lookups only.
+    /// Cheap check — env vars and `PATH` only, no subprocess spawn.
     fn availability(&self) -> Availability;
-    /// Spawn the underlying tool and parse its output.
     fn detect(&self) -> Result<Vec<Monitor>, DetectError>;
 }
 
-/// Why a [`DisplayDetector`] is or isn't usable in the current environment.
-///
-/// Returned as an enum, not a `bool`, so `superpanels detect --debug` can
-/// explain *why* each detector was skipped (`SPEC.md` §6.1).
+/// Enum (not bool) so `detect --debug` can explain *why* each detector was
+/// skipped.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Availability {
-    /// Tool is present and the environment matches; [`DisplayDetector::detect`]
-    /// is worth attempting.
     Available,
-    /// The detector's underlying binary is not on `PATH`.
-    ToolMissing {
-        /// The binary the detector looked for (e.g. `"kscreen-doctor"`).
-        tool: &'static str,
-    },
-    /// The detector's environment markers are absent (e.g.
-    /// `$KDE_FULL_SESSION` not set for the KDE detector).
-    WrongEnvironment {
-        /// Human-readable reason suitable for `--debug` output.
-        reason: &'static str,
-    },
-    /// The user pinned a different detector via config.
+    ToolMissing { tool: &'static str },
+    WrongEnvironment { reason: &'static str },
     Disabled,
 }
 
-/// Errors a [`DisplayDetector`] can return from [`DisplayDetector::detect`].
-///
-/// Distinct variants let the orchestrator react differently to "tool missing"
-/// vs "tool present but failed" vs "parser broken" (`SPEC.md` §6.1).
 #[derive(Debug, Error)]
 pub enum DetectError {
-    /// The subprocess exited non-zero or could not be spawned.
     #[error("subprocess `{cmd}` failed: {stderr}")]
-    Subprocess {
-        /// Command line for diagnostics (e.g. `"kscreen-doctor -o"`).
-        cmd: String,
-        /// Captured stderr (or `io::Error` description if the spawn itself
-        /// failed).
-        stderr: String,
-    },
-    /// The subprocess didn't return within the configured timeout.
+    Subprocess { cmd: String, stderr: String },
     #[error("subprocess `{cmd}` timed out after {seconds}s")]
-    Timeout {
-        /// Command line for diagnostics.
-        cmd: String,
-        /// Configured timeout in seconds.
-        seconds: u64,
-    },
-    /// The subprocess returned, but its output couldn't be parsed.
+    Timeout { cmd: String, seconds: u64 },
     #[error("could not parse output of `{cmd}`: {message}")]
-    Parse {
-        /// Command line for diagnostics.
-        cmd: String,
-        /// Parser-specific reason (line number, missing field, …).
-        message: String,
-    },
-    /// The subprocess returned successfully but reported zero usable
-    /// monitors. The orchestrator treats this as a soft failure and tries
-    /// the next detector.
+    Parse { cmd: String, message: String },
+    /// Soft failure — the orchestrator falls through to the next detector.
     #[error("detector returned an empty monitor list")]
     EmptyResult,
 }
 
-/// Try detectors in priority order; return the first non-empty layout.
-///
-/// If `manual_override` is `Some(spec)`, the `--monitors` parser
-/// ([`manual::parse_manual_monitors`]) wins unconditionally (`SPEC.md` §6
-/// priority 6 — manual override "always wins"). Otherwise the orchestrator
-/// walks KDE → Hyprland → wlr-randr → xrandr in `SPEC.md` §6 priority order,
-/// returning the first detector whose availability check passes and whose
-/// `detect()` yields a non-empty monitor list. The Sway-native detector
-/// (priority 3) lands in a follow-up commit.
-///
-/// Layout `Monitor`s come back with `physical_size_mm: None`. The merge
-/// against `[[monitor]]` config (`SPEC.md` §14.1) happens in Phase 1.6.
-///
-/// # Errors
-///
-/// Returns the parser error directly if `manual_override` is supplied and
-/// malformed. Otherwise, if every available detector failed (or none were
-/// available), returns a friendly [`DetectError::Subprocess`] mirroring
-/// `SPEC.md` §6's recommended message.
+/// Try detectors in `SPEC.md` §6 priority order; return the first non-empty
+/// layout. `manual_override` (`--monitors`) wins unconditionally. Returned
+/// monitors have `physical_size_mm: None`; merging against `[[monitor]]`
+/// config happens in Phase 1.6.
 pub fn detect(manual_override: Option<&str>) -> Result<Vec<Monitor>, DetectError> {
     if let Some(spec) = manual_override {
         return parse_manual_monitors(spec);
     }
 
-    // Walked in `SPEC.md` §6 priority order. Phase 2.2 wires KDE / Hyprland /
-    // wlr-randr / xrandr; the Sway-native detector lands separately.
     let detectors: [&dyn DisplayDetector; 4] = [
         &KscreenDoctorDetector,
         &HyprctlDetector,

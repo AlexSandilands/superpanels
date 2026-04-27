@@ -1,10 +1,4 @@
-//! X11 display detector backed by `xrandr --verbose`.
-//!
-//! Used as the X11 fallback when no Wayland session is active. The verbose
-//! variant emits an EDID hex dump per output that we parse for the
-//! manufacturer/model/serial triple — the basis of the `stable_id` per
-//! `SPEC.md` §6.4. Physical millimetres come from the connector header line
-//! (`<NAME> connected ... 597mm x 336mm`) when present.
+//! X11 display detector backed by `xrandr --verbose` (`SPEC.md` §6.4).
 
 use std::env;
 use std::time::Duration;
@@ -16,7 +10,6 @@ const TOOL: &str = "xrandr";
 const CMD: &str = "xrandr --verbose";
 const TIMEOUT: Duration = Duration::from_secs(5);
 
-/// `DisplayDetector` for X11 sessions.
 #[derive(Debug)]
 pub struct XrandrDetector;
 
@@ -53,21 +46,6 @@ impl DisplayDetector for XrandrDetector {
 }
 
 /// Parse `xrandr --verbose` stdout into [`Monitor`]s.
-///
-/// Connector blocks start with `<NAME> connected` (skipping `disconnected`).
-/// Within each block we extract:
-/// - geometry from `WxH+X+Y` on the header line,
-/// - physical mm from a trailing `<W>mm x <H>mm`,
-/// - rotation from the post-geometry word (`normal`, `left`, `inverted`,
-///   `right`),
-/// - active mode + refresh rate from the indented mode list (the `*current`
-///   marker),
-/// - EDID hex from the `EDID:` block — used to derive `stable_id`.
-///
-/// # Errors
-///
-/// Returns [`DetectError::Parse`] when an enabled connector lacks a valid
-/// geometry or active mode.
 pub(crate) fn parse_xrandr_verbose(
     stdout: &str,
     cmd_name: &str,
@@ -79,9 +57,7 @@ pub(crate) fn parse_xrandr_verbose(
     let mut edid_hex = String::new();
 
     for line in stdout.lines() {
-        // EDID lines are indented further than the property header. We
-        // collect hex until we hit a line that no longer looks like EDID
-        // payload.
+        // EDID payload is doubly-indented hex; stop on the first non-hex line.
         if in_edid {
             let trimmed = line.trim();
             if line.starts_with("\t\t") && trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -92,8 +68,6 @@ pub(crate) fn parse_xrandr_verbose(
         }
 
         if !line.starts_with('\t') && !line.starts_with(' ') {
-            // New connector header (or the screen header line). Flush the
-            // current connector first.
             if let Some(prev) = current.take()
                 && let Some(monitor) = finalize(prev, &edid_hex, &mut next_id, cmd_name)?
             {
@@ -113,13 +87,8 @@ pub(crate) fn parse_xrandr_verbose(
             continue;
         }
 
-        // Mode lines look like:
-        //   2560x1440 (0x55) 241.500MHz +HSync -VSync *current +preferred
-        //     ...
-        //     v: ...   60.00Hz
-        // The "*current" word identifies the active mode; the refresh rate
-        // appears two lines later. We track whether we are in the active
-        // block.
+        // The "*current" marker identifies the active mode block; its `v:` line
+        // (two lines down) carries the refresh rate.
         if line.starts_with("  ") && !line.starts_with("    ") && line.contains('x') {
             state.active_mode_block = line.contains("*current");
         }
@@ -165,7 +134,6 @@ fn parse_connector_header(line: &str) -> Option<RawConnector> {
         });
     }
     if state != "connected" {
-        // "Screen 0:" and similar — not a connector.
         return None;
     }
 
@@ -175,14 +143,13 @@ fn parse_connector_header(line: &str) -> Option<RawConnector> {
         ..RawConnector::default()
     };
 
-    // Remaining tokens may be: [primary] [WxH+X+Y] [(mask)] [rotation] [WMMmm x HMMmm]
+    // Remaining: [primary] [WxH+X+Y] [(mask)] [rotation] [WMMmm x HMMmm]
     let rest: Vec<&str> = tokens.collect();
     let mut idx = 0;
     if rest.first() == Some(&"primary") {
         idx += 1;
     }
 
-    // Geometry token: "WxH+X+Y"
     if let Some(tok) = rest.get(idx)
         && let Some(geo) = parse_geometry(tok)
     {
@@ -192,14 +159,12 @@ fn parse_connector_header(line: &str) -> Option<RawConnector> {
         idx += 1;
     }
 
-    // Skip mask token like "(0x...)" or any "(...)" group.
     if let Some(tok) = rest.get(idx)
         && tok.starts_with('(')
     {
         idx += 1;
     }
 
-    // Rotation keyword (only present when non-normal).
     if let Some(tok) = rest.get(idx) {
         match *tok {
             "normal" => {
@@ -222,9 +187,8 @@ fn parse_connector_header(line: &str) -> Option<RawConnector> {
         }
     }
 
-    // Physical size: "<W>mm" "x" "<H>mm" (xrandr emits these as separate
-    // tokens). We scan the tail for that pattern rather than fixing the
-    // index, since reflection / scaling tokens may sit in between.
+    // Physical size "<W>mm x <H>mm": three separate xrandr tokens; reflection /
+    // scaling tokens may appear in between, so scan the tail rather than indexing.
     let tail = &rest[idx..];
     for (i, tok) in tail.iter().enumerate() {
         if let Some(width_str) = tok.strip_suffix("mm")
@@ -243,7 +207,7 @@ fn parse_connector_header(line: &str) -> Option<RawConnector> {
 }
 
 fn parse_geometry(tok: &str) -> Option<((u32, u32), (i32, i32))> {
-    // Format: WxH+X+Y where X or Y may be negative.
+    // WxH+X+Y, where X or Y may be negative (so split on `+` or `-` past index 0).
     let res_end = tok
         .char_indices()
         .find(|(i, c)| (*c == '+' || *c == '-') && *i > 0)?
@@ -263,7 +227,6 @@ fn parse_geometry(tok: &str) -> Option<((u32, u32), (i32, i32))> {
 }
 
 fn extract_v_refresh(line: &str) -> Option<f32> {
-    // Format: "v: height 1440 start ... clock <Hz>Hz"
     for tok in line.split_whitespace().rev() {
         if let Some(hz_str) = tok.strip_suffix("Hz")
             && let Ok(hz) = hz_str.parse::<f32>()
@@ -313,9 +276,6 @@ fn finalize(
     Ok(Some(monitor))
 }
 
-/// Decode an `(EDID, manufacturer, model_text, serial_text)` triple from
-/// the hex blob. Returns `None` when the blob is too short or malformed —
-/// callers fall back to `name` per `SPEC.md` §6.4.
 fn parse_edid_triple(hex: &str) -> Option<(String, String, String)> {
     if hex.len() < 256 {
         return None;
@@ -325,7 +285,7 @@ fn parse_edid_triple(hex: &str) -> Option<(String, String, String)> {
         return None;
     }
 
-    // Manufacturer: bytes 8-9, three packed 5-bit letters.
+    // EDID manufacturer ID: bytes 8-9, three packed 5-bit letters.
     let mfg_word = (u16::from(bytes[8]) << 8) | u16::from(bytes[9]);
     let l1 = u8::try_from((mfg_word >> 10) & 0x1f).ok()? + b'A' - 1;
     let l2 = u8::try_from((mfg_word >> 5) & 0x1f).ok()? + b'A' - 1;
@@ -335,9 +295,8 @@ fn parse_edid_triple(hex: &str) -> Option<(String, String, String)> {
     }
     let manufacturer = String::from_utf8(vec![l1, l2, l3]).ok()?;
 
-    // EDID 1.3+ stores monitor name and serial as descriptor blocks at
-    // bytes 54..125, four 18-byte chunks. Tag 0xFC = monitor name, 0xFF =
-    // serial number.
+    // EDID 1.3+: descriptor blocks at bytes 54..125, four 18-byte chunks.
+    // Tag 0xFC = monitor name, 0xFF = serial number.
     let mut model_text: Option<String> = None;
     let mut serial_text: Option<String> = None;
     for i in 0..4 {
@@ -346,7 +305,6 @@ fn parse_edid_triple(hex: &str) -> Option<(String, String, String)> {
             break;
         }
         let block = &bytes[off..off + 18];
-        // Descriptor blocks start with 0x00 0x00 0x00 <tag>.
         if block[0] != 0 || block[1] != 0 || block[2] != 0 {
             continue;
         }
@@ -358,8 +316,7 @@ fn parse_edid_triple(hex: &str) -> Option<(String, String, String)> {
         }
     }
 
-    // Fall back to bytes 12-15 (binary serial) when no descriptor was
-    // present, formatted as decimal so the hash is stable.
+    // Fall back to bytes 12-15 (binary serial), decimal-formatted for hash stability.
     let serial = serial_text.unwrap_or_else(|| {
         let raw = u32::from_le_bytes([bytes[12], bytes[13], bytes[14], bytes[15]]);
         if raw == 0 {

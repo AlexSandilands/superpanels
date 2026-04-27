@@ -1,13 +1,7 @@
 //! KDE Plasma display detector backed by `kscreen-doctor -o`.
 //!
-//! `kscreen-doctor` is the canonical KDE CLI for inspecting the monitor
-//! layout. It prints one `Output:` block per output; we parse the subset of
-//! fields the bezel/layout pipeline needs (resolution, geometry, scale,
-//! rotation, refresh rate, primary flag, per-output UUID).
-//!
-//! Physical millimetres are *not* extracted — `kscreen-doctor` doesn't
-//! expose them. The merge with `[[monitor]]` config (`SPEC.md` §14.1)
-//! happens later in Phase 1.6.
+//! Physical mm are not extracted (kscreen-doctor doesn't expose them); they
+//! come from `[[monitor]]` config (`SPEC.md` §14.1).
 
 use std::env;
 use std::path::PathBuf;
@@ -24,11 +18,6 @@ type Position = (i32, i32);
 type Resolution = (u32, u32);
 type Geometry = (Position, Resolution);
 
-/// `DisplayDetector` for KDE Plasma sessions.
-///
-/// Spawns `kscreen-doctor -o` with `NO_COLOR=1` and `LC_ALL=C` to keep the
-/// output ANSI-free and locale-independent, then runs
-/// [`parse_kscreen_output`] on the captured stdout.
 #[derive(Debug)]
 pub struct KscreenDoctorDetector;
 
@@ -124,18 +113,9 @@ fn which(bin: &str) -> Option<PathBuf> {
     None
 }
 
-/// Parse the captured stdout of `kscreen-doctor -o` into [`Monitor`]s.
+/// Parse `kscreen-doctor -o` stdout into [`Monitor`]s.
 ///
-/// Tolerates ANSI escape sequences as a defensive measure: callers should
-/// invoke `kscreen-doctor` with `NO_COLOR=1`, but if the env var is ignored
-/// (older KDE builds, theming overrides) the parser still works.
-///
-/// Outputs that are not `enabled` *and* `connected` are dropped.
-///
-/// # Errors
-///
-/// Returns [`DetectError::Parse`] when an `Output:` block is missing a
-/// required field (resolution, geometry) or contains malformed numerics.
+/// ANSI escapes are stripped defensively in case `NO_COLOR=1` is ignored.
 pub(crate) fn parse_kscreen_output(
     output: &str,
     cmd_name: &str,
@@ -186,7 +166,7 @@ fn parse_output_header(
     cmd_name: &str,
     lineno: usize,
 ) -> Result<RawOutput, DetectError> {
-    // Expected: "<index> <NAME> [<UUID>]"
+    // "<index> <NAME> [<UUID>]"
     let mut parts = rest.split_whitespace();
     parts.next().ok_or_else(|| DetectError::Parse {
         cmd: cmd_name.to_owned(),
@@ -242,7 +222,7 @@ fn absorb_field(
 }
 
 fn parse_geometry(rest: &str, cmd_name: &str, lineno: usize) -> Result<Geometry, DetectError> {
-    // Format: "X,Y WxH"
+    // "X,Y WxH"
     let mut parts = rest.split_whitespace();
     let pos = parts.next().ok_or_else(|| DetectError::Parse {
         cmd: cmd_name.to_owned(),
@@ -293,8 +273,7 @@ fn parse_rotation(rest: &str, cmd_name: &str, lineno: usize) -> Result<Rotation,
 }
 
 fn parse_active_refresh(modes: &str) -> Option<f32> {
-    // Modes line entries look like " 2:2560x1440@155.00*  3:..." — the active
-    // mode carries a trailing '*'.
+    // Active entry: " 2:2560x1440@155.00*" — trailing '*' marks it.
     for tok in modes.split_whitespace() {
         let unstar = tok.trim_end_matches('*');
         if unstar.len() == tok.len() {
