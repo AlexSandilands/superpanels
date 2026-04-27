@@ -2,7 +2,7 @@
 
 > What to test, where to put the tests, and what tools we use.
 
-For testing *philosophy* in the broader spec, see [`SPEC.md` §20](../SPEC.md). This doc is the practitioner's reference.
+For testing *philosophy* in the broader spec, see [`docs/spec/20-testing.md`](./spec/20-testing.md). This doc is the practitioner's reference.
 
 ---
 

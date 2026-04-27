@@ -7,16 +7,16 @@ The threat model: image files come from untrusted sources (downloads); custom ba
 ## Required reading
 
 1. `/mnt/storage/Projects/superpanels/CLAUDE.md` — the subprocess gotcha and KDE backend rule
-2. `SPEC.md §10.3` — subprocess rules (every backend follows these)
-3. `SPEC.md §10.4` — KDE backend specifics (D-Bus, JSON-quoted JS templates, no string concat)
-4. `SPEC.md §17` — Tauri v2 hardening (CSP, withGlobalTauri, capabilities, asset protocol)
+2. `docs/spec/10-backends.md` §10.3 — subprocess rules (every backend follows these)
+3. `docs/spec/10-backends.md` §10.4 — KDE backend specifics (D-Bus, JSON-quoted JS templates, no string concat)
+4. `docs/spec/17-security.md` — Tauri v2 hardening (CSP, withGlobalTauri, capabilities, asset protocol)
 5. The diff under review
 
 ## What to BLOCK on
 
 ### Subprocess
 - **Shell interpolation.** `Command::new("sh").arg("-c").arg(...)` with user data. All args go through `Command::arg()` separately, never concatenated.
-- **Missing timeout.** Every subprocess must have a documented timeout (5s for detectors, 10s for backends per SPEC §6 / §10.3).
+- **Missing timeout.** Every subprocess must have a documented timeout (5s for detectors, 10s for backends per docs/spec/06-detection.md / docs/spec/10-backends.md §10.3).
 - **Missing stderr capture** on a fallible subprocess. Errors must include what failed and why.
 - **Missing `LC_ALL=C` or `NO_COLOR=1`** on commands whose output we parse. We must not parse locale-dependent output.
 

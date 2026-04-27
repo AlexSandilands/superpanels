@@ -20,7 +20,7 @@ This file is the entry point for working on Superpanels. The deeper guides live 
 
 ## What you're building
 
-Superpanels is a Linux wallpaper manager focused on multi-monitor spanning with bezel correction. The full design lives in [`SPEC.md`](./SPEC.md). The phased build plan lives in [`PLAN.md`](./PLAN.md). Read both before writing code.
+Superpanels is a Linux wallpaper manager focused on multi-monitor spanning with bezel correction. The full design lives in [`docs/spec/`](./docs/spec/) (split per section) and the phased build plan in [`docs/plan/`](./docs/plan/) (split per phase). Read the index of each — only open the section/phase you need.
 
 The project is a Cargo workspace (Rust) plus a Tauri shell with a Svelte 5 frontend (TypeScript). The Rust core is the ground truth; CLI, daemon, and GUI are thin wrappers around it.
 
@@ -64,7 +64,7 @@ pre-commit run --all-files
 cargo check --workspace --all-features
 ```
 
-(These will be no-ops until the workspace is scaffolded in PLAN Phase 1.1.)
+(These will be no-ops until the workspace is scaffolded in plan Phase 1.1, see `docs/plan/phase-1-core-cli.md`.)
 
 ---
 
@@ -96,8 +96,8 @@ Five guides cover everything:
 
 | Doc | When to read it |
 |---|---|
-| [`SPEC.md`](./SPEC.md) | Before designing a feature — what we're building. |
-| [`PLAN.md`](./PLAN.md) | Before starting a new phase — what to do next. |
+| [`docs/spec/`](./docs/spec/) | Before designing a feature — what we're building. Read the index, then open just the section file you need. |
+| [`docs/plan/`](./docs/plan/) | Before starting a new phase — what to do next. Read the index, then open just the phase file you need. |
 | [`docs/architecture.md`](./docs/architecture.md) | Before adding/moving a module — the workspace map, file-size rules, naming. |
 | [`docs/style-rust.md`](./docs/style-rust.md) | While writing Rust — idioms, error handling, API design, what to avoid. |
 | [`docs/style-frontend.md`](./docs/style-frontend.md) | While writing TypeScript or Svelte — strict TS, runes, component conventions. |
@@ -109,14 +109,14 @@ Memorise the headings, not the contents. When you hit a question, you'll know wh
 
 ## Workflow
 
-1. Pick a task from `PLAN.md`. Phases are vertical — finish a phase before starting the next, and within a phase do tasks in roughly the listed order.
+1. Pick a task from the relevant `docs/plan/phase-*.md`. Phases are vertical — finish a phase before starting the next, and within a phase do tasks in roughly the listed order.
 2. Make a feature branch: `git checkout -b phase-1/display-detection`.
 3. **Write the test first** for non-trivial logic. See [`docs/testing.md`](./docs/testing.md).
 4. Implement.
 5. Run `cargo fmt && cargo clippy --fix --allow-dirty` before committing.
 6. Commit in small, focused chunks. Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) — `feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`.
 7. Push — pre-push hooks run the full suite. If they pass, open a PR.
-8. After merge, tick the box in `PLAN.md` and move to the next task.
+8. After merge, tick the box in the relevant `docs/plan/phase-*.md` and move to the next task.
 
 ---
 

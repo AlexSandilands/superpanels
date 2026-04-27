@@ -64,6 +64,6 @@ Run on a real desktop session for each supported backend before tagging. Capture
 
 - [ ] Release notes posted to GitHub Releases.
 - [ ] AUR `bin` package bumped (if present).
-- [ ] Move PLAN.md tick boxes to "completed" for the phase that shipped.
+- [ ] Move tick boxes in the relevant `docs/plan/phase-*.md` to "completed" for the phase that shipped.
 - [ ] Open issues for anything that *almost* shipped but slipped.
 - [ ] If 1.0+: announcement (changelog summary on r/unixporn / r/archlinux / HN).

@@ -256,7 +256,7 @@ For OS-passed strings (subprocess args, env vars):
 - `OsStr` / `OsString` for things you'll hand back to the OS unmodified.
 - Convert to `String` with `.to_string_lossy()` only at display boundaries (logs, errors).
 
-**Never interpolate a path into a shell command.** All subprocess args are passed as separate `OsStr` arguments via `Command::arg()`. See [`SPEC.md` §10.3](../SPEC.md).
+**Never interpolate a path into a shell command.** All subprocess args are passed as separate `OsStr` arguments via `Command::arg()`. See [`docs/spec/10-backends.md` §10.3](./spec/10-backends.md).
 
 ---
 
@@ -339,7 +339,7 @@ Every `pub` item in `superpanels-core` gets a **one-line** doc summary. Add more
 
 ```rust
 ✅ /// Computes one [`CropSpec`] per monitor; the image is mapped onto the
-   /// physical desktop plane in mm including bezels (`SPEC.md` §4).
+   /// physical desktop plane in mm including bezels (`SPEC §4`).
    pub fn compute_crop_specs(/* ... */) -> Result<Vec<CropSpec>, LayoutError>
 ```
 
@@ -348,7 +348,7 @@ Rules:
 - **No field or enum-variant docs that restate the name.** Skip them entirely; the name and type already say it. Add a doc only when the field's meaning is genuinely ambiguous (units, sentinel values, ordering invariants).
 - **`# Errors`**: list a variant only when its trigger isn't obvious from its name. `EmptyMonitorList` doesn't need an `# Errors` line — the name is the doc. `ImageTooSmall` *might*, because the threshold isn't obvious.
 - **`# Examples`**: only when the usage has a non-obvious edge case worth pinning with a doctest. Do *not* write tutorial examples ("construct a default and read a field") — they cost tokens and prove nothing the type system doesn't already.
-- **Module headers**: one line. Optional `SPEC.md §X` ref. No design essays — that belongs in `SPEC.md` or `architecture.md`.
+- **Module headers**: one line. Optional `SPEC §X` ref (which maps to `docs/spec/NN-*.md`). No design essays — those belong in `docs/spec/` or `docs/architecture.md`.
 
 ### Inline comments
 
@@ -415,7 +415,7 @@ Exception: `use super::*;` inside `mod tests` — that's idiomatic.
 
 You won't. And if you do, refactoring concrete code to a trait takes 5 minutes. Premature traits add indirection now for hypothetical flexibility later. Resist.
 
-The exceptions are documented in `SPEC.md`: `WallpaperBackend` and `DisplayDetector` *do* have multiple implementations from day one.
+The exceptions are documented in `docs/spec/`: `WallpaperBackend` (§10) and `DisplayDetector` (§6) *do* have multiple implementations from day one.
 
 ### Module-level state
 

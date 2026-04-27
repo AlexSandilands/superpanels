@@ -1,6 +1,6 @@
 [toolchain]
 # Track stable. Pin to a specific version (e.g. "1.85.0") before the v0.1
-# release to lock CI reproducibility — see PLAN.md Phase 5.
+# release to lock CI reproducibility — see docs/plan/phase-5-packaging.md.
 channel = "stable"
 components = ["rustfmt", "clippy"]
 profile = "minimal"

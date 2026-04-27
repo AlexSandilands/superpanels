@@ -35,8 +35,8 @@ superpanels/
 ├── .pre-commit-config.yaml
 ├── .editorconfig
 ├── .gitignore
-├── SPEC.md
-├── PLAN.md
+├── SPEC.md                          ← redirect stub → docs/spec/
+├── PLAN.md                          ← redirect stub → docs/plan/
 ├── CONTRIBUTING.md
 ├── README.md
 ├── LICENSE / LICENSE-MIT / LICENSE-APACHE
@@ -47,6 +47,8 @@ superpanels/
 │   └── superpanels-gui/             ← Tauri shell binary (feature-gated)
 ├── ui/                              ← Svelte 5 frontend (its own package.json)
 ├── docs/                            ← architecture, style, testing
+│   ├── spec/                        ← technical spec, split per section (NN-topic.md)
+│   └── plan/                        ← phased build plan, split per phase
 ├── packaging/                       ← PKGBUILDs, flatpak manifest, .desktop files
 └── .github/workflows/               ← CI definitions (Phase 1+)
 ```
@@ -85,7 +87,7 @@ Read this carefully — drift between intent and reality is a code smell.
 - **System tray.**
 - The Svelte frontend in `ui/` is the actual UI; this crate only hosts it.
 
-> **Phase 1 status.** Of the four crates above, `superpanels-core` and `superpanels-cli` are implemented; `superpanels-daemon` and `superpanels-gui` arrive in [PLAN.md](../PLAN.md) Phases 2.5 and 3.1 respectively. The dependency-direction diagram below already covers the Phase 1 graph (the CLI depends on the core and on nothing else in the workspace).
+> **Phase 1 status.** Of the four crates above, `superpanels-core` and `superpanels-cli` are implemented; `superpanels-daemon` and `superpanels-gui` arrive in plan Phases 2.5 ([`docs/plan/phase-2-multi-backend.md`](./plan/phase-2-multi-backend.md)) and 3.1 ([`docs/plan/phase-3-tauri-tray.md`](./plan/phase-3-tauri-tray.md)) respectively. The dependency-direction diagram below already covers the Phase 1 graph (the CLI depends on the core and on nothing else in the workspace).
 
 ---
 
@@ -194,7 +196,7 @@ Each is a candidate for its own submodule. The wrong split is "library_part_2.rs
 - **No abbreviations** unless the long form is genuinely awkward. `monitor`, not `mon`. `configuration` is acceptable as `config` because that's the universal short form.
 - **No Hungarian notation.** `image_path: PathBuf` not `path_image`. Type information lives in the type system.
 - **Verbs for functions, nouns for types.** `compute_crop_specs()`, not `crop_spec_computer()`.
-- **Boolean-returning functions read like predicates.** `has_rotation()`, `should_skip()`, `is_primary()`. (Note: prefer richer enums when "available / not available" has *reasons* — see `Availability` in SPEC §6.1.)
+- **Boolean-returning functions read like predicates.** `has_rotation()`, `should_skip()`, `is_primary()`. (Note: prefer richer enums when "available / not available" has *reasons* — see `Availability` in `docs/spec/06-detection.md` §6.1.)
 
 ---
 

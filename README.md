@@ -2,7 +2,7 @@
 
 > Linux wallpaper manager focused on physical-bezel-aware multi-monitor spanning and folder-driven slideshows.
 
-**Status: Phase 1 (CLI MVP, KDE Wayland).** The Rust core and `superpanels` CLI are working; multi-backend, slideshow, daemon, and GUI follow in [PLAN.md](./PLAN.md) Phases 2–4.
+**Status: Phase 1 (CLI MVP, KDE Wayland).** The Rust core and `superpanels` CLI are working; multi-backend, slideshow, daemon, and GUI follow in [`docs/plan/`](./docs/plan/) Phases 2–4.
 
 Single binary. Rust core, Tauri v2 + Svelte 5 GUI. Primary target: Arch / CachyOS on KDE Wayland.
 
@@ -22,7 +22,7 @@ Once Phase 5 ships, `cargo install superpanels` and `yay -S superpanels` will be
 ## Quick start
 
 ```sh
-# Tell Superpanels how big each monitor is in mm (one-off, see SPEC.md §6).
+# Tell Superpanels how big each monitor is in mm (one-off, see docs/spec/06-detection.md).
 superpanels monitor configure DP-1 --diagonal 27in --aspect 16:9
 
 # Span a panorama across every monitor, bezel-corrected.
@@ -32,7 +32,7 @@ superpanels set panorama.jpg --bezel-h 8
 superpanels set panorama.jpg --bezel-h 8 --dry-run
 ```
 
-See [SPEC.md](./SPEC.md) for the full design and [`superpanels --help`](./crates/superpanels-cli/src/main.rs) for the current command surface.
+See [`docs/spec/`](./docs/spec/) for the full design (split by section) and [`superpanels --help`](./crates/superpanels-cli/src/main.rs) for the current command surface.
 
 ## What it does
 
@@ -45,8 +45,8 @@ See [SPEC.md](./SPEC.md) for the full design and [`superpanels --help`](./crates
 
 | Read this when | Doc |
 |---|---|
-| You want to know what's being built | [SPEC.md](./SPEC.md) |
-| You want to know what's next | [PLAN.md](./PLAN.md) |
+| You want to know what's being built | [`docs/spec/`](./docs/spec/) (split by section) |
+| You want to know what's next | [`docs/plan/`](./docs/plan/) (split by phase) |
 | You want to contribute | [CONTRIBUTING.md](./CONTRIBUTING.md) |
 | You're writing Rust here | [docs/style-rust.md](./docs/style-rust.md) |
 | You're writing TypeScript / Svelte here | [docs/style-frontend.md](./docs/style-frontend.md) |
