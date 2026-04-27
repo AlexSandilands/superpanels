@@ -19,9 +19,12 @@ mod subprocess;
 pub mod wlr_randr;
 pub mod xrandr;
 
+use hyprctl::HyprctlDetector;
 use kscreen::KscreenDoctorDetector;
 use manual::parse_manual_monitors;
 pub(crate) use subprocess::{run as run_subprocess, which};
+use wlr_randr::WlrRandrDetector;
+use xrandr::XrandrDetector;
 
 /// A physical display normalised into Superpanels' internal model.
 ///
@@ -193,8 +196,10 @@ pub enum DetectError {
 /// If `manual_override` is `Some(spec)`, the `--monitors` parser
 /// ([`manual::parse_manual_monitors`]) wins unconditionally (`SPEC.md` §6
 /// priority 6 — manual override "always wins"). Otherwise the orchestrator
-/// tries the KDE detector first (the only one wired up in Phase 1.2;
-/// further detectors arrive in Phase 2.2).
+/// walks KDE → Hyprland → wlr-randr → xrandr in `SPEC.md` §6 priority order,
+/// returning the first detector whose availability check passes and whose
+/// `detect()` yields a non-empty monitor list. The Sway-native detector
+/// (priority 3) lands in a follow-up commit.
 ///
 /// Layout `Monitor`s come back with `physical_size_mm: None`. The merge
 /// against `[[monitor]]` config (`SPEC.md` §14.1) happens in Phase 1.6.
@@ -210,12 +215,24 @@ pub fn detect(manual_override: Option<&str>) -> Result<Vec<Monitor>, DetectError
         return parse_manual_monitors(spec);
     }
 
-    let kscreen = KscreenDoctorDetector;
-    if kscreen.availability() == Availability::Available
-        && let Ok(monitors) = kscreen.detect()
-        && !monitors.is_empty()
-    {
-        return Ok(monitors);
+    // Walked in `SPEC.md` §6 priority order. Phase 2.2 wires KDE / Hyprland /
+    // wlr-randr / xrandr; the Sway-native detector lands separately.
+    let detectors: [&dyn DisplayDetector; 4] = [
+        &KscreenDoctorDetector,
+        &HyprctlDetector,
+        &WlrRandrDetector,
+        &XrandrDetector,
+    ];
+
+    for detector in detectors {
+        if detector.availability() != Availability::Available {
+            continue;
+        }
+        if let Ok(monitors) = detector.detect()
+            && !monitors.is_empty()
+        {
+            return Ok(monitors);
+        }
     }
 
     Err(DetectError::Subprocess {
