@@ -191,12 +191,12 @@ This validates: the parser is feasible; physical-mm data is actually present; th
 - [ ] `superpanels daemon` starts in the background, drops to systemd user unit if present, and the slideshow survives a daemon restart with state preserved.
 
 ### 2.1 Additional backends
-- [ ] `GnomeBackend`: `gsettings set org.gnome.desktop.background picture-uri[-dark] file://...`. Multi-monitor strategy: composite the per-monitor crops to a single image of the spanning canvas and set that as the wallpaper. Cap composite resolution at 8K long-edge to bound memory; downscale if the canvas exceeds that.
-- [ ] `HyprlandBackend`: `hyprctl hyprpaper preload` + `hyprctl hyprpaper wallpaper "MONITOR,PATH"` per monitor. If `hyprpaper` isn't running, return a clear error with the start command in the message.
-- [ ] `SwayBackend`: detect `swww` first, fall back to `swaybg`. `swww img --outputs MON path` for per-monitor.
-- [ ] `FehBackend`: `feh --bg-fill IMAGE1 IMAGE2 ...`. X11 only.
-- [ ] `CustomBackend`: `{image_N}` and `{monitor_N}` substitution in a configured template, executed with the standard subprocess rules.
-- [ ] Auto-detection ordering per SPEC §10.2; pinning via config.
+- [x] `GnomeBackend`: `gsettings set org.gnome.desktop.background picture-uri[-dark] file://...`. Multi-monitor strategy: composite the per-monitor crops to a single image of the spanning canvas and set that as the wallpaper. Cap composite resolution at 8K long-edge to bound memory; downscale if the canvas exceeds that.
+- [x] `HyprlandBackend`: `hyprctl hyprpaper preload` + `hyprctl hyprpaper wallpaper "MONITOR,PATH"` per monitor. If `hyprpaper` isn't running, return a clear error with the start command in the message.
+- [x] `SwayBackend`: detect `swww` first, fall back to `swaybg`. `swww img --outputs MON path` for per-monitor.
+- [x] `FehBackend`: `feh --bg-fill IMAGE1 IMAGE2 ...`. X11 only.
+- [x] `CustomBackend`: `{image_N}` and `{monitor_N}` substitution in a configured template, executed with the standard subprocess rules.
+- [x] Auto-detection ordering per SPEC §10.2; pinning via config.
 
 ### 2.2 Additional detectors
 - [ ] `WlrRandrDetector` parsing `wlr-randr --json`.
