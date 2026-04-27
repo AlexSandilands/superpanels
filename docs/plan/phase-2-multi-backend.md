@@ -43,10 +43,10 @@
 - [x] Optional systemd user unit file generated on demand: `superpanels daemon --install-unit`.
 
 ## 2.6 CLI ↔ daemon
-- [ ] `superpanels set` etc. detect a running daemon and forward via IPC.
-- [ ] `--no-daemon` runs in-process unconditionally (useful for SSH / scripting).
-- [ ] `superpanels next` / `prev` / `pause` / `resume` IPC-only commands (require a daemon, friendly error otherwise).
-- [ ] `superpanels profile apply` / `list` / `delete` / `rename` / `export` / `import`.
+- [x] `superpanels set` etc. detect a running daemon and forward via IPC.
+- [x] `--no-daemon` runs in-process unconditionally (useful for SSH / scripting).
+- [x] `superpanels next` / `prev` / `pause` / `resume` IPC-only commands (require a daemon, friendly error otherwise).
+- [x] `superpanels profile apply` / `list` / `delete` / `rename` / `export` / `import`.
 
 ## 2.7 Schedules
 - [ ] `Schedule::Daily { at, profile }` (timezone: system local).
