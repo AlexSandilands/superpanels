@@ -1,10 +1,10 @@
 //! Shared mutable state held across all daemon tasks.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result};
-use superpanels_core::config::{Config, LibraryConfig};
+use superpanels_core::config::{Config, ConfigError, LibraryConfig};
 use superpanels_core::display::Monitor;
 use superpanels_core::ipc::{RuntimeState, SlideshowSummary};
 use superpanels_core::library::{LibraryEntry, load_index, scan_folder};
@@ -16,6 +16,10 @@ use crate::schedule::ScheduleChecker;
 
 pub(crate) struct DaemonState {
     pub config: Config,
+    /// Explicit override from `--config <PATH>`. `None` means use
+    /// [`Config::default_path`]. Owned by the daemon so write-side IPC
+    /// handlers don't accept a client-supplied destination.
+    pub config_path: Option<PathBuf>,
     pub monitors: Vec<Monitor>,
     pub library: Vec<LibraryEntry>,
     pub active_profile: Option<String>,
@@ -44,6 +48,7 @@ impl DaemonState {
 
         Ok(Self {
             config,
+            config_path: config_path.map(Path::to_path_buf),
             monitors,
             library,
             active_profile: None,
@@ -51,6 +56,15 @@ impl DaemonState {
             last_apply_unix_secs: None,
             schedule_checker: ScheduleChecker::new(),
         })
+    }
+
+    /// Path the daemon writes config to. Honours an explicit `--config`
+    /// override, otherwise resolves the XDG default.
+    pub(crate) fn config_save_path(&self) -> Result<PathBuf, ConfigError> {
+        match &self.config_path {
+            Some(p) => Ok(p.clone()),
+            None => Config::default_path(),
+        }
     }
 
     /// Snapshot suitable for the `current_state` IPC response.
@@ -166,12 +180,23 @@ impl DaemonState {
     pub(crate) fn for_tests(config: Config) -> Self {
         Self {
             config,
+            config_path: None,
             monitors: Vec::new(),
             library: Vec::new(),
             active_profile: None,
             slideshow_picker: None,
             last_apply_unix_secs: None,
             schedule_checker: ScheduleChecker::new(),
+        }
+    }
+
+    /// Like [`Self::for_tests`] but with an explicit on-disk config target,
+    /// used by tests for write-side handlers (`save_profile`, `delete_profile`,
+    /// `save_config`).
+    pub(crate) fn for_tests_with_path(config: Config, path: PathBuf) -> Self {
+        Self {
+            config_path: Some(path),
+            ..Self::for_tests(config)
         }
     }
 }

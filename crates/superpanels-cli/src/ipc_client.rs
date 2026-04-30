@@ -11,7 +11,13 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use superpanels_core::ipc::{IpcRequest, IpcResponse, PROTOCOL_VERSION};
 
-const TIMEOUT: Duration = Duration::from_secs(5);
+// Write protects against kernel-buffer backpressure on the local socket and
+// can stay short. Read has to cover the daemon's worst-case service time —
+// an apply with image decode + KDE evaluateScript across N monitors easily
+// exceeds 10 s — so it is much larger but still bounded so a wedged daemon
+// can't hang the CLI forever.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
+const READ_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Hard cap on inbound frame bodies. Daemon responses are tiny JSON; larger
 /// frames signal a corrupt stream or hostile peer, and a `Vec` allocation of
@@ -33,10 +39,10 @@ pub(crate) fn call(
     params: serde_json::Value,
 ) -> Result<IpcResponse> {
     stream
-        .set_read_timeout(Some(TIMEOUT))
+        .set_read_timeout(Some(READ_TIMEOUT))
         .context("setting socket read timeout")?;
     stream
-        .set_write_timeout(Some(TIMEOUT))
+        .set_write_timeout(Some(WRITE_TIMEOUT))
         .context("setting socket write timeout")?;
 
     let req = IpcRequest {
