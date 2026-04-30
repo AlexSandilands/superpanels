@@ -10,7 +10,32 @@ all-features = true
 db-path  = "$CARGO_HOME/advisory-db"
 db-urls  = ["https://github.com/rustsec/advisory-db"]
 yanked   = "warn"
-ignore   = []  # Add advisory IDs here ONLY with a comment justifying why.
+# Add advisory IDs here ONLY with a comment justifying why.
+# All entries below are unmaintained-crate advisories on transitive deps we
+# don't control (Tauri / wry / urlpattern). Re-evaluate when Tauri publishes
+# a release that drops GTK3 / urlpattern.
+ignore = [
+    # gtk-rs GTK3 bindings — pulled in by wry/tauri-runtime-wry; no fix until
+    # Tauri/wry migrate to GTK4 upstream.
+    "RUSTSEC-2024-0411",  # gdkx11-sys
+    "RUSTSEC-2024-0412",  # gdk
+    "RUSTSEC-2024-0413",  # atk
+    "RUSTSEC-2024-0415",  # gdk-sys
+    "RUSTSEC-2024-0416",  # atk-sys
+    "RUSTSEC-2024-0418",  # gdkx11
+    "RUSTSEC-2024-0419",  # gtk
+    "RUSTSEC-2024-0420",  # gtk-sys
+    # unic-* family — pulled in by urlpattern → tauri-utils. RustSec note says
+    # "no safe upgrade available" until urlpattern migrates off rust-unic.
+    "RUSTSEC-2025-0075",  # unic-char-range
+    "RUSTSEC-2025-0080",  # unic-common
+    "RUSTSEC-2025-0081",  # unic-char-property
+    "RUSTSEC-2025-0098",  # unic-ucd-version
+    "RUSTSEC-2025-0100",  # unic-ucd-ident
+    # Other transitive unmaintained crates with no upstream fix path.
+    "RUSTSEC-2024-0370",  # proc-macro-error — via tauri-macros / older proc-macro deps
+    "RUSTSEC-2025-0057",  # fxhash — transitive
+]
 
 [licenses]
 # Anything in `allow` is OK. Anything else aborts the build with a clear error
@@ -22,7 +47,6 @@ allow = [
     "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",
-    "Unicode-DFS-2016",
     "Unicode-3.0",
     "MPL-2.0",  # weak copyleft, file-level — fine for libraries we link against
     "Zlib",
