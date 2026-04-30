@@ -1,0 +1,8 @@
+dist/
+node_modules/
+package-lock.json
+
+# ts-rs writes these files from Rust definitions in superpanels-gui;
+# the generated output doesn't match Prettier's formatting and will be
+# overwritten on every build. Source of truth is the Rust types.
+src/lib/types/
