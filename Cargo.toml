@@ -4,6 +4,7 @@ members = [
     "crates/superpanels-core",
     "crates/superpanels-cli",
     "crates/superpanels-daemon",
+    "crates/superpanels-gui",
 ]
 
 [workspace.package]

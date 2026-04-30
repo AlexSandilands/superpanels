@@ -14,6 +14,7 @@ build/
 # --- Tauri ---
 src-tauri/target/
 src-tauri/gen/
+crates/superpanels-gui/gen/
 
 # --- Editors / IDEs ---
 .vscode/*
