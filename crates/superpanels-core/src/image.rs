@@ -69,6 +69,42 @@ pub fn load(path: &Path) -> Result<DynamicImage, ImageError> {
     load_with_budget(path, DEFAULT_DECODE_BUDGET_BYTES)
 }
 
+/// Read the image header at `path` without decoding. Cheap (microseconds)
+/// and the right primitive for any preview pipeline that only needs
+/// dimensions (`SPEC §12.3`).
+pub fn read_dimensions(path: &Path) -> Result<(u32, u32), ImageError> {
+    open_reader(path)?
+        .into_dimensions()
+        .map_err(|e| ImageError::Decode {
+            path: path.to_owned(),
+            message: e.to_string(),
+        })
+}
+
+/// Decode `path` then resize so the longest edge is `max_edge` pixels using
+/// the fast `Triangle` filter (`SPEC §8.1`). Used by `library_thumbnail` to
+/// keep IPC payloads small. The decode is gated by the default memory budget.
+pub fn load_thumbnail(path: &Path, max_edge: u32) -> Result<DynamicImage, ImageError> {
+    let img = load(path)?;
+    Ok(img.resize(max_edge, max_edge, imageops::FilterType::Triangle))
+}
+
+/// Encode `img` as PNG bytes using the fast settings shared with
+/// `temp::save_temp_in`. In-memory equivalent of [`save_temp`] for the
+/// thumbnail IPC path.
+pub fn encode_png(img: &DynamicImage) -> Result<Vec<u8>, ImageError> {
+    use image::codecs::png::{CompressionType, FilterType, PngEncoder};
+    let mut bytes = Vec::new();
+    let encoder =
+        PngEncoder::new_with_quality(&mut bytes, CompressionType::Fast, FilterType::NoFilter);
+    img.write_with_encoder(encoder)
+        .map_err(|e| ImageError::Decode {
+            path: PathBuf::new(),
+            message: e.to_string(),
+        })?;
+    Ok(bytes)
+}
+
 /// Variant of [`load`] with an explicit budget — used by tests to exercise
 /// the [`ImageError::TooBig`] path without crafting a multi-gigapixel file.
 pub fn load_with_budget(path: &Path, budget_bytes: u64) -> Result<DynamicImage, ImageError> {

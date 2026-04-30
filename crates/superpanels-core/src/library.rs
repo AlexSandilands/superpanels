@@ -11,6 +11,83 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::debug;
 
+/// Server-side filter for `library_list` (`SPEC §12.4`). All fields optional;
+/// `offset`/`limit` paginate so a huge library never overflows the IPC frame
+/// cap (`SPEC §13`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct LibraryFilter {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_width: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_height: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aspect_min: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aspect_max: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+/// Default page size when a `library_list` filter omits `limit`. Sized to
+/// stay well under the 1 MiB IPC frame cap for a 5 000-entry library.
+pub const DEFAULT_LIBRARY_PAGE: usize = 200;
+
+/// Apply `filter` to `entries`, returning a new owned `Vec`. Pure function;
+/// no I/O. Tag matching is case-sensitive and exact.
+#[must_use]
+pub fn apply_library_filter(entries: &[LibraryEntry], filter: &LibraryFilter) -> Vec<LibraryEntry> {
+    let offset = usize::try_from(filter.offset.unwrap_or(0)).unwrap_or(usize::MAX);
+    let limit = filter
+        .limit
+        .and_then(|l| usize::try_from(l).ok())
+        .unwrap_or(DEFAULT_LIBRARY_PAGE);
+    entries
+        .iter()
+        .filter(|e| matches_filter(e, filter))
+        .skip(offset)
+        .take(limit)
+        .cloned()
+        .collect()
+}
+
+fn matches_filter(entry: &LibraryEntry, filter: &LibraryFilter) -> bool {
+    if let Some(tag) = filter.tag.as_deref() {
+        let hit = if tag == "favourite" {
+            entry.favourite
+        } else {
+            entry.tags.iter().any(|t| t == tag)
+        };
+        if !hit {
+            return false;
+        }
+    }
+    if let Some(mw) = filter.min_width {
+        if entry.resolution.0 < mw {
+            return false;
+        }
+    }
+    if let Some(mh) = filter.min_height {
+        if entry.resolution.1 < mh {
+            return false;
+        }
+    }
+    if let Some(a_min) = filter.aspect_min {
+        if entry.aspect_ratio < a_min {
+            return false;
+        }
+    }
+    if let Some(a_max) = filter.aspect_max {
+        if entry.aspect_ratio > a_max {
+            return false;
+        }
+    }
+    true
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LibraryEntry {
     pub path: PathBuf,

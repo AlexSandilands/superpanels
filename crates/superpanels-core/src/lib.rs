@@ -24,7 +24,8 @@ pub use display::{
 };
 pub use layout::{BezelConfig, CropSpec, FitMode, LayoutError, Rect, compute_crop_specs};
 pub use library::{
-    FolderWatcher, LibraryEntry, LibraryError, load_index, persist_index, scan_folder,
+    DEFAULT_LIBRARY_PAGE, FolderWatcher, LibraryEntry, LibraryError, LibraryFilter,
+    apply_library_filter, load_index, persist_index, scan_folder,
 };
 pub use slideshow::{
     SlideshowConfig, SlideshowError, SlideshowPicker, SlideshowSort, SlideshowStart, SlideshowState,

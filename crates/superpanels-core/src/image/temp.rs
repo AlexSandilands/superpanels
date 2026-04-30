@@ -1,10 +1,11 @@
 //! Temp-dir helpers for the image pipeline (`SPEC.md` §8.5).
 
 use std::fs;
-use std::io;
+use std::io::{self, BufWriter};
 use std::path::{Path, PathBuf};
 
 use image::DynamicImage;
+use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 
 use super::ImageError;
 
@@ -18,16 +19,28 @@ pub fn save_temp(img: &DynamicImage, name: &str) -> Result<PathBuf, ImageError> 
 }
 
 /// Variant of [`save_temp`] that writes into an explicit directory.
+///
+/// Uses a fast PNG encoder (`CompressionType::Fast`, `FilterType::NoFilter`)
+/// because the slice is consumed once by the wallpaper backend and then
+/// wiped on the next apply — paying for default deflate compression to
+/// shrink an ephemeral file costs seconds per monitor at wallpaper sizes.
 pub fn save_temp_in(img: &DynamicImage, name: &str, dir: &Path) -> Result<PathBuf, ImageError> {
     fs::create_dir_all(dir).map_err(|e| ImageError::Io {
         path: dir.to_owned(),
         source: e,
     })?;
     let path = dir.join(name);
-    img.save(&path).map_err(|e| ImageError::Io {
+    let file = fs::File::create(&path).map_err(|e| ImageError::Io {
         path: path.clone(),
-        source: io::Error::other(e.to_string()),
+        source: e,
     })?;
+    let writer = BufWriter::new(file);
+    let encoder = PngEncoder::new_with_quality(writer, CompressionType::Fast, FilterType::NoFilter);
+    img.write_with_encoder(encoder)
+        .map_err(|e| ImageError::Io {
+            path: path.clone(),
+            source: io::Error::other(e.to_string()),
+        })?;
     Ok(path)
 }
 
