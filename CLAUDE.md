@@ -18,14 +18,21 @@ The spec and plan are split into per-section files to keep token usage low. **Do
 
 Code comments and other docs reference the spec by section (e.g. `SPEC.md §6.4`). The number is the file: `§6` → `docs/spec/06-detection.md`, `§14.1` → `docs/spec/14-config-state.md`. The same applies to plan phases: `PLAN.md` Phase 2.5 → `docs/plan/phase-2-multi-backend.md` (§2.5 within it). The legacy `SPEC.md` and `PLAN.md` files are stub redirects only — don't read them.
 
-## MCP context tools — check first, prefer over raw file reads
+## MCP context tools — required for impact analysis
 
-At session start, check whether the `jcodemunch` and `jdocmunch` MCP servers are connected. When available, prefer them for repo context — they return targeted slices instead of whole files, which keeps the working set small.
+At session start, confirm the `jcodemunch` and `jdocmunch` MCP servers are connected (they appear in the deferred-tools list). When available, they are the **default** for repo context — they return targeted slices instead of whole files, keeping the working set small.
 
-- **`jcodemunch`** — code: structure, symbols, references, importers, call hierarchies, blast radius. Use before any non-trivial refactor or impact analysis, and to fetch only the relevant code instead of reading whole files.
+- **`jcodemunch`** — code: structure, symbols, references, importers, call hierarchies, blast radius.
 - **`jdocmunch`** — docs in `docs/`: section search, "is this already documented?", and finding which sections need updating after a code change.
 
-**Rule of thumb:** before a significant refactor or structural change, query `jcodemunch` for affected code and `jdocmunch` for affected docs. Fall back to `Read` / `grep` only when MCP is unavailable or the query is too narrow to benefit.
+**MCP is required (not optional) before any change that:**
+- modifies the body or signature of a function/method called from outside its file → run `find_references` / `get_call_hierarchy` to confirm every caller is fine;
+- spans multiple files, or you're unsure how many it spans → run `get_blast_radius` or `find_importers`;
+- touches a public type, trait, module re-export, or anything in `crates/superpanels-core` → its callers live in cli/daemon/gui and `grep` won't catch them all reliably.
+
+**`grep` / `Read` is fine for:** reading a known path, a single-string lookup with a single expected hit (e.g. "where is `const TIMEOUT` defined"), or quick existence checks.
+
+**Don't rationalise that a query is "too narrow."** If you've run 2+ greps to triangulate a symbol or its callers, you should have started with `jcodemunch`. The cost of an MCP call is much lower than the cost of missing a caller and shipping a broken change.
 
 ## Stack
 

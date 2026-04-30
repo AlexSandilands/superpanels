@@ -87,7 +87,7 @@ Read this carefully — drift between intent and reality is a code smell.
 - **System tray.**
 - The Svelte frontend in `ui/` is the actual UI; this crate only hosts it.
 
-> **Phase 1 status.** Of the four crates above, `superpanels-core` and `superpanels-cli` are implemented; `superpanels-daemon` and `superpanels-gui` arrive in plan Phases 2.5 ([`docs/plan/phase-2-multi-backend.md`](./plan/phase-2-multi-backend.md)) and 3.1 ([`docs/plan/phase-3-tauri-tray.md`](./plan/phase-3-tauri-tray.md)) respectively. The dependency-direction diagram below already covers the Phase 1 graph (the CLI depends on the core and on nothing else in the workspace).
+> **Crate status (post-Phase 3).** All four crates above now exist: `superpanels-core`, `superpanels-cli`, `superpanels-daemon`, and `superpanels-gui`. The dependency-direction diagram below describes the steady-state graph (each binary depends on `core` and nothing else in the workspace).
 
 ---
 

@@ -2,7 +2,7 @@
 
 > Linux wallpaper manager focused on physical-bezel-aware multi-monitor spanning and folder-driven slideshows.
 
-**Status: Phase 1 (CLI MVP, KDE Wayland).** The Rust core and `superpanels` CLI are working; multi-backend, slideshow, daemon, and GUI follow in [`docs/plan/`](./docs/plan/) Phases 2–4.
+**Status: Phase 3 (Tauri shell & tray).** The Rust core, `superpanels` CLI, daemon, and Tauri GUI with system tray are working; polish and packaging follow in [`docs/plan/`](./docs/plan/) Phases 4–5.
 
 Single binary. Rust core, Tauri v2 + Svelte 5 GUI. Primary target: Arch / CachyOS on KDE Wayland.
 
@@ -33,6 +33,47 @@ superpanels set panorama.jpg --bezel-h 8 --dry-run
 ```
 
 See [`docs/spec/`](./docs/spec/) for the full design (split by section) and [`superpanels --help`](./crates/superpanels-cli/src/main.rs) for the current command surface.
+
+## Running locally
+
+The CLI runs without the daemon (in-process fallback). Run the daemon when you want the slideshow timer, file watcher, or tray to keep working in the background.
+
+**Daemon — foreground with logs (Ctrl-C to stop):**
+
+```sh
+cargo run -p superpanels-daemon -- --foreground -v
+```
+
+`-v` is debug, `-vv` is trace. From another shell, stop a backgrounded daemon with `pkill -INT superpanels-daemon` (avoid `-9` — it skips the state-persist step).
+
+**GUI — open the window with tray icon:**
+
+Tauri loads the frontend from `devUrl` in debug builds and from the bundled `ui/dist` in release builds, so the right command depends on what you're doing.
+
+*Smoke test (release build, bundled UI, no dev server needed):*
+
+```sh
+npm --prefix ui run build
+cargo run -p superpanels-gui --release
+```
+
+*Frontend iteration (debug build + Vite HMR, two terminals):*
+
+```sh
+# terminal 1 — Vite dev server on http://localhost:5173
+npm --prefix ui run dev
+
+# terminal 2 — Tauri shell (debug)
+cargo run -p superpanels-gui
+```
+
+Start the daemon first if you want the tray's profile-switch menu to reflect live state.
+
+> **Wayland note.** WebKitGTK 2.46+ ships with a DMABUF renderer that crashes on several common stacks (NVIDIA, recent Mesa + Plasma 6) with `Gdk-Message: Error 71 (Protocol error)`. The repo's `.cargo/config.toml` sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` for every `cargo run`, and the autostart `.desktop` file written by the GUI mirrors the same prefix in its `Exec=` line. No manual env juggling needed.
+
+[`cargo-tauri`](https://tauri.app/start/) (`cargo install tauri-cli --version '^2.0.0' --locked`) wraps the two-terminal HMR flow into `cargo tauri dev --manifest-path crates/superpanels-gui/Cargo.toml`. Optional — not needed for smoke testing.
+
+Tauri OS prerequisites are listed in [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## What it does
 
