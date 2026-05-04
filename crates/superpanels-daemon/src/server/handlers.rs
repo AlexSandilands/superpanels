@@ -8,7 +8,7 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 use superpanels_core::config::Config;
 use superpanels_core::ipc::{IpcRequest, IpcResponse};
-use superpanels_core::layout::{BezelConfig, FitMode, compute_crop_specs};
+use superpanels_core::layout::{BezelConfig, FitMode, compute_crop_specs_with_offset};
 use tokio::sync::Mutex;
 use tracing::info;
 
@@ -146,6 +146,11 @@ pub(super) async fn cmd_preview_crop(
         "center" => FitMode::Center,
         other => return IpcResponse::failure(format!("unknown fit `{other}`")),
     };
+    let offset_px = req
+        .params
+        .get("offset_px")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or([0, 0]);
     let bezels = match (bezel_mm_to_f32(bezel_h), bezel_mm_to_f32(bezel_v)) {
         (Some(h), Some(v)) => BezelConfig {
             horizontal_mm: h,
@@ -175,7 +180,7 @@ pub(super) async fn cmd_preview_crop(
     };
 
     let monitors = state.lock().await.monitors.clone();
-    match compute_crop_specs(&monitors, &bezels, fit, dims) {
+    match compute_crop_specs_with_offset(&monitors, &bezels, fit, dims, offset_px) {
         Ok(specs) => IpcResponse::success(&specs),
         Err(e) => IpcResponse::failure(e.to_string()),
     }
@@ -431,6 +436,33 @@ mod tests {
         )
         .await;
         assert!(!resp.is_ok());
+    }
+
+    #[tokio::test]
+    async fn preview_crop_offset_px_falls_back_to_zero_for_malformed_input() {
+        // Mirrors the in-process handler test: malformed `offset_px` must
+        // silently default to `[0, 0]` rather than surface as the request
+        // failure. The path-outside-roots check below the parser will fire
+        // first either way; what we're locking in is that the failure isn't
+        // attributed to `offset_px` parsing.
+        let dir = tempdir().unwrap();
+        let mut cfg = Config::default();
+        cfg.library.roots = vec![dir.path().to_path_buf()];
+        let state = make_state(cfg);
+
+        for malformed in [
+            json!({"image": "/etc/passwd", "fit": "fill", "offset_px": "junk"}),
+            json!({"image": "/etc/passwd", "fit": "fill", "offset_px": [1, 2, 3]}),
+            json!({"image": "/etc/passwd", "fit": "fill", "offset_px": null}),
+        ] {
+            let resp = cmd_preview_crop(req("preview_crop", malformed), Arc::clone(&state)).await;
+            assert!(!resp.is_ok());
+            let err = resp.error.unwrap_or_default();
+            assert!(
+                !err.contains("offset_px"),
+                "expected silent fall-through to [0,0] but got: {err}"
+            );
+        }
     }
 
     #[cfg(test)]

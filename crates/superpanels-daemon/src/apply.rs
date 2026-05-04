@@ -13,7 +13,7 @@ use superpanels_core::display::{Monitor, MonitorRef};
 use superpanels_core::image::{
     FitMode as ImageFitMode, clear_temp_dir, crop, load, rotate, save_temp, scale_to_fit,
 };
-use superpanels_core::layout::{FitMode, compute_crop_specs};
+use superpanels_core::layout::{FitMode, compute_crop_specs_with_offset};
 use superpanels_core::slideshow::{
     SlideshowConfig as PickerSlideshowConfig, SlideshowSort as PickerSort,
     SlideshowStart as PickerStart,
@@ -58,16 +58,27 @@ pub(crate) fn run_span_apply(
         ProfileBody::Span(s) => s.fit,
         ProfileBody::PerMonitor(pm) => pm.fit,
     };
-    run_immediate_set(image_path, monitors, bezels, fit, backend_kind, custom_cmd)
+    let offset = match &profile.body {
+        ProfileBody::Span(s) => s.offset,
+        ProfileBody::PerMonitor(_) => [0, 0],
+    };
+    run_immediate_set_with_offset(
+        image_path,
+        monitors,
+        bezels,
+        fit,
+        offset,
+        backend_kind,
+        custom_cmd,
+    )
 }
 
-/// Apply a single image immediately without a profile context (used by the
-/// `set` IPC command). Designed to run inside `tokio::task::spawn_blocking`.
-pub(crate) fn run_immediate_set(
+pub(crate) fn run_immediate_set_with_offset(
     image_path: &Path,
     monitors: &[Monitor],
     bezels: superpanels_core::layout::BezelConfig,
     fit: FitMode,
+    offset_px: [i32; 2],
     backend_kind: BackendKind,
     custom_cmd: &str,
 ) -> Result<AppliedReport> {
@@ -75,8 +86,8 @@ pub(crate) fn run_immediate_set(
         load(image_path).with_context(|| format!("loading image {}", image_path.display()))?;
     let image_size = (source.width(), source.height());
 
-    let specs =
-        compute_crop_specs(monitors, &bezels, fit, image_size).context("computing crop specs")?;
+    let specs = compute_crop_specs_with_offset(monitors, &bezels, fit, image_size, offset_px)
+        .context("computing crop specs")?;
 
     let backend: Box<dyn WallpaperBackend> = detect_backend(backend_kind, custom_cmd);
     if backend.availability() != superpanels_core::Availability::Available

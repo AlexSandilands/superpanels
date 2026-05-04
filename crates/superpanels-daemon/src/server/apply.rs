@@ -11,7 +11,7 @@ use superpanels_core::layout::{BezelConfig, FitMode};
 use tokio::sync::{Mutex, watch};
 use tracing::info;
 
-use crate::apply::{run_immediate_set, run_per_monitor_apply, run_span_apply};
+use crate::apply::{run_immediate_set_with_offset, run_per_monitor_apply, run_span_apply};
 use crate::state::DaemonState;
 
 use super::helpers::{
@@ -38,6 +38,11 @@ pub(super) async fn cmd_set(req: IpcRequest, state: Arc<Mutex<DaemonState>>) -> 
         .get("fit")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_default();
+    let offset_px: [i32; 2] = req
+        .params
+        .get("offset_px")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or([0, 0]);
 
     let (monitors, backend_kind, custom_cmd) = {
         let guard = state.lock().await;
@@ -53,11 +58,12 @@ pub(super) async fn cmd_set(req: IpcRequest, state: Arc<Mutex<DaemonState>>) -> 
     };
 
     let report = tokio::task::spawn_blocking(move || {
-        run_immediate_set(
+        run_immediate_set_with_offset(
             &image_path,
             &monitors,
             bezels,
             fit,
+            offset_px,
             backend_kind,
             &custom_cmd,
         )
