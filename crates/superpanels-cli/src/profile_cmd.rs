@@ -17,7 +17,9 @@ use superpanels_core::display::{Monitor, MonitorRef};
 use superpanels_core::image::{
     FitMode as ImageFitMode, clear_temp_dir, crop, load, rotate, save_temp, scale_to_fit,
 };
-use superpanels_core::layout::{BezelConfig, FitMode as LayoutFitMode, compute_crop_specs};
+use superpanels_core::layout::{
+    BezelConfig, FitMode as LayoutFitMode, compute_crop_specs_with_offset,
+};
 use tracing::{info, warn};
 
 use crate::ipc_client;
@@ -101,6 +103,7 @@ pub(crate) fn apply_cmd(
                 &monitors,
                 profile.bezels,
                 span.fit,
+                span.offset,
                 backend_kind,
                 &custom_cmd,
             )?;
@@ -207,12 +210,13 @@ fn run_span_apply(
     monitors: &[Monitor],
     bezels: BezelConfig,
     fit: LayoutFitMode,
+    offset_px: [i32; 2],
     backend_kind: BackendKind,
     custom_cmd: &str,
 ) -> Result<()> {
     let source = load(image_path).with_context(|| format!("loading {}", image_path.display()))?;
     let image_size = (source.width(), source.height());
-    let specs = compute_crop_specs(monitors, &bezels, fit, image_size)?;
+    let specs = compute_crop_specs_with_offset(monitors, &bezels, fit, image_size, offset_px)?;
     let backend = detect_backend(backend_kind, custom_cmd);
     clear_temp_dir()?;
     let token = apply_token();

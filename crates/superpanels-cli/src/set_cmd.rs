@@ -16,7 +16,7 @@ use superpanels_core::image::{
     FitMode as ImageFitMode, clear_temp_dir, crop, load, rotate, save_temp, scale_to_fit,
 };
 use superpanels_core::layout::{
-    BezelConfig, CropSpec, FitMode as LayoutFitMode, compute_crop_specs,
+    BezelConfig, CropSpec, FitMode as LayoutFitMode, compute_crop_specs_with_offset,
 };
 use tracing::{debug, info};
 
@@ -54,6 +54,7 @@ pub(crate) fn run_via_ipc(
         "bezel_h": args.bezel_h.unwrap_or(0.0_f32),
         "bezel_v": args.bezel_v.unwrap_or(0.0_f32),
         "fit": args.fit,
+        "offset_px": args.offset.map_or([0, 0], |(x, y)| [x, y]),
     });
     let resp = crate::ipc_client::call(stream, "set", params)?;
     if !resp.is_ok() {
@@ -100,10 +101,6 @@ pub(crate) fn run(
              see PLAN.md §2"
         );
     }
-    if args.offset.is_some() {
-        info!("--offset accepted but not yet honoured");
-    }
-
     let cfg = load_config(config_path)?;
     let mut monitors = detect(args.monitors.as_deref())?;
     cfg.merge_into_monitors(&mut monitors);
@@ -114,7 +111,8 @@ pub(crate) fn run(
     let source = load(&args.image)?;
     let image_size = (source.width(), source.height());
 
-    let specs = compute_crop_specs(&monitors, &bezels, args.fit, image_size)?;
+    let offset = args.offset.map_or([0, 0], |(x, y)| [x, y]);
+    let specs = compute_crop_specs_with_offset(&monitors, &bezels, args.fit, image_size, offset)?;
 
     if args.dry_run {
         return print_dry_run(&specs, &monitors, bezels, image_size);
@@ -475,8 +473,8 @@ mod tests {
                     "monitor_id": 0,
                     "src_rect": { "x": 0, "y": 0, "w": 100, "h": 100 },
                     "dst_size": [2560, 1440],
-                    "rotation": "None",
-                    "fit": "Fill",
+                    "rotation": "none",
+                    "fit": "fill",
                 }
             ],
         });
