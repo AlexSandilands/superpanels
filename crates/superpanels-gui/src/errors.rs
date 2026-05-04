@@ -10,8 +10,15 @@ use ts_rs::TS;
 #[ts(export, export_to = "../../../ui/src/lib/types/")]
 #[serde(tag = "kind", content = "message")]
 pub enum IpcError {
-    /// The daemon was reachable but it returned an error string.
+    /// The daemon was reachable and answered, but its answer was an error
+    /// string (logical rejection — bad params, path outside roots, etc.).
     Daemon(String),
+    /// The daemon socket was unreachable, or a transport-level failure
+    /// occurred mid-call. Distinct from [`Self::Daemon`] so callers can
+    /// safely fall back to an in-process render without conflating
+    /// transport failures with the daemon's own logical rejections — the
+    /// confused-deputy guard for `library_thumbnail` (`SPEC §17`).
+    DaemonUnreachable(String),
     /// Configuration load / save / validation failed.
     Config(String),
     /// Display detection failed.
@@ -44,6 +51,7 @@ impl std::fmt::Display for IpcError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Daemon(m) => write!(f, "daemon: {m}"),
+            Self::DaemonUnreachable(m) => write!(f, "daemon unreachable: {m}"),
             Self::Config(m) => write!(f, "config: {m}"),
             Self::Detect(m) => write!(f, "detect: {m}"),
             Self::Layout(m) => write!(f, "layout: {m}"),

@@ -66,6 +66,7 @@ fn build_app() -> tauri::App {
             commands::preview_crop,
             commands::library_list,
             commands::library_thumbnail,
+            commands::source_thumbnail,
             commands::library_tag,
             commands::slideshow_next,
             commands::slideshow_prev,

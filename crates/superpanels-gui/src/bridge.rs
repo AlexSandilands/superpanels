@@ -28,12 +28,16 @@ fn has_in_process_fallback(method: &str) -> bool {
 
 pub fn call(method: &str, params: Value, config_path: Option<&Path>) -> CallResult {
     if let Some(mut stream) = ipc_client::try_connect(&socket_path()) {
+        // Mid-call socket / framing failure is a transport problem, not a
+        // logical rejection from the daemon — keep the two paths distinct so
+        // callers can `match err { IpcError::DaemonUnreachable(_) => … }`
+        // without inspecting strings (confused-deputy guard, `SPEC §17`).
         let resp = ipc_client::call(&mut stream, method, params)
-            .map_err(|e| IpcError::Daemon(e.to_string()))?;
+            .map_err(|e| IpcError::DaemonUnreachable(e.to_string()))?;
         return resolve(resp);
     }
     if !has_in_process_fallback(method) {
-        return Err(IpcError::Daemon(format!(
+        return Err(IpcError::DaemonUnreachable(format!(
             "no daemon is running — start one with `superpanels-daemon`; \
              '{method}' has no in-process fallback"
         )));
@@ -45,6 +49,9 @@ fn resolve(resp: IpcResponse) -> CallResult {
     if resp.is_ok() {
         Ok(resp.result.unwrap_or(Value::Null))
     } else {
+        // Logical rejection from the daemon (e.g. "path outside roots").
+        // Stays as `Daemon` so the `library_thumbnail` fallback only fires
+        // on `DaemonUnreachable`.
         Err(IpcError::Daemon(
             resp.error.unwrap_or_else(|| "daemon error".to_owned()),
         ))

@@ -110,7 +110,7 @@ fn delete_profile(params: &Value, config_path: Option<&Path>) -> CallResult {
 }
 
 fn preview_crop(params: &Value, config_path: Option<&Path>) -> CallResult {
-    use superpanels_core::layout::{BezelConfig, FitMode, compute_crop_specs};
+    use superpanels_core::layout::{BezelConfig, FitMode, compute_crop_specs_with_offset};
 
     let image = params
         .get("image")
@@ -132,6 +132,10 @@ fn preview_crop(params: &Value, config_path: Option<&Path>) -> CallResult {
         "center" => FitMode::Center,
         other => return Err(IpcError::invalid(format!("unknown fit `{other}`"))),
     };
+    let offset_px = params
+        .get("offset_px")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or([0, 0]);
 
     let cfg = load_config(config_path)?;
     let canonical = canonicalise_inside_roots(Path::new(image), &cfg.library.roots)?;
@@ -142,7 +146,7 @@ fn preview_crop(params: &Value, config_path: Option<&Path>) -> CallResult {
         horizontal_mm: bezel_h_to_f32(bezel_h)?,
         vertical_mm: bezel_h_to_f32(bezel_v)?,
     };
-    let specs = compute_crop_specs(&monitors, &bezels, fit, dims)?;
+    let specs = compute_crop_specs_with_offset(&monitors, &bezels, fit, dims, offset_px)?;
     Ok(ok_payload(specs))
 }
 
@@ -290,6 +294,28 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, IpcError::InvalidArgument(_)));
+    }
+
+    #[test]
+    fn preview_crop_offset_px_falls_back_to_zero_for_malformed_input() {
+        // The daemon and in-process handlers both treat an unparsable
+        // `offset_px` as `[0, 0]` — that fallback is exactly the silent-data
+        // path that bit Phase 2's set_cmd, so it's worth pinning. We don't
+        // need a real image: the failure mode reaches us long before
+        // `compute_crop_specs_*`. What we're asserting is "the parser
+        // doesn't fail with an `unknown fit`-style InvalidArgument purely
+        // because offset_px was junk."
+        for malformed in [
+            json!({"image": "/nope.png", "fit": "fill", "offset_px": "junk"}),
+            json!({"image": "/nope.png", "fit": "fill", "offset_px": [1, 2, 3]}),
+            json!({"image": "/nope.png", "fit": "fill", "offset_px": null}),
+        ] {
+            let err = preview_crop(&malformed, None).unwrap_err();
+            assert!(
+                !matches!(&err, IpcError::InvalidArgument(m) if m.contains("offset_px")),
+                "expected the parser to silently fall back to [0,0] but got: {err:?}"
+            );
+        }
     }
 
     #[test]
