@@ -40,6 +40,7 @@ pub struct CropSpec {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum FitMode {
     #[default]
     Fill,
@@ -89,6 +90,18 @@ pub fn compute_crop_specs(
     fit: FitMode,
     image_size: (u32, u32),
 ) -> Result<Vec<CropSpec>, LayoutError> {
+    compute_crop_specs_with_offset(monitors, bezels, fit, image_size, [0, 0])
+}
+
+/// Compute crop specs with a persisted image-position offset in physical-layout
+/// canvas pixels (`SPEC §8`).
+pub fn compute_crop_specs_with_offset(
+    monitors: &[Monitor],
+    bezels: &BezelConfig,
+    fit: FitMode,
+    image_size: (u32, u32),
+    offset_px: [i32; 2],
+) -> Result<Vec<CropSpec>, LayoutError> {
     validate_inputs(monitors, fit, image_size)?;
 
     let effs: Vec<EffectiveMonitor> = monitors
@@ -120,6 +133,7 @@ pub fn compute_crop_specs(
             reference_ppi,
             image_size,
             (canvas.width, canvas.height),
+            offset_px,
         )?;
         specs.push(CropSpec {
             monitor_id: m.id,
@@ -236,6 +250,32 @@ mod tests {
     }
 
     #[test]
+    fn fit_mode_serialises_as_snake_case() {
+        // Locks the wire format. SPEC §14.1 + the GUI/IPC layer both expect
+        // lowercase variants; reverting the `#[serde(rename_all)]` attribute
+        // would break both and must trip this test.
+        assert_eq!(serde_json::to_string(&FitMode::Fill).unwrap(), "\"fill\"");
+        assert_eq!(serde_json::to_string(&FitMode::Fit).unwrap(), "\"fit\"");
+        assert_eq!(
+            serde_json::to_string(&FitMode::Stretch).unwrap(),
+            "\"stretch\""
+        );
+        assert_eq!(
+            serde_json::to_string(&FitMode::Center).unwrap(),
+            "\"center\""
+        );
+    }
+
+    #[test]
+    fn fit_mode_rejects_pascal_case_on_deserialise() {
+        // Companion to the snake_case lock-in: an old client sending the
+        // PascalCase form must surface an error rather than silently
+        // round-tripping back into the wrong variant.
+        assert!(serde_json::from_str::<FitMode>("\"Fill\"").is_err());
+        assert!(serde_json::from_str::<FitMode>("\"Stretch\"").is_err());
+    }
+
+    #[test]
     fn fit_mode_all_variants_round_trip_through_json() {
         // Arrange
         let variants = [
@@ -282,6 +322,46 @@ mod tests {
         assert_eq!(crops[0].src_rect.w, 1920);
         assert_eq!(crops[0].src_rect.h, 1080);
         assert_eq!(crops[0].dst_size, (1920, 1080));
+    }
+
+    #[test]
+    fn positive_offset_moves_crop_toward_source_origin() {
+        let monitors = vec![monitor(0, "DP-1", 1920, 1080, 0, 0, 480, 270)];
+
+        let centred =
+            compute_crop_specs(&monitors, &zero_bezels(), FitMode::Fill, (3840, 1080)).unwrap();
+        let shifted = compute_crop_specs_with_offset(
+            &monitors,
+            &zero_bezels(),
+            FitMode::Fill,
+            (3840, 1080),
+            [100, 0],
+        )
+        .unwrap();
+
+        assert!(shifted[0].src_rect.x < centred[0].src_rect.x);
+        assert_eq!(shifted[0].src_rect.y, centred[0].src_rect.y);
+    }
+
+    #[test]
+    fn out_of_bounds_offset_returns_image_too_small() {
+        // An offset large enough to push `src_left` negative must surface
+        // `ImageTooSmall` rather than panic on the float→u32 cast or silently
+        // clamp. Phase 4c will replace this hard error with a letterbox
+        // (`docs/plan/phase-4c-free-positioning.md` §4c.2); until then, the
+        // explicit error is the contract Phase 4a's drag-then-Apply path
+        // depends on for a clean toast.
+        let monitors = vec![monitor(0, "DP-1", 1920, 1080, 0, 0, 480, 270)];
+
+        let result = compute_crop_specs_with_offset(
+            &monitors,
+            &zero_bezels(),
+            FitMode::Fill,
+            (3840, 1080),
+            [10_000, 0],
+        );
+
+        assert!(matches!(result, Err(LayoutError::ImageTooSmall { .. })));
     }
 
     #[test]
@@ -619,6 +699,50 @@ mod tests {
                 let total: u64 = crops.iter().map(|c| u64::from(c.src_rect.w)).sum();
                 prop_assert!(total <= u64::from(image_w),
                     "sum {total} exceeded image width {image_w}");
+            }
+
+            #[test]
+            fn small_inbounds_offset_preserves_one_crop_per_monitor_and_no_overlap(
+                monitors in arb_monitors_with_mm(),
+                ox in -200i32..=200,
+                oy in -200i32..=200,
+            ) {
+                // The offset range is bounded so that the resulting `src_left`
+                // is guaranteed to stay inside the source image — the contract
+                // we want to lock in is that *legal* drags don't break the
+                // per-monitor invariants from `every_monitor_receives_*` and
+                // `no_two_crops_overlap_in_source_image`.
+                let bezels = BezelConfig { horizontal_mm: 8.0, vertical_mm: 0.0 };
+                let image_size = (7680u32, 2160u32);
+                let Ok(crops) = compute_crop_specs_with_offset(
+                    &monitors, &bezels, FitMode::Fill, image_size, [ox, oy],
+                ) else {
+                    // Some offset/monitor combinations push `src_left` past
+                    // the image edge — that's `ImageTooSmall`, exercised by
+                    // `out_of_bounds_offset_returns_image_too_small`. Skip
+                    // those cases here; the invariants below are about
+                    // *successful* drags.
+                    return Ok(());
+                };
+
+                prop_assert_eq!(crops.len(), monitors.len());
+                let monitor_ids: Vec<_> = monitors.iter().map(|m| m.id).collect();
+                let crop_ids: Vec<_> = crops.iter().map(|c| c.monitor_id).collect();
+                prop_assert_eq!(crop_ids, monitor_ids);
+
+                for (i, a) in crops.iter().enumerate() {
+                    for b in crops.iter().skip(i + 1) {
+                        let a_x_end = a.src_rect.x.saturating_add(a.src_rect.w);
+                        let b_x_end = b.src_rect.x.saturating_add(b.src_rect.w);
+                        let a_y_end = a.src_rect.y.saturating_add(a.src_rect.h);
+                        let b_y_end = b.src_rect.y.saturating_add(b.src_rect.h);
+                        let x_overlap = a.src_rect.x < b_x_end && b.src_rect.x < a_x_end;
+                        let y_overlap = a.src_rect.y < b_y_end && b.src_rect.y < a_y_end;
+                        prop_assert!(!(x_overlap && y_overlap),
+                            "offset [{ox},{oy}] produced overlapping crops: {:?} vs {:?}",
+                            a.src_rect, b.src_rect);
+                    }
+                }
             }
         }
     }

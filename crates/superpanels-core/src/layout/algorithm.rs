@@ -285,6 +285,7 @@ impl SrcMapping {
         reference_ppi: f64,
         image_size: (u32, u32),
         canvas_pixels: (u32, u32),
+        offset_px: [i32; 2],
     ) -> Result<Rect, LayoutError> {
         let (img_w, img_h) = image_size;
         let (cv_w, cv_h) = canvas_pixels;
@@ -294,8 +295,10 @@ impl SrcMapping {
         let canvas_w = size_mm.0 * mm_to_canvas_px;
         let canvas_h = size_mm.1 * mm_to_canvas_px;
 
-        let src_left = self.src_origin.0 + canvas_x * self.src_per_canvas.0;
-        let src_top = self.src_origin.1 + canvas_y * self.src_per_canvas.1;
+        let src_left =
+            self.src_origin.0 + (canvas_x - f64::from(offset_px[0])) * self.src_per_canvas.0;
+        let src_top =
+            self.src_origin.1 + (canvas_y - f64::from(offset_px[1])) * self.src_per_canvas.1;
         let src_width = canvas_w * self.src_per_canvas.0;
         let src_height = canvas_h * self.src_per_canvas.1;
 

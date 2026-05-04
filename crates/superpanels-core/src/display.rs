@@ -49,6 +49,7 @@ pub struct Monitor {
 pub struct MonitorId(pub u32);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Rotation {
     #[default]
     None,
@@ -182,6 +183,32 @@ mod tests {
         assert_eq!(decoded, monitor);
         assert_eq!(decoded.physical_size_mm, None);
         assert_eq!(decoded.ppi, None);
+    }
+
+    #[test]
+    fn rotation_serialises_as_snake_case() {
+        // Locks the wire format. The frontend (`ui/src/lib/api.ts`) and the
+        // canvas layout module both assume lowercase variants; reverting the
+        // `#[serde(rename_all)]` attribute would break monitor detection
+        // round-trips silently and must trip this test.
+        assert_eq!(serde_json::to_string(&Rotation::None).unwrap(), "\"none\"");
+        assert_eq!(
+            serde_json::to_string(&Rotation::Right).unwrap(),
+            "\"right\""
+        );
+        assert_eq!(
+            serde_json::to_string(&Rotation::Inverted).unwrap(),
+            "\"inverted\""
+        );
+        assert_eq!(serde_json::to_string(&Rotation::Left).unwrap(), "\"left\"");
+    }
+
+    #[test]
+    fn rotation_rejects_pascal_case_on_deserialise() {
+        // Companion to the snake_case lock-in: an old client sending the
+        // PascalCase form must fail loudly rather than fall back to default.
+        assert!(serde_json::from_str::<Rotation>("\"None\"").is_err());
+        assert!(serde_json::from_str::<Rotation>("\"Left\"").is_err());
     }
 
     #[test]

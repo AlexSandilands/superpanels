@@ -22,7 +22,10 @@ pub use config::{
 pub use display::{
     Availability, DetectError, DisplayDetector, Monitor, MonitorRef, Rotation, detect,
 };
-pub use layout::{BezelConfig, CropSpec, FitMode, LayoutError, Rect, compute_crop_specs};
+pub use layout::{
+    BezelConfig, CropSpec, FitMode, LayoutError, Rect, compute_crop_specs,
+    compute_crop_specs_with_offset,
+};
 pub use library::{
     DEFAULT_LIBRARY_PAGE, FolderWatcher, LibraryEntry, LibraryError, LibraryFilter,
     apply_library_filter, load_index, persist_index, scan_folder,
