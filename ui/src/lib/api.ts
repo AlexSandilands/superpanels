@@ -5,6 +5,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { IpcError } from './types/IpcError';
 import type { LibraryFilter } from './types/LibraryFilter';
 import type { PreviewArgs } from './types/PreviewArgs';
+import type { ProfileV2 } from './types/profile';
 
 // `Monitor`, `Profile`, `Config`, `CropSpec`, `LibraryEntry`, `RuntimeState`
 // have richer Rust shapes than we need to mirror here. Until ts-rs covers
@@ -23,13 +24,7 @@ export type Monitor = {
   ppi: number | null;
 };
 
-export type Profile = {
-  name: string;
-  body: unknown;
-  bezels: { horizontal_mm: number; vertical_mm: number };
-  backend_override?: string;
-  schedule?: unknown;
-};
+export type Profile = ProfileV2;
 
 export type RuntimeState = {
   version: number;
@@ -53,12 +48,16 @@ export const api = {
   redetect: () => call<{ monitors: number }>('redetect'),
   listProfiles: () => call<Profile[]>('list_profiles'),
   applyProfile: (name: string) => call<AppliedReport>('apply_profile', { name }),
-  saveProfile: (profile: Profile) => call<void>('save_profile', { profile }),
+  saveProfile: (profile: ProfileV2) => call<void>('save_profile', { profile }),
   deleteProfile: (name: string) => call<void>('delete_profile', { name }),
   previewCrop: (args: PreviewArgs) => call<unknown>('preview_crop', { args }),
   libraryList: (filter: LibraryFilter) => call<unknown[]>('library_list', { filter }),
   libraryThumbnail: (path: string) =>
     call<{ data: string; mime: string }>('library_thumbnail', { path }),
+  // Local-only render path used by the canvas preview for any selected /
+  // dropped source file — bypasses library-roots gating (`SPEC §12.4`).
+  sourceThumbnail: (path: string) =>
+    call<{ data: string; mime: string }>('source_thumbnail', { path }),
   libraryTag: (path: string, tag: string, on: boolean) =>
     call<void>('library_tag', { path, tag, on }),
   slideshowNext: () => call<AppliedReport>('slideshow_next'),
