@@ -84,7 +84,11 @@ The canvas is the heart of the UI. Five-layer compositing:
 #[tauri::command] fn save_config(config: Config) -> Result<(), IpcError>;
 #[tauri::command] fn redetect() -> Result<Vec<Monitor>, IpcError>;
 #[tauri::command] fn current_state() -> Result<RuntimeState, IpcError>;  // active profile, current source, slideshow position
+#[tauri::command] fn set_autostart(enabled: bool) -> Result<(), IpcError>; // writes/removes the user XDG autostart .desktop entry
+#[tauri::command] fn get_autostart() -> Result<bool, IpcError>;            // reads the current autostart state
 ```
+
+The GUI also exposes a local-only `source_thumbnail(path: String)` command for selected/dropped source preview bytes. It is intentionally not mirrored in daemon IPC because it represents a webview-local, user-mediated file choice rather than library state. `set_autostart`/`get_autostart` are similarly GUI-local — they touch the user's XDG autostart directory directly.
 
 `IpcError` is a thin enum that flattens the typed errors from `superpanels-core` (`DetectError`, `BackendError`, `LayoutError`, `ConfigError`) into a single shape suitable for serialisation to the frontend. `Profile`, `BezelConfig`, `FitMode`, `CropSpec`, and friends are the types from §3 (after the rework — see §3.4 for `Profile`'s shape).
 

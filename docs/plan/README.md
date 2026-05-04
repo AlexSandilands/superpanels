@@ -14,8 +14,9 @@ Companion to `docs/spec/`. The spec describes *what*; this describes *how* and *
 | 3 | [phase-3-tauri-tray.md](./phase-3-tauri-tray.md) | Tauri shell + tray — v0.3 |
 | 4a | [phase-4a-canvas.md](./phase-4a-canvas.md) | Canvas interaction — v0.4 |
 | 4b | [phase-4b-library.md](./phase-4b-library.md) | Library + SQLite — v0.5 |
-| 4c | [phase-4c-polish.md](./phase-4c-polish.md) | Polish & accessibility — v0.6 |
-| 5 | [phase-5-packaging.md](./phase-5-packaging.md) | Packaging & first release — v0.7 |
+| 4c | [phase-4c-free-positioning.md](./phase-4c-free-positioning.md) | Free-positioning canvas (pan + resize, letterbox) — v0.6 |
+| 4d | [phase-4d-polish.md](./phase-4d-polish.md) | Polish & accessibility — v0.7 |
+| 5 | [phase-5-packaging.md](./phase-5-packaging.md) | Packaging & first release — v0.8 |
 | 6 | [phase-6-stabilisation.md](./phase-6-stabilisation.md) | Stabilise toward 1.0 |
 
 ## Cross-cutting
