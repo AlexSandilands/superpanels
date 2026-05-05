@@ -58,12 +58,15 @@ pub(super) async fn cmd_set(req: IpcRequest, state: Arc<Mutex<DaemonState>>) -> 
     };
 
     let report = tokio::task::spawn_blocking(move || {
+        // CLI-equivalent `set` doesn't carry image_size_px (`docs/plan/phase-4c-free-positioning.md`
+        // §4c.9); GUI free-transform always goes through `apply_profile`.
         run_immediate_set_with_offset(
             &image_path,
             &monitors,
             bezels,
             fit,
             offset_px,
+            None,
             backend_kind,
             &custom_cmd,
         )

@@ -62,12 +62,17 @@ pub(crate) fn run_span_apply(
         ProfileBody::Span(s) => s.offset,
         ProfileBody::PerMonitor(_) => [0, 0],
     };
+    let image_size_px = match &profile.body {
+        ProfileBody::Span(s) => s.image_size_px,
+        ProfileBody::PerMonitor(_) => None,
+    };
     run_immediate_set_with_offset(
         image_path,
         monitors,
         bezels,
         fit,
         offset,
+        image_size_px,
         backend_kind,
         custom_cmd,
     )
@@ -79,6 +84,7 @@ pub(crate) fn run_immediate_set_with_offset(
     bezels: superpanels_core::layout::BezelConfig,
     fit: FitMode,
     offset_px: [i32; 2],
+    image_size_px: Option<[u32; 2]>,
     backend_kind: BackendKind,
     custom_cmd: &str,
 ) -> Result<AppliedReport> {
@@ -86,8 +92,15 @@ pub(crate) fn run_immediate_set_with_offset(
         load(image_path).with_context(|| format!("loading image {}", image_path.display()))?;
     let image_size = (source.width(), source.height());
 
-    let specs = compute_crop_specs_with_offset(monitors, &bezels, fit, image_size, offset_px)
-        .context("computing crop specs")?;
+    let specs = compute_crop_specs_with_offset(
+        monitors,
+        &bezels,
+        fit,
+        image_size,
+        offset_px,
+        image_size_px,
+    )
+    .context("computing crop specs")?;
 
     let backend: Box<dyn WallpaperBackend> = detect_backend(backend_kind, custom_cmd);
     if backend.availability() != superpanels_core::Availability::Available

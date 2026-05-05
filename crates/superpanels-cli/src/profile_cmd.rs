@@ -104,6 +104,7 @@ pub(crate) fn apply_cmd(
                 profile.bezels,
                 span.fit,
                 span.offset,
+                span.image_size_px,
                 backend_kind,
                 &custom_cmd,
             )?;
@@ -211,12 +212,20 @@ fn run_span_apply(
     bezels: BezelConfig,
     fit: LayoutFitMode,
     offset_px: [i32; 2],
+    image_size_px: Option<[u32; 2]>,
     backend_kind: BackendKind,
     custom_cmd: &str,
 ) -> Result<()> {
     let source = load(image_path).with_context(|| format!("loading {}", image_path.display()))?;
     let image_size = (source.width(), source.height());
-    let specs = compute_crop_specs_with_offset(monitors, &bezels, fit, image_size, offset_px)?;
+    let specs = compute_crop_specs_with_offset(
+        monitors,
+        &bezels,
+        fit,
+        image_size,
+        offset_px,
+        image_size_px,
+    )?;
     let backend = detect_backend(backend_kind, custom_cmd);
     clear_temp_dir()?;
     let token = apply_token();

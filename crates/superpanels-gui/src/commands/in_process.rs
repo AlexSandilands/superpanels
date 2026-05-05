@@ -141,6 +141,9 @@ fn preview_crop(params: &Value, config_path: Option<&Path>) -> CallResult {
         .get("offset_px")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or([0, 0]);
+    let image_size_px: Option<[u32; 2]> = params
+        .get("image_size_px")
+        .and_then(|v| serde_json::from_value(v.clone()).ok());
 
     let cfg = load_config(config_path)?;
     let canonical = canonicalise_inside_roots(Path::new(image), &cfg.library.roots)?;
@@ -151,7 +154,8 @@ fn preview_crop(params: &Value, config_path: Option<&Path>) -> CallResult {
         horizontal_mm: bezel_h_to_f32(bezel_h)?,
         vertical_mm: bezel_h_to_f32(bezel_v)?,
     };
-    let specs = compute_crop_specs_with_offset(&monitors, &bezels, fit, dims, offset_px)?;
+    let specs =
+        compute_crop_specs_with_offset(&monitors, &bezels, fit, dims, offset_px, image_size_px)?;
     Ok(ok_payload(specs))
 }
 

@@ -2,7 +2,7 @@
 
 use crate::display::{Monitor, MonitorRef, Rotation};
 
-use super::{BezelConfig, FitMode, LayoutError, Rect};
+use super::{BezelConfig, CropSliceSpec, FitMode, LayoutError, Rect};
 
 pub(super) const MM_PER_INCH: f64 = 25.4;
 
@@ -211,14 +211,13 @@ pub(super) fn compute_canvas_layout(
     }
 }
 
-/// Reference-PPI pixel dimensions of the canvas, as floats (for downstream
-/// src-mapping) and as rounded `u32`s (for error reports).
+/// Reference-PPI pixel dimensions of the canvas, as floats for downstream
+/// src-mapping. The `mm_to_px_dim` validation in `compute_canvas_pixels`
+/// surfaces `ImageTooSmall` when the canvas-px dimension overflows `u32`.
 #[allow(clippy::struct_field_names)] // reason: per-axis fields share width/height suffixes by design
 pub(super) struct CanvasPixels {
     pub(super) width_f: f64,
     pub(super) height_f: f64,
-    pub(super) width: u32,
-    pub(super) height: u32,
 }
 
 pub(super) fn compute_canvas_pixels(
@@ -229,14 +228,9 @@ pub(super) fn compute_canvas_pixels(
     let width_f = layout.canvas_w_mm * reference_ppi / MM_PER_INCH;
     let height_f = layout.canvas_h_mm * reference_ppi / MM_PER_INCH;
     let (img_w, img_h) = image_size;
-    let width = mm_to_px_dim(width_f, img_w, img_h)?;
-    let height = mm_to_px_dim(height_f, img_w, img_h)?;
-    Ok(CanvasPixels {
-        width_f,
-        height_f,
-        width,
-        height,
-    })
+    let _ = mm_to_px_dim(width_f, img_w, img_h)?;
+    let _ = mm_to_px_dim(height_f, img_w, img_h)?;
+    Ok(CanvasPixels { width_f, height_f })
 }
 
 /// Canvas-pixel → source-pixel mapping. Per-axis so Stretch (axis-independent)
@@ -247,11 +241,37 @@ pub(super) struct SrcMapping {
 }
 
 impl SrcMapping {
-    pub(super) fn for_fit(
+    /// Build the canvas-px → source-px mapping for either the FitMode-driven
+    /// legacy path (`image_size_px = None`) or the GUI's free-transform path
+    /// (`image_size_px = Some([w, h])`, see Phase 4c §4c.2).
+    pub(super) fn for_layout(
         fit: FitMode,
         canvas: &CanvasPixels,
         image_size: (u32, u32),
+        image_size_px: Option<[u32; 2]>,
     ) -> Result<Self, LayoutError> {
+        if let Some([w_px, h_px]) = image_size_px {
+            // Free transform: the image rect is `(offset, image_size_px)` in
+            // canvas px and maps to the full source image. Zero dimensions mean
+            // nothing covers anywhere; treat them as a degenerate-but-valid
+            // mapping with infinite src-per-canvas so clamping yields empty
+            // src_rects on every monitor.
+            let (img_w, img_h) = image_size;
+            let sx = if w_px == 0 {
+                f64::INFINITY
+            } else {
+                f64::from(img_w) / f64::from(w_px)
+            };
+            let sy = if h_px == 0 {
+                f64::INFINITY
+            } else {
+                f64::from(img_h) / f64::from(h_px)
+            };
+            return Ok(Self {
+                src_per_canvas: (sx, sy),
+                src_origin: (0.0, 0.0),
+            });
+        }
         let (img_w, img_h) = image_size;
         let img_width = f64::from(img_w);
         let img_height = f64::from(img_h);
@@ -278,17 +298,19 @@ impl SrcMapping {
         }
     }
 
-    pub(super) fn monitor_to_src_rect(
+    /// Map a single monitor onto the source image, clamping the resulting
+    /// rectangle to the image bounds. Out-of-image regions become non-zero
+    /// `dst_offset`/reduced `dst_size` so the apply layer can letterbox.
+    pub(super) fn monitor_to_slice(
         &self,
         origin_mm: (f64, f64),
         size_mm: (f64, f64),
+        mon_dst_size: (u32, u32),
         reference_ppi: f64,
         image_size: (u32, u32),
-        canvas_pixels: (u32, u32),
         offset_px: [i32; 2],
-    ) -> Result<Rect, LayoutError> {
+    ) -> Result<CropSliceSpec, LayoutError> {
         let (img_w, img_h) = image_size;
-        let (cv_w, cv_h) = canvas_pixels;
         let mm_to_canvas_px = reference_ppi / MM_PER_INCH;
         let canvas_x = origin_mm.0 * mm_to_canvas_px;
         let canvas_y = origin_mm.1 * mm_to_canvas_px;
@@ -302,13 +324,106 @@ impl SrcMapping {
         let src_width = canvas_w * self.src_per_canvas.0;
         let src_height = canvas_h * self.src_per_canvas.1;
 
-        Ok(Rect {
-            x: float_to_u32(src_left, img_w, img_h, cv_w, cv_h)?,
-            y: float_to_u32(src_top, img_w, img_h, cv_w, cv_h)?,
-            w: float_to_u32(src_width, img_w, img_h, cv_w, cv_h)?,
-            h: float_to_u32(src_height, img_w, img_h, cv_w, cv_h)?,
-        })
+        let (mon_dst_w, mon_dst_h) = mon_dst_size;
+        Ok(clamp_to_slice(
+            src_left, src_top, src_width, src_height, img_w, img_h, mon_dst_w, mon_dst_h,
+        ))
     }
+}
+
+/// Clamp the un-clamped source rectangle to the image, deriving the matching
+/// destination region. Anything outside the image becomes letterbox padding —
+/// `dst_offset` for clipping at the start, reduced `dst_size` at the end.
+fn clamp_to_slice(
+    src_left: f64,
+    src_top: f64,
+    src_width: f64,
+    src_height: f64,
+    img_w: u32,
+    img_h: u32,
+    mon_dst_w: u32,
+    mon_dst_h: u32,
+) -> CropSliceSpec {
+    let img_w_f = f64::from(img_w);
+    let img_h_f = f64::from(img_h);
+    let (sx, dox, dsw) = clamp_axis(src_left, src_width, img_w_f, mon_dst_w);
+    let (sy, doy, dsh) = clamp_axis(src_top, src_height, img_h_f, mon_dst_h);
+    if dsw == 0 || dsh == 0 {
+        return CropSliceSpec {
+            src_rect: Rect {
+                x: 0,
+                y: 0,
+                w: 0,
+                h: 0,
+            },
+            dst_offset: (0, 0),
+            dst_size: (0, 0),
+        };
+    }
+    let src_w_clamped = clamp_dim(sx, src_left, src_width, img_w_f);
+    let src_h_clamped = clamp_dim(sy, src_top, src_height, img_h_f);
+    CropSliceSpec {
+        src_rect: Rect {
+            x: round_to_u32(sx),
+            y: round_to_u32(sy),
+            w: round_to_u32(src_w_clamped),
+            h: round_to_u32(src_h_clamped),
+        },
+        dst_offset: (dox, doy),
+        dst_size: (dsw, dsh),
+    }
+}
+
+/// Clamp a single axis. Returns `(clamped_src_start, dst_offset, dst_size)`.
+/// `src_per_dst` is positive; tiny epsilon-noise around 0 is collapsed.
+fn clamp_axis(
+    src_start: f64,
+    src_extent: f64,
+    img_extent: f64,
+    mon_dst_extent: u32,
+) -> (f64, u32, u32) {
+    if !src_start.is_finite() || !src_extent.is_finite() || src_extent <= 0.0 {
+        return (0.0, 0, 0);
+    }
+    let src_end = src_start + src_extent;
+    if src_end <= 0.0 || src_start >= img_extent {
+        return (0.0, 0, 0);
+    }
+    let src_per_dst = src_extent / f64::from(mon_dst_extent.max(1));
+    let clipped_start = src_start.max(0.0);
+    let clipped_end = src_end.min(img_extent);
+    let dst_offset_f = ((clipped_start - src_start) / src_per_dst).max(0.0).round();
+    let dst_size_f = ((clipped_end - clipped_start) / src_per_dst)
+        .max(0.0)
+        .round();
+    let dst_offset = round_to_u32_clamped(dst_offset_f, mon_dst_extent);
+    let dst_size = round_to_u32_clamped(dst_size_f, mon_dst_extent.saturating_sub(dst_offset));
+    (clipped_start, dst_offset, dst_size)
+}
+
+fn clamp_dim(clamped_start: f64, src_start: f64, src_extent: f64, img_extent: f64) -> f64 {
+    let src_end = src_start + src_extent;
+    let clamped_end = src_end.min(img_extent);
+    (clamped_end - clamped_start).max(0.0)
+}
+
+fn round_to_u32(v: f64) -> u32 {
+    if !v.is_finite() || v < 0.0 {
+        return 0;
+    }
+    let r = v.round();
+    if r > f64::from(u32::MAX) {
+        u32::MAX
+    } else {
+        // reason: range checked above
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let n = r as u32;
+        n
+    }
+}
+
+fn round_to_u32_clamped(v: f64, max_value: u32) -> u32 {
+    round_to_u32(v).min(max_value)
 }
 
 /// Tiny negatives within `FLOAT_PIXEL_EPSILON` clamp to zero — they come from

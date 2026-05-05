@@ -28,15 +28,52 @@ pub struct Rect {
     pub h: u32,
 }
 
+/// The piece of the source image that lands on a single monitor, plus where it
+/// lands inside that monitor's destination canvas. `dst_offset` + `dst_size`
+/// describe the covered region; the rest is letterboxed black on Apply
+/// (`docs/spec/04-bezel-math.md` §4.6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct CropSliceSpec {
+    /// Source-image rectangle, clamped to `[0, image_w] × [0, image_h]`.
+    pub src_rect: Rect,
+    /// Top-left of the slice inside the monitor's destination plane.
+    pub dst_offset: (u32, u32),
+    /// Size of the covered region. Equals the monitor's `dst_size` when fully
+    /// covered; smaller (or `(0, 0)`) when the source rect doesn't reach.
+    pub dst_size: (u32, u32),
+}
+
 /// Per-monitor crop and render parameters.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CropSpec {
     pub monitor_id: MonitorId,
     pub src_rect: Rect,
-    /// Post-rotation pixel dimensions of the saved image.
+    /// Where the slice paints inside the monitor's full destination plane.
+    /// `(0, 0)` for the legacy fully-covered path, non-zero only with
+    /// letterboxed free-positioning (`docs/spec/04-bezel-math.md` §4.6).
+    #[serde(default)]
+    pub dst_offset: (u32, u32),
+    /// Post-rotation pixel dimensions of the saved image — the full monitor
+    /// canvas. The apply pipeline composes the (possibly smaller) painted
+    /// slice onto a black canvas of this size.
     pub dst_size: (u32, u32),
+    /// Size of the painted region inside `dst_size`. Equals `dst_size` for the
+    /// fully-covered path; smaller when letterboxing applies. `(0, 0)` means
+    /// the monitor is fully off-image and the apply pipeline writes pure
+    /// black. Defaults to `dst_size` for backward-compatibility on read.
+    #[serde(default)]
+    pub slice_dst_size: (u32, u32),
     pub rotation: Rotation,
     pub fit: FitMode,
+}
+
+impl CropSpec {
+    /// `true` when the slice doesn't fully cover the monitor — the apply
+    /// pipeline must letterbox with black via `image::compose_on_black`.
+    #[must_use]
+    pub fn needs_letterbox(&self) -> bool {
+        self.dst_offset != (0, 0) || self.slice_dst_size != self.dst_size
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
@@ -90,17 +127,23 @@ pub fn compute_crop_specs(
     fit: FitMode,
     image_size: (u32, u32),
 ) -> Result<Vec<CropSpec>, LayoutError> {
-    compute_crop_specs_with_offset(monitors, bezels, fit, image_size, [0, 0])
+    compute_crop_specs_with_offset(monitors, bezels, fit, image_size, [0, 0], None)
 }
 
 /// Compute crop specs with a persisted image-position offset in physical-layout
 /// canvas pixels (`SPEC §8`).
+///
+/// When `image_size_px` is `Some([w, h])`, the source rectangle on the canvas
+/// is `(offset_px.x, offset_px.y, w, h)` regardless of `fit` — the GUI's free
+/// transform overrides the FitMode-driven placement
+/// (`docs/plan/phase-4c-free-positioning.md` §4c.2).
 pub fn compute_crop_specs_with_offset(
     monitors: &[Monitor],
     bezels: &BezelConfig,
     fit: FitMode,
     image_size: (u32, u32),
     offset_px: [i32; 2],
+    image_size_px: Option<[u32; 2]>,
 ) -> Result<Vec<CropSpec>, LayoutError> {
     validate_inputs(monitors, fit, image_size)?;
 
@@ -117,7 +160,7 @@ pub fn compute_crop_specs_with_offset(
     let rows = group_into_rows(&effs);
     let layout = compute_canvas_layout(&effs, &rows, *bezels);
     let canvas = compute_canvas_pixels(&layout, reference_ppi, image_size)?;
-    let mapping = SrcMapping::for_fit(fit, &canvas, image_size)?;
+    let mapping = SrcMapping::for_layout(fit, &canvas, image_size, image_size_px)?;
 
     let row_index_for_monitor = build_row_index(&rows, effs.len());
     let mut specs = Vec::with_capacity(monitors.len());
@@ -127,18 +170,21 @@ pub fn compute_crop_specs_with_offset(
             layout.row_y_mm[row_index_for_monitor[i]],
         );
         let mon_size_mm = (effs[i].width_mm, effs[i].height_mm);
-        let src_rect = mapping.monitor_to_src_rect(
+        let mon_dst_size = (effs[i].pixel_w, effs[i].pixel_h);
+        let slice = mapping.monitor_to_slice(
             mon_origin_mm,
             mon_size_mm,
+            mon_dst_size,
             reference_ppi,
             image_size,
-            (canvas.width, canvas.height),
             offset_px,
         )?;
         specs.push(CropSpec {
             monitor_id: m.id,
-            src_rect,
-            dst_size: (effs[i].pixel_w, effs[i].pixel_h),
+            src_rect: slice.src_rect,
+            dst_offset: slice.dst_offset,
+            dst_size: mon_dst_size,
+            slice_dst_size: slice.dst_size,
             rotation: m.rotation,
             fit,
         });
@@ -236,7 +282,9 @@ mod tests {
                 w: 1440,
                 h: 2560,
             },
+            dst_offset: (0, 0),
             dst_size: (1440, 2560),
+            slice_dst_size: (1440, 2560),
             rotation: Rotation::Right,
             fit: FitMode::Stretch,
         };
@@ -336,6 +384,7 @@ mod tests {
             FitMode::Fill,
             (3840, 1080),
             [100, 0],
+            None,
         )
         .unwrap();
 
@@ -344,24 +393,117 @@ mod tests {
     }
 
     #[test]
-    fn out_of_bounds_offset_returns_image_too_small() {
-        // An offset large enough to push `src_left` negative must surface
-        // `ImageTooSmall` rather than panic on the float→u32 cast or silently
-        // clamp. Phase 4c will replace this hard error with a letterbox
-        // (`docs/plan/phase-4c-free-positioning.md` §4c.2); until then, the
-        // explicit error is the contract Phase 4a's drag-then-Apply path
-        // depends on for a clean toast.
+    fn out_of_bounds_offset_clamps_to_empty_slice() {
+        // Phase 4c: drag offsets that push the source rect entirely off-image
+        // produce empty slices (zero-area `Rect`, zero `dst_offset`/`dst_size`)
+        // so the apply layer can letterbox the monitor with black instead of
+        // failing with `ImageTooSmall` (`docs/plan/phase-4c-free-positioning.md`
+        // §4c.2). The previous hard error broke any drag-then-Apply path.
         let monitors = vec![monitor(0, "DP-1", 1920, 1080, 0, 0, 480, 270)];
 
-        let result = compute_crop_specs_with_offset(
+        let crops = compute_crop_specs_with_offset(
             &monitors,
             &zero_bezels(),
             FitMode::Fill,
             (3840, 1080),
             [10_000, 0],
-        );
+            None,
+        )
+        .expect("clamp must not return an error");
 
-        assert!(matches!(result, Err(LayoutError::ImageTooSmall { .. })));
+        assert_eq!(crops.len(), 1);
+        let c = &crops[0];
+        assert_eq!(c.src_rect.w, 0);
+        assert_eq!(c.src_rect.h, 0);
+        assert_eq!(c.dst_offset, (0, 0));
+    }
+
+    #[test]
+    fn partial_offset_produces_letterbox_dst_offset() {
+        // A drag that pushes the source's left edge past the canvas origin
+        // partially uncovers the monitor — the crop algorithm must surface a
+        // non-zero `dst_offset` so apply can paint black to the left of the
+        // slice (`docs/plan/phase-4c-free-positioning.md` §4c.2).
+        let monitors = vec![monitor(0, "DP-1", 1920, 1080, 0, 0, 480, 270)];
+
+        let crops = compute_crop_specs_with_offset(
+            &monitors,
+            &zero_bezels(),
+            FitMode::Fill,
+            (1920, 1080),
+            [200, 0],
+            None,
+        )
+        .unwrap();
+
+        assert!(crops[0].dst_offset.0 > 0, "expected letterbox on left edge");
+        assert!(crops[0].src_rect.x == 0);
+    }
+
+    #[test]
+    fn image_size_px_zoomed_2x_halves_src_rect() {
+        // image_size_px = (2*image_w, 2*image_h) places the image at 2× scale
+        // on the canvas, so the per-monitor source rect is half the size of
+        // the no-zoom case. Locks in the §4c.2 contract that image_size_px
+        // overrides FitMode-derived placement.
+        let monitors = vec![monitor(0, "DP-1", 1920, 1080, 0, 0, 480, 270)];
+        let image_size = (1920u32, 1080u32);
+
+        let baseline = compute_crop_specs(&monitors, &zero_bezels(), FitMode::Fill, image_size)
+            .unwrap()[0]
+            .src_rect;
+        let zoomed = compute_crop_specs_with_offset(
+            &monitors,
+            &zero_bezels(),
+            FitMode::Fill,
+            image_size,
+            [0, 0],
+            Some([image_size.0 * 2, image_size.1 * 2]),
+        )
+        .unwrap()[0]
+            .src_rect;
+
+        // Within ±1 px to absorb rounding at canvas-px boundaries.
+        let approx = |a: u32, b: u32| a.abs_diff(b) <= 1;
+        assert!(
+            approx(zoomed.w, baseline.w / 2),
+            "zoomed.w {} should be ≈ baseline.w/2 {}",
+            zoomed.w,
+            baseline.w / 2
+        );
+        assert!(
+            approx(zoomed.h, baseline.h / 2),
+            "zoomed.h {} should be ≈ baseline.h/2 {}",
+            zoomed.h,
+            baseline.h / 2
+        );
+    }
+
+    #[test]
+    fn image_size_px_smaller_than_monitor_letterboxes() {
+        // The user has shrunk the image to half the canvas width; the rest of
+        // the monitor must letterbox.
+        let monitors = vec![monitor(0, "DP-1", 1920, 1080, 0, 0, 480, 270)];
+        let image_size = (1920u32, 1080u32);
+        // Place the image at canvas (0,0) with half-canvas size. The right
+        // half of the monitor is uncovered.
+        let crops = compute_crop_specs_with_offset(
+            &monitors,
+            &zero_bezels(),
+            FitMode::Fill,
+            image_size,
+            [0, 0],
+            Some([image_size.0 / 2, image_size.1]),
+        )
+        .unwrap();
+
+        // src_rect covers the full image (we asked for exactly the image's
+        // worth of canvas).
+        assert!(crops[0].src_rect.w > 0);
+        // The painted slice covers roughly half the monitor's dst width; the
+        // right half is letterboxed (slice_dst_size.0 < dst_size.0).
+        assert!(crops[0].slice_dst_size.0 < crops[0].dst_size.0);
+        assert!(crops[0].needs_letterbox());
     }
 
     #[test]
@@ -715,13 +857,12 @@ mod tests {
                 let bezels = BezelConfig { horizontal_mm: 8.0, vertical_mm: 0.0 };
                 let image_size = (7680u32, 2160u32);
                 let Ok(crops) = compute_crop_specs_with_offset(
-                    &monitors, &bezels, FitMode::Fill, image_size, [ox, oy],
+                    &monitors, &bezels, FitMode::Fill, image_size, [ox, oy], None,
                 ) else {
-                    // Some offset/monitor combinations push `src_left` past
-                    // the image edge — that's `ImageTooSmall`, exercised by
-                    // `out_of_bounds_offset_returns_image_too_small`. Skip
-                    // those cases here; the invariants below are about
-                    // *successful* drags.
+                    // The clamp path is total but the validation path can still
+                    // reject canvases that overflow `u32` for unusual mm sizes;
+                    // skip those, the invariants below are about *successful*
+                    // drags.
                     return Ok(());
                 };
 
@@ -742,6 +883,42 @@ mod tests {
                             "offset [{ox},{oy}] produced overlapping crops: {:?} vs {:?}",
                             a.src_rect, b.src_rect);
                     }
+                }
+            }
+
+            #[test]
+            fn any_offset_clamps_src_rect_inside_image_and_letterbox_inside_monitor(
+                monitors in arb_monitors_with_mm(),
+                ox in -50_000i32..=50_000,
+                oy in -50_000i32..=50_000,
+            ) {
+                // Phase 4c §4c.2 invariants: `src_rect` always sits inside
+                // `(0, 0, image_w, image_h)`, and `dst_offset + dst_size`
+                // never overflows the monitor's `dst_size`.
+                let bezels = BezelConfig { horizontal_mm: 8.0, vertical_mm: 0.0 };
+                let image_size = (7680u32, 2160u32);
+                let Ok(crops) = compute_crop_specs_with_offset(
+                    &monitors, &bezels, FitMode::Fill, image_size, [ox, oy], None,
+                ) else {
+                    return Ok(());
+                };
+                for c in &crops {
+                    let x_end = u64::from(c.src_rect.x) + u64::from(c.src_rect.w);
+                    let y_end = u64::from(c.src_rect.y) + u64::from(c.src_rect.h);
+                    prop_assert!(x_end <= u64::from(image_size.0),
+                        "src_rect overflows image_w: {:?}", c.src_rect);
+                    prop_assert!(y_end <= u64::from(image_size.1),
+                        "src_rect overflows image_h: {:?}", c.src_rect);
+                    // The painted slice (dst_offset + slice_dst_size) must
+                    // fit inside the monitor's full dst (`dst_size`).
+                    let dx_end = u64::from(c.dst_offset.0) + u64::from(c.slice_dst_size.0);
+                    let dy_end = u64::from(c.dst_offset.1) + u64::from(c.slice_dst_size.1);
+                    prop_assert!(dx_end <= u64::from(c.dst_size.0),
+                        "slice dst overflow x: dst_offset={:?} slice_dst_size={:?} dst_size={:?}",
+                        c.dst_offset, c.slice_dst_size, c.dst_size);
+                    prop_assert!(dy_end <= u64::from(c.dst_size.1),
+                        "slice dst overflow y: dst_offset={:?} slice_dst_size={:?} dst_size={:?}",
+                        c.dst_offset, c.slice_dst_size, c.dst_size);
                 }
             }
         }

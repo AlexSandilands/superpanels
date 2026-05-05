@@ -158,6 +158,10 @@ pub(super) async fn cmd_preview_crop(
         .get("offset_px")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or([0, 0]);
+    let image_size_px: Option<[u32; 2]> = req
+        .params
+        .get("image_size_px")
+        .and_then(|v| serde_json::from_value(v.clone()).ok());
     let bezels = match (bezel_mm_to_f32(bezel_h), bezel_mm_to_f32(bezel_v)) {
         (Some(h), Some(v)) => BezelConfig {
             horizontal_mm: h,
@@ -187,7 +191,7 @@ pub(super) async fn cmd_preview_crop(
     };
 
     let monitors = state.lock().await.monitors.clone();
-    match compute_crop_specs_with_offset(&monitors, &bezels, fit, dims, offset_px) {
+    match compute_crop_specs_with_offset(&monitors, &bezels, fit, dims, offset_px, image_size_px) {
         Ok(specs) => IpcResponse::success(&specs),
         Err(e) => IpcResponse::failure(e.to_string()),
     }

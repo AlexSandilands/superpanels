@@ -112,7 +112,11 @@ pub(crate) fn run(
     let image_size = (source.width(), source.height());
 
     let offset = args.offset.map_or([0, 0], |(x, y)| [x, y]);
-    let specs = compute_crop_specs_with_offset(&monitors, &bezels, args.fit, image_size, offset)?;
+    // CLI doesn't expose `image_size_px`; positioning is a GUI affordance and
+    // CLI users get the FitMode-driven default (`docs/plan/phase-4c-free-positioning.md`
+    // §4c.9).
+    let specs =
+        compute_crop_specs_with_offset(&monitors, &bezels, args.fit, image_size, offset, None)?;
 
     if args.dry_run {
         return print_dry_run(&specs, &monitors, bezels, image_size);
@@ -437,7 +441,9 @@ mod tests {
                 w: 100,
                 h: 100,
             },
+            dst_offset: (0, 0),
             dst_size: (2560, 1440),
+            slice_dst_size: (2560, 1440),
             rotation: Rotation::None,
             fit: LayoutFitMode::Fill,
         }];
@@ -473,7 +479,9 @@ mod tests {
                 {
                     "monitor_id": 0,
                     "src_rect": { "x": 0, "y": 0, "w": 100, "h": 100 },
+                    "dst_offset": [0, 0],
                     "dst_size": [2560, 1440],
+                    "slice_dst_size": [2560, 1440],
                     "rotation": "none",
                     "fit": "fill",
                 }
