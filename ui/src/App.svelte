@@ -89,17 +89,31 @@
   const imagePath = $derived(span && span.source.type === 'single' ? span.source.path : null);
   const fit = $derived(span?.fit ?? 'fill');
   const offset = $derived<[number, number]>(span ? [span.offset[0], span.offset[1]] : [0, 0]);
+  const imageSizePx = $derived<[number, number] | null>(
+    span?.image_size_px ? [span.image_size_px[0], span.image_size_px[1]] : null,
+  );
   const bezels = $derived(draft?.bezels ?? { horizontal_mm: 0, vertical_mm: 0 });
 
-  function commitOffset(next: [number, number]) {
+  function commitTransform(next: [number, number], nextSize: [number, number] | null) {
     profileStore.patchDraft((d) => {
-      if (isSpanBody(d.body)) d.body.offset = [Math.round(next[0]), Math.round(next[1])];
+      if (!isSpanBody(d.body)) return;
+      d.body.offset = [Math.round(next[0]), Math.round(next[1])];
+      if (nextSize) {
+        d.body.image_size_px = [
+          Math.max(1, Math.round(nextSize[0])),
+          Math.max(1, Math.round(nextSize[1])),
+        ];
+      } else {
+        d.body.image_size_px = null;
+      }
     });
   }
 
-  function resetOffset() {
+  function resetTransform() {
     profileStore.patchDraft((d) => {
-      if (isSpanBody(d.body)) d.body.offset = [0, 0];
+      if (!isSpanBody(d.body)) return;
+      d.body.offset = [0, 0];
+      d.body.image_size_px = null;
     });
   }
 
@@ -159,16 +173,24 @@
     if (!prepareDropTarget()) return;
     profileStore.patchDraft((d) => {
       if (!isSpanBody(d.body)) {
-        d.body = { type: 'span', source: { type: 'single', path }, fit: 'fill', offset: [0, 0] };
+        d.body = {
+          type: 'span',
+          source: { type: 'single', path },
+          fit: 'fill',
+          offset: [0, 0],
+          image_size_px: null,
+        };
         return;
       }
       if (d.body.source.type === 'single') {
         d.body.source.path = path;
         d.body.offset = [0, 0];
+        d.body.image_size_px = null;
         return;
       }
       d.body.source = { type: 'single', path };
       d.body.offset = [0, 0];
+      d.body.image_size_px = null;
     });
     toast.success('Image set', path);
   }
@@ -257,8 +279,9 @@
           {fit}
           {imagePath}
           {offset}
-          onOffsetCommit={commitOffset}
-          onResetOffset={resetOffset}
+          {imageSizePx}
+          onTransformCommit={commitTransform}
+          onResetTransform={resetTransform}
           onMonitorDrop={pinImageToMonitor}
           onImageLoadError={handleImageLoadError}
           {flashIndices}

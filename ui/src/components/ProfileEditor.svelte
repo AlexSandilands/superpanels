@@ -18,10 +18,29 @@
           source: { type: 'single', path: '' },
           fit: 'fill',
           offset: [0, 0],
+          image_size_px: null,
         };
       } else if (kind === 'per_monitor' && d.body.type !== 'per_monitor') {
         d.body = { type: 'per_monitor', assignments: [], fit: 'fill' };
       }
+    });
+  }
+
+  function pickFit(f: FitMode) {
+    // Picking a FitMode while the explicit transform is set clears
+    // image_size_px so the FitMode-driven placement takes over again.
+    profileStore.patchDraft((d) => {
+      if (!isSpanBody(d.body)) return;
+      d.body.fit = f;
+      d.body.image_size_px = null;
+    });
+  }
+
+  function resetTransform() {
+    profileStore.patchDraft((d) => {
+      if (!isSpanBody(d.body)) return;
+      d.body.offset = [0, 0];
+      d.body.image_size_px = null;
     });
   }
 </script>
@@ -106,26 +125,55 @@
 
     {#if isSpanBody(draft.body)}
       {@const span = draft.body}
+      {@const transformActive = span.image_size_px != null}
       <SpanSourceEditor source={span.source} />
       <fieldset class="flex flex-col gap-2 rounded border border-slate-800 p-2">
         <legend class="px-1 text-[10px] uppercase tracking-wide text-slate-400">Fit</legend>
-        <div class="flex gap-1 text-xs">
+        <div
+          class="flex gap-1 text-xs"
+          title={transformActive
+            ? 'Free transform overrides FitMode — picking a fit will clear it.'
+            : ''}
+        >
           {#each fitModes as f (f)}
             <button
               type="button"
               class="flex-1 rounded border px-2 py-1"
-              class:border-accent={span.fit === f}
-              class:border-slate-700={span.fit !== f}
-              onclick={() =>
-                profileStore.patchDraft((d) => {
-                  if (isSpanBody(d.body)) d.body.fit = f;
-                })}
+              class:border-accent={!transformActive && span.fit === f}
+              class:border-slate-700={transformActive || span.fit !== f}
+              class:opacity-60={transformActive}
+              onclick={() => pickFit(f)}
             >
               {f}
             </button>
           {/each}
         </div>
       </fieldset>
+
+      {#if transformActive && span.image_size_px}
+        <fieldset class="flex flex-col gap-2 rounded border border-slate-800 p-2">
+          <legend class="px-1 text-[10px] uppercase tracking-wide text-slate-400">
+            Transform
+          </legend>
+          <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11px] text-slate-300">
+            <dt class="text-slate-500">Offset</dt>
+            <dd class="font-mono text-slate-200">
+              {span.offset[0]}, {span.offset[1]} px
+            </dd>
+            <dt class="text-slate-500">Size</dt>
+            <dd class="font-mono text-slate-200">
+              {span.image_size_px[0]} × {span.image_size_px[1]} px
+            </dd>
+          </dl>
+          <button
+            type="button"
+            class="self-start rounded border border-slate-700 px-2 py-1 text-[11px] hover:bg-slate-800"
+            onclick={resetTransform}
+          >
+            Reset transform
+          </button>
+        </fieldset>
+      {/if}
     {:else if isPerMonitorBody(draft.body)}
       {@const pm = draft.body}
       <fieldset class="flex flex-col gap-2 rounded border border-slate-800 p-2">

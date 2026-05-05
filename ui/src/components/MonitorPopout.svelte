@@ -12,30 +12,46 @@
     image: HTMLImageElement | null;
     fit: 'fill' | 'fit' | 'stretch' | 'center';
     offset: [number, number];
+    /** Display-px image rectangle when free-positioning is active. */
+    imageSizeDisplayPx: [number, number] | null;
     onClose: () => void;
   };
-  let { layout, rect, image, fit, offset, onClose }: Props = $props();
+  let { layout, rect, image, fit, offset, imageSizeDisplayPx, onClose }: Props = $props();
 
   const POPOUT_W = 240;
   const POPOUT_H = 200;
   const padding = 12;
 
   // Compute the source-image rectangle that would be drawn in the monitor's
-  // canvas window. Mirrors the math in `draw.ts/placeImage` + cut-out.
+  // canvas window. With free-positioning (`imageSizeDisplayPx` set), the image
+  // rectangle on the canvas is `(offset, imageSizeDisplayPx)` in display px
+  // and we map straight from there. Without it we fall back to the FitMode
+  // placement so saved-without-image_size_px profiles still preview.
   const slice = $derived.by(() => {
     if (!image || image.naturalWidth <= 0 || image.naturalHeight <= 0) return null;
-    const canvasW = layout.totalW;
-    const canvasH = layout.totalH;
-    if (canvasW <= 0 || canvasH <= 0) return null;
-    const placement = placeImage(fit, canvasW, canvasH, image.naturalWidth, image.naturalHeight);
-    // Position of the monitor relative to the layout origin.
-    const monRelX = rect.x - layout.offsetX;
-    const monRelY = rect.y - layout.offsetY;
-    // Source-image pixels per canvas pixel inside the placed image.
-    const srcPerPxX = image.naturalWidth / placement.w;
-    const srcPerPxY = image.naturalHeight / placement.h;
-    const srcX = (monRelX - placement.x - offset[0]) * srcPerPxX;
-    const srcY = (monRelY - placement.y - offset[1]) * srcPerPxY;
+    let imgRectW: number;
+    let imgRectH: number;
+    let imgRectX: number;
+    let imgRectY: number;
+    if (imageSizeDisplayPx) {
+      [imgRectW, imgRectH] = imageSizeDisplayPx;
+      imgRectX = layout.offsetX + offset[0];
+      imgRectY = layout.offsetY + offset[1];
+    } else {
+      const canvasW = layout.totalW;
+      const canvasH = layout.totalH;
+      if (canvasW <= 0 || canvasH <= 0) return null;
+      const placement = placeImage(fit, canvasW, canvasH, image.naturalWidth, image.naturalHeight);
+      imgRectW = placement.w;
+      imgRectH = placement.h;
+      imgRectX = layout.offsetX + placement.x + offset[0];
+      imgRectY = layout.offsetY + placement.y + offset[1];
+    }
+    if (imgRectW <= 0 || imgRectH <= 0) return null;
+    const srcPerPxX = image.naturalWidth / imgRectW;
+    const srcPerPxY = image.naturalHeight / imgRectH;
+    const srcX = (rect.x - imgRectX) * srcPerPxX;
+    const srcY = (rect.y - imgRectY) * srcPerPxY;
     const srcW = rect.w * srcPerPxX;
     const srcH = rect.h * srcPerPxY;
     return { x: srcX, y: srcY, w: srcW, h: srcH };

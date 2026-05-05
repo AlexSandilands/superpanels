@@ -93,6 +93,7 @@ export const profileStore = {
         source: { type: 'single', path: '' },
         fit: 'fill',
         offset: [0, 0],
+        image_size_px: null,
       },
       bezels: defaultBezels(),
     };

@@ -1,13 +1,13 @@
 <script lang="ts">
-  // SPEC §12.3 monitor preview canvas. Five-layer compositing handled by the
-  // pure draw module; pointer/wheel/keyboard wiring + drag-state machine live
-  // in `lib/canvas/interaction.svelte.ts`. This component owns the canvas
-  // element, layout derivation, and the requestAnimationFrame loop.
+  // SPEC §12.3 monitor preview canvas. Phase 4c: free-positioning model with
+  // pan + corner resize + off-monitor dim. The pure draw module owns the
+  // 7-layer compositing; pointer/wheel/keyboard wiring + drag-state machine
+  // live in `lib/canvas/interaction.svelte.ts`.
 
   import { onMount } from 'svelte';
   import type { Monitor } from '$lib/api';
   import { computeLayout } from '$lib/canvas/layout';
-  import { drawCanvasLayers, hitTest } from '$lib/canvas/draw';
+  import { drawCanvasLayers, computeImageRect, hitTest } from '$lib/canvas/draw';
   import type { CanvasLayout, MonitorRect } from '$lib/canvas/types';
   import { loadThumbnail, peekThumbnail } from '$lib/canvas/image_cache';
   import { CanvasInteraction } from '$lib/canvas/interaction.svelte';
@@ -20,8 +20,10 @@
     fit: 'fill' | 'fit' | 'stretch' | 'center';
     imagePath: string | null;
     offset: [number, number];
-    onOffsetCommit?: (offset: [number, number]) => void;
-    onResetOffset?: () => void;
+    imageSizePx: [number, number] | null;
+    aspectLock?: boolean;
+    onTransformCommit?: (offset: [number, number], imageSizePx: [number, number] | null) => void;
+    onResetTransform?: () => void;
     onMonitorClick?: (rect: MonitorRect) => void;
     onMonitorDrop?: (monitorIndex: number, path: string) => void;
     onImageLoadError?: (path: string, message: string) => void;
@@ -35,8 +37,10 @@
     fit,
     imagePath,
     offset,
-    onOffsetCommit,
-    onResetOffset,
+    imageSizePx,
+    aspectLock = true,
+    onTransformCommit,
+    onResetTransform,
     onMonitorClick,
     onMonitorDrop,
     onImageLoadError,
@@ -55,21 +59,21 @@
   let image = $state<HTMLImageElement | null>(null);
   let imageLoadingPath: string | null = null;
   let imageLoading = $state(false);
+  let hoverCorner = $state<'tl' | 'tr' | 'bl' | 'br' | null>(null);
 
   const padding = 28;
 
-  // The interaction instance owns the runes for zoom, hover, drag, and
-  // popout. It needs read access to the *current* layout, offset, and
-  // offset-scale; we hand it lazy getters so it always sees the latest
-  // derived values. Declared first so the layout can read `interaction.zoom`;
-  // the getter return-type annotations break the type-inference cycle TS
-  // would otherwise flag in strict mode.
+  type ImgRect = { x: number; y: number; w: number; h: number } | null;
+
   const interaction = new CanvasInteraction({
     getLayout: (): CanvasLayout => layout,
     getOffset: (): [number, number] => offset,
     getOffsetScale: (): number => offsetScale,
-    onOffsetCommit: (o) => onOffsetCommit?.(o),
-    onResetOffset: () => onResetOffset?.(),
+    getImageRect: (): ImgRect => imageRectDisplay,
+    getImageSizePx: (): [number, number] | null => imageSizePx,
+    getAspectLock: (): boolean => aspectLock,
+    onTransformCommit: (o, s) => onTransformCommit?.(o, s),
+    onResetTransform: () => onResetTransform?.(),
     onMonitorClick: (r) => onMonitorClick?.(r),
   });
 
@@ -90,10 +94,34 @@
     offset[0] * offsetScale,
     offset[1] * offsetScale,
   ]);
+  const imageSizeDisplayPx = $derived<[number, number] | null>(
+    imageSizePx ? [imageSizePx[0] * offsetScale, imageSizePx[1] * offsetScale] : null,
+  );
   const liveDisplayOffset = $derived<[number, number]>([
-    displayOffset[0] + interaction.dragLiveDelta[0],
-    displayOffset[1] + interaction.dragLiveDelta[1],
+    displayOffset[0] + (interaction.dragMode?.kind === 'pan' ? interaction.dragLiveDelta[0] : 0),
+    displayOffset[1] + (interaction.dragMode?.kind === 'pan' ? interaction.dragLiveDelta[1] : 0),
   ]);
+
+  const imageRectDisplay: ImgRect = $derived(
+    image
+      ? computeImageRect(layout, {
+          dpr,
+          viewportW,
+          viewportH,
+          image,
+          imageW: image.naturalWidth,
+          imageH: image.naturalHeight,
+          offsetX: liveDisplayOffset[0],
+          offsetY: liveDisplayOffset[1],
+          fit,
+          imageSizeDisplayPx,
+          hoverIndex: interaction.hoverIndex,
+          showLabels: interaction.zoom >= 0.7,
+          dim: interaction.dim,
+          showResizeHandles: imageSizePx !== null,
+        })
+      : null,
+  );
 
   $effect(() => {
     const path = imagePath;
@@ -132,12 +160,13 @@
   let pendingFrame = false;
 
   $effect(() => {
-    // Touch reactive deps so the effect re-runs on changes. The reads must be
-    // synchronous — the rAF callback below runs after Svelte's tracking window
-    // closes, so reading inside it would not re-subscribe.
     void layout;
     void liveDisplayOffset;
+    void imageSizeDisplayPx;
     void interaction.hoverIndex;
+    void interaction.dim;
+    void interaction.dragMode;
+    void interaction.dragLiveDelta;
     void image;
     void flashIndices;
     void fit;
@@ -166,10 +195,6 @@
     const observer = new ResizeObserver(syncCanvasSize);
     observer.observe(wrapperEl);
 
-    // DPR can change without firing a resize — moving the window between
-    // monitors of different scale, or the user zooming the webview. The
-    // standard hook is a `(resolution: ${dpr}dppx)` MQ that re-fires on every
-    // change; re-arm it after each fire because the MQ string is dpr-bound.
     let dprMql: MediaQueryList | null = null;
     function watchDpr() {
       dprMql?.removeEventListener('change', onDprChange);
@@ -206,8 +231,11 @@
       offsetX: liveDisplayOffset[0],
       offsetY: liveDisplayOffset[1],
       fit,
+      imageSizeDisplayPx,
       hoverIndex: interaction.hoverIndex,
       showLabels: interaction.zoom >= 0.7,
+      dim: interaction.dim,
+      showResizeHandles: imageSizePx !== null,
     });
     drawFlash(ctx);
     if (paintInstrumentation) recordPaint(performance.now() - t0);
@@ -238,6 +266,27 @@
     }
     ctx.restore();
   }
+
+  function onPointerMoveCanvas(ev: PointerEvent) {
+    if (!canvasEl) return;
+    interaction.onPointerMove(ev, canvasEl);
+    if (!interaction.dragging) {
+      const rect = canvasEl.getBoundingClientRect();
+      hoverCorner = interaction.hitResizeHandle(ev.clientX - rect.left, ev.clientY - rect.top);
+    }
+  }
+
+  const cursorStyle = $derived.by(() => {
+    if (interaction.dragging) {
+      return interaction.dragMode?.kind === 'resize'
+        ? (interaction.cursorForResize(interaction.dragMode.corner) ?? 'grabbing')
+        : 'grabbing';
+    }
+    if (hoverCorner) {
+      return interaction.cursorForResize(hoverCorner) ?? 'grab';
+    }
+    return interaction.hoverIndex !== null ? 'pointer' : 'grab';
+  });
 
   const popoutRect = $derived<MonitorRect | null>(interaction.popoutRect());
 
@@ -305,12 +354,8 @@
     bind:this={canvasEl}
     class="absolute inset-0 h-full w-full select-none"
     style="touch-action: none;"
-    style:cursor={interaction.dragging
-      ? 'grabbing'
-      : interaction.hoverIndex !== null
-        ? 'pointer'
-        : 'grab'}
-    onpointermove={(ev) => canvasEl && interaction.onPointerMove(ev, canvasEl)}
+    style:cursor={cursorStyle}
+    onpointermove={onPointerMoveCanvas}
     onpointerdown={(ev) => canvasEl && interaction.onPointerDown(ev, canvasEl)}
     onpointerup={(ev) => canvasEl && interaction.onPointerUp(ev, canvasEl)}
     onpointercancel={(ev) => canvasEl && interaction.onPointerUp(ev, canvasEl)}
@@ -341,9 +386,14 @@
   {/if}
 
   <div
-    class="pointer-events-none absolute right-2 top-2 rounded bg-slate-900/70 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-400"
+    class="pointer-events-none absolute right-2 top-2 flex flex-col items-end gap-1 text-[10px] uppercase tracking-wide text-slate-400"
   >
-    zoom {(interaction.zoom * 100).toFixed(0)}%
+    <span class="rounded bg-slate-900/70 px-1.5 py-0.5">
+      zoom {(interaction.zoom * 100).toFixed(0)}%
+    </span>
+    <span class="rounded bg-slate-900/70 px-1.5 py-0.5">
+      dim {interaction.dim ? 'on' : 'off'} · D
+    </span>
   </div>
 
   {#if dropHoverIdx !== null}
@@ -366,6 +416,7 @@
       {image}
       {fit}
       offset={liveDisplayOffset}
+      {imageSizeDisplayPx}
       onClose={() => interaction.closePopout()}
     />
   {/if}
