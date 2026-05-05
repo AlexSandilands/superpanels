@@ -107,6 +107,8 @@ async fn dispatch(
         "library_list" => handlers::cmd_library_list(req, state).await,
         "library_thumbnail" => handlers::cmd_library_thumbnail(req, state).await,
         "library_tag" => handlers::cmd_library_tag(req, state).await,
+        "library_delete" => handlers::cmd_library_delete(req, state).await,
+        "library_rescan" => handlers::cmd_library_rescan(state).await,
         other => IpcResponse::failure(format!("unknown method: {other}")),
     }
 }

@@ -26,6 +26,18 @@ export type Monitor = {
 
 export type Profile = ProfileV2;
 
+export type LibraryEntry = {
+  path: string;
+  resolution: [number, number];
+  aspect_ratio: number;
+  file_size: number;
+  modified: { secs_since_epoch: number; nanos_since_epoch: number } | string | number;
+  tags: string[];
+  favourite: boolean;
+  last_shown: { secs_since_epoch: number; nanos_since_epoch: number } | string | number | null;
+  show_count: number;
+};
+
 export type RuntimeState = {
   version: number;
   active_profile: string | null;
@@ -51,7 +63,7 @@ export const api = {
   saveProfile: (profile: ProfileV2) => call<void>('save_profile', { profile }),
   deleteProfile: (name: string) => call<void>('delete_profile', { name }),
   previewCrop: (args: PreviewArgs) => call<unknown>('preview_crop', { args }),
-  libraryList: (filter: LibraryFilter) => call<unknown[]>('library_list', { filter }),
+  libraryList: (filter: LibraryFilter) => call<LibraryEntry[]>('library_list', { filter }),
   libraryThumbnail: (path: string) =>
     call<{ data: string; mime: string }>('library_thumbnail', { path }),
   // Local-only render path used by the canvas preview for any selected /
@@ -60,6 +72,8 @@ export const api = {
     call<{ data: string; mime: string }>('source_thumbnail', { path }),
   libraryTag: (path: string, tag: string, on: boolean) =>
     call<void>('library_tag', { path, tag, on }),
+  libraryDelete: (path: string) => call<void>('library_delete', { path }),
+  libraryRescan: () => call<{ count: number }>('library_rescan'),
   slideshowNext: () => call<AppliedReport>('slideshow_next'),
   slideshowPrev: () => call<AppliedReport>('slideshow_prev'),
   slideshowPause: (paused?: boolean) =>

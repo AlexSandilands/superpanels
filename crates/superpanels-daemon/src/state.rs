@@ -7,9 +7,12 @@ use anyhow::{Context, Result};
 use superpanels_core::config::{Config, ConfigError, LibraryConfig};
 use superpanels_core::display::Monitor;
 use superpanels_core::ipc::{RuntimeState, SlideshowSummary};
-use superpanels_core::library::{LibraryEntry, load_index, scan_folder};
+use superpanels_core::library::{
+    FolderWatcher, LibraryDb, LibraryEntry, migrate_json_to_sqlite, scan_folder,
+};
 use superpanels_core::slideshow::{SlideshowPicker, load_state};
 use superpanels_core::{detect, ipc};
+use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, info, warn};
 
 use crate::schedule::ScheduleChecker;
@@ -21,13 +24,27 @@ pub(crate) struct DaemonState {
     /// handlers don't accept a client-supplied destination.
     pub config_path: Option<PathBuf>,
     pub monitors: Vec<Monitor>,
+    /// In-memory cache of library entries hydrated from [`library_db`]. Reads
+    /// (filtering, slideshow pool selection) hit this directly so the daemon
+    /// avoids a round trip to `SQLite` on every IPC call. Writes go through the
+    /// DB and then refresh this vector.
     pub library: Vec<LibraryEntry>,
+    /// ``SQLite`` library index (`SPEC §14.5`). `None` when the DB couldn't be
+    /// opened — the daemon still serves library reads from the cached vector.
+    pub library_db: Option<LibraryDb>,
     pub active_profile: Option<String>,
     /// Picker for the currently active profile's slideshow; `None` when the
     /// active profile has no slideshow source.
     pub slideshow_picker: Option<SlideshowPicker>,
     pub last_apply_unix_secs: Option<u64>,
     pub schedule_checker: ScheduleChecker,
+    /// Inotify-backed FS watcher over [`LibraryConfig::roots`]. Rebuilt by
+    /// [`Self::refresh_watcher`] whenever the configured roots change so a
+    /// freshly-added folder starts auto-rescanning without a daemon restart.
+    pub watcher: Option<FolderWatcher>,
+    /// Sender wired into the watcher task; required to (re)build [`watcher`].
+    /// Set once at daemon startup; `None` only inside test fixtures.
+    pub watcher_tx: Option<UnboundedSender<notify::Event>>,
 }
 
 impl DaemonState {
@@ -44,18 +61,45 @@ impl DaemonState {
         });
         config.merge_into_monitors(&mut monitors);
 
-        let library = load_library_index(&config.library);
+        let (library_db, library) = load_library_db_and_entries(&config.library);
 
         Ok(Self {
             config,
             config_path: config_path.map(Path::to_path_buf),
             monitors,
             library,
+            library_db,
             active_profile: None,
             slideshow_picker: None,
             last_apply_unix_secs: None,
             schedule_checker: ScheduleChecker::new(),
+            watcher: None,
+            watcher_tx: None,
         })
+    }
+
+    /// Tear down any existing FS watcher and rebuild one over the current
+    /// `config.library.roots`. Called once at startup after `watcher_tx` is
+    /// wired in and again from `save_config` whenever the root list diffs, so
+    /// auto-rescan picks up freshly-added folders without a daemon restart.
+    pub(crate) fn refresh_watcher(&mut self) {
+        let Some(tx) = self.watcher_tx.clone() else {
+            return;
+        };
+        let roots = self.config.library.roots.clone();
+        // Drop the old watcher first so its forwarder thread exits before the
+        // new one starts pushing events on the same `tx`.
+        self.watcher = None;
+        if roots.is_empty() {
+            return;
+        }
+        match crate::watcher::make_watcher(&roots, tx) {
+            Ok(w) => {
+                debug!(roots = roots.len(), "FS watcher refreshed");
+                self.watcher = Some(w);
+            }
+            Err(e) => warn!(error = %e, "FS watcher refresh failed; auto-rescan disabled"),
+        }
     }
 
     /// Path the daemon writes config to. Honours an explicit `--config`
@@ -120,7 +164,9 @@ impl DaemonState {
         debug!(profile = profile_name, "restored slideshow picker");
     }
 
-    /// Rescan library roots and update in-memory index.
+    /// Rescan library roots, persist to `SQLite`, and refresh the in-memory cache.
+    /// On any DB failure the daemon falls back to the freshly scanned entries
+    /// (with empty per-image metadata) so reads still work.
     pub(crate) fn rescan_library(&mut self) {
         let roots: Vec<PathBuf> = self.config.library.roots.clone();
         let recursive = self.config.library.recursive;
@@ -130,7 +176,19 @@ impl DaemonState {
             info!(root = %root.display(), found = batch.len(), "library scan complete");
             entries.extend(batch);
         }
-        self.library = entries;
+        self.library = match self.library_db.as_mut() {
+            Some(db) => match db.replace_entries_preserving_metadata(&entries) {
+                Ok(()) => db.list_entries().unwrap_or_else(|e| {
+                    warn!(error = %e, "library DB read after rescan failed; using bare scan");
+                    entries
+                }),
+                Err(e) => {
+                    warn!(error = %e, "library DB write during rescan failed; using bare scan");
+                    entries
+                }
+            },
+            None => entries,
+        };
     }
 
     /// Unix seconds for the current time.
@@ -183,10 +241,13 @@ impl DaemonState {
             config_path: None,
             monitors: Vec::new(),
             library: Vec::new(),
+            library_db: None,
             active_profile: None,
             slideshow_picker: None,
             last_apply_unix_secs: None,
             schedule_checker: ScheduleChecker::new(),
+            watcher: None,
+            watcher_tx: None,
         }
     }
 
@@ -201,25 +262,86 @@ impl DaemonState {
     }
 }
 
-fn load_library_index(cfg: &LibraryConfig) -> Vec<LibraryEntry> {
+/// Open the library DB, run the JSON→`SQLite` migration if a legacy index file
+/// is present, and return the hydrated in-memory cache. On any failure the
+/// daemon degrades gracefully to a one-shot folder scan so reads still work
+/// — the library is non-critical state.
+fn load_library_db_and_entries(cfg: &LibraryConfig) -> (Option<LibraryDb>, Vec<LibraryEntry>) {
     let Some(state_dir) = DaemonState::state_dir() else {
-        return Vec::new();
+        warn!("no state dir; library DB disabled");
+        return (None, Vec::new());
     };
-    let index_path = state_dir.join("library-index.json");
-    match load_index(&index_path) {
-        Ok(entries) => {
-            debug!(path = %index_path.display(), count = entries.len(), "loaded library index");
-            entries
+    if let Err(e) = std::fs::create_dir_all(&state_dir) {
+        warn!(error = %e, "could not create state dir; library DB disabled");
+        return (None, Vec::new());
+    }
+    let data_dir = library_data_dir().unwrap_or_else(|| state_dir.clone());
+    if let Err(e) = std::fs::create_dir_all(&data_dir) {
+        warn!(error = %e, "could not create library data dir");
+    }
+    let db_path = data_dir.join("library.db");
+
+    let mut db = match LibraryDb::open(&db_path) {
+        Ok(db) => db,
+        Err(e) => {
+            warn!(error = %e, "library DB unavailable; falling back to in-memory only");
+            return (None, fresh_scan(cfg));
+        }
+    };
+
+    // One-shot migration from the Phase-2 JSON index.
+    let json_path = state_dir.join("library-index.json");
+    if let Err(e) = migrate_json_to_sqlite(&json_path, &mut db) {
+        warn!(error = %e, "JSON→`SQLite` migration failed; existing DB preserved");
+    }
+
+    let entries = match db.list_entries() {
+        Ok(rows) if !rows.is_empty() => {
+            debug!(count = rows.len(), "library DB hydrated");
+            rows
+        }
+        Ok(_) => {
+            // Empty DB — first run on this binary. Run a synchronous scan so
+            // the library isn't blank until the FS watcher fires.
+            let scanned = fresh_scan(cfg);
+            if let Err(e) = db.replace_entries_preserving_metadata(&scanned) {
+                warn!(error = %e, "library DB seed write failed; serving scan from memory");
+            }
+            db.list_entries().unwrap_or(scanned)
         }
         Err(e) => {
-            warn!(error = %e, "could not load library index; will rescan");
-            let mut entries = Vec::new();
-            for root in &cfg.roots {
-                entries.extend(scan_folder(root, cfg.recursive, |_| {}));
-            }
-            entries
+            warn!(error = %e, "library DB read failed; running fresh scan");
+            fresh_scan(cfg)
+        }
+    };
+    (Some(db), entries)
+}
+
+fn fresh_scan(cfg: &LibraryConfig) -> Vec<LibraryEntry> {
+    let mut entries = Vec::new();
+    for root in &cfg.roots {
+        entries.extend(scan_folder(root, cfg.recursive, |_| {}));
+    }
+    entries
+}
+
+/// `$XDG_DATA_HOME/superpanels/` (or `~/.local/share/superpanels/`). Library
+/// DB lives here per `SPEC §14.5`; falls back to the state dir when neither
+/// XDG var is set.
+fn library_data_dir() -> Option<PathBuf> {
+    if let Ok(dir) = std::env::var("XDG_DATA_HOME") {
+        let p = PathBuf::from(dir);
+        if !p.as_os_str().is_empty() {
+            return Some(p.join("superpanels"));
         }
     }
+    let home = std::env::var_os("HOME")?;
+    Some(
+        PathBuf::from(home)
+            .join(".local")
+            .join("share")
+            .join("superpanels"),
+    )
 }
 
 #[cfg(test)]
@@ -314,5 +436,50 @@ mod tests {
             Some(PathBuf::from("/walls/b.png"))
         );
         assert_eq!(s.current_index, Some(1));
+    }
+
+    #[test]
+    fn refresh_watcher_is_noop_without_tx() {
+        // for_tests leaves watcher_tx as None — refresh must do nothing rather
+        // than panic so the rest of the suite can use the test fixture freely.
+        let mut state = DaemonState::for_tests(Config::default());
+        state.refresh_watcher();
+        assert!(state.watcher.is_none());
+    }
+
+    #[tokio::test]
+    async fn refresh_watcher_builds_when_tx_set_and_drops_when_roots_empty() {
+        use superpanels_core::config::LibraryConfig;
+        use tokio::sync::mpsc::unbounded_channel;
+
+        // Arrange — give state a tx and a real (empty) root dir to watch.
+        let lib_dir = tempdir().unwrap();
+        let config = Config {
+            library: LibraryConfig {
+                roots: vec![lib_dir.path().to_path_buf()],
+                recursive: false,
+                thumbnail_size: 320,
+                auto_scan: true,
+            },
+            ..Default::default()
+        };
+        let mut state = DaemonState::for_tests(config);
+        let (tx, _rx) = unbounded_channel::<notify::Event>();
+        state.watcher_tx = Some(tx);
+
+        // Act 1 — refresh builds a watcher over the configured root.
+        state.refresh_watcher();
+        assert!(
+            state.watcher.is_some(),
+            "expected watcher to be built when roots are configured and tx is set"
+        );
+
+        // Act 2 — clearing roots and refreshing tears the watcher down.
+        state.config.library.roots.clear();
+        state.refresh_watcher();
+        assert!(
+            state.watcher.is_none(),
+            "expected watcher to be torn down when roots are emptied"
+        );
     }
 }

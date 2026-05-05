@@ -7,7 +7,7 @@
   import { onMount } from 'svelte';
   import type { Monitor } from '$lib/api';
   import { computeLayout } from '$lib/canvas/layout';
-  import { drawCanvasLayers } from '$lib/canvas/draw';
+  import { drawCanvasLayers, hitTest } from '$lib/canvas/draw';
   import type { CanvasLayout, MonitorRect } from '$lib/canvas/types';
   import { loadThumbnail, peekThumbnail } from '$lib/canvas/image_cache';
   import { CanvasInteraction } from '$lib/canvas/interaction.svelte';
@@ -23,6 +23,7 @@
     onOffsetCommit?: (offset: [number, number]) => void;
     onResetOffset?: () => void;
     onMonitorClick?: (rect: MonitorRect) => void;
+    onMonitorDrop?: (monitorIndex: number, path: string) => void;
     onImageLoadError?: (path: string, message: string) => void;
     flashIndices?: number[];
   };
@@ -37,9 +38,12 @@
     onOffsetCommit,
     onResetOffset,
     onMonitorClick,
+    onMonitorDrop,
     onImageLoadError,
     flashIndices = [],
   }: Props = $props();
+
+  let dropHoverIdx = $state<number | null>(null);
 
   let wrapperEl: HTMLDivElement | undefined = $state();
   let canvasEl: HTMLCanvasElement | undefined = $state();
@@ -236,11 +240,66 @@
   }
 
   const popoutRect = $derived<MonitorRect | null>(interaction.popoutRect());
+
+  function eventToCanvas(ev: DragEvent): [number, number] | null {
+    if (!canvasEl) return null;
+    const rect = canvasEl.getBoundingClientRect();
+    return [ev.clientX - rect.left, ev.clientY - rect.top];
+  }
+
+  function dragHasImagePayload(ev: DragEvent): boolean {
+    const dt = ev.dataTransfer;
+    if (!dt) return false;
+    return Array.from(dt.types).some(
+      (t) => t === 'application/x-superpanels-image' || t === 'text/uri-list',
+    );
+  }
+
+  function onDragOver(ev: DragEvent) {
+    if (!dragHasImagePayload(ev)) return;
+    ev.preventDefault();
+    if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'copy';
+    const xy = eventToCanvas(ev);
+    if (!xy) return;
+    dropHoverIdx = hitTest(layout, xy[0], xy[1]);
+  }
+
+  function onDragLeave() {
+    dropHoverIdx = null;
+  }
+
+  function onDrop(ev: DragEvent) {
+    if (!dragHasImagePayload(ev)) return;
+    ev.preventDefault();
+    const dt = ev.dataTransfer;
+    if (!dt) return;
+    const path =
+      dt.getData('application/x-superpanels-image') ||
+      dt
+        .getData('text/uri-list')
+        .replace(/^file:\/\//, '')
+        .split(/\r?\n/)[0]
+        ?.trim();
+    if (!path) return;
+    const xy = eventToCanvas(ev);
+    if (!xy) return;
+    const idx = hitTest(layout, xy[0], xy[1]);
+    dropHoverIdx = null;
+    if (idx === null) return;
+    onMonitorDrop?.(idx, path);
+  }
 </script>
 
+<!-- reason: dragover/drop are the spec interaction (Phase 4b §4b.1 — drop
+     image onto monitor); the wrapper hosts the canvas which is keyboard-
+     reachable via tab + R/Esc shortcuts on `interaction.onKey`. -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   bind:this={wrapperEl}
   class="relative h-full w-full overflow-hidden rounded border border-slate-800 bg-bezel"
+  ondragover={onDragOver}
+  ondragleave={onDragLeave}
+  ondrop={onDrop}
 >
   <canvas
     bind:this={canvasEl}
@@ -286,6 +345,19 @@
   >
     zoom {(interaction.zoom * 100).toFixed(0)}%
   </div>
+
+  {#if dropHoverIdx !== null}
+    {@const m = layout.monitors.find((r) => r.monitorIndex === dropHoverIdx)}
+    {#if m}
+      <div
+        class="pointer-events-none absolute rounded border-2 border-accent/80 bg-accent/15"
+        style:left={`${m.x}px`}
+        style:top={`${m.y}px`}
+        style:width={`${m.w}px`}
+        style:height={`${m.h}px`}
+      ></div>
+    {/if}
+  {/if}
 
   {#if popoutRect}
     <MonitorPopout

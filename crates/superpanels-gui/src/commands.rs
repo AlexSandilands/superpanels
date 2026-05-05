@@ -178,7 +178,9 @@ pub fn source_thumbnail(path: String) -> Result<Value, IpcError> {
 }
 
 fn render_local_thumbnail(path: &std::path::Path) -> Result<Value, IpcError> {
-    const THUMBNAIL_MAX_EDGE: u32 = 320;
+    // Matches `LibraryConfig::thumbnail_size`'s default; the canvas preview
+    // doesn't have config in scope so the constant is hard-coded here.
+    const THUMBNAIL_MAX_EDGE: u32 = 512;
 
     let canonical = std::fs::canonicalize(path)
         .map_err(|e| IpcError::invalid(format!("rejecting path '{}': {e}", path.display())))?;
@@ -188,6 +190,23 @@ fn render_local_thumbnail(path: &std::path::Path) -> Result<Value, IpcError> {
         superpanels_core::image::encode_png(&img).map_err(|e| IpcError::Image(e.to_string()))?;
     let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
     Ok(json!({ "data": encoded, "mime": "image/png" }))
+}
+
+#[tauri::command]
+pub fn library_rescan(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
+    bridge::call("library_rescan", json!({}), state.config_path().as_deref())
+}
+
+#[tauri::command]
+pub fn library_delete(
+    path: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Value, IpcError> {
+    bridge::call(
+        "library_delete",
+        json!({ "path": path }),
+        state.config_path().as_deref(),
+    )
 }
 
 #[tauri::command]

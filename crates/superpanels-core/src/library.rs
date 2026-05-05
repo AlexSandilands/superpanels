@@ -1,5 +1,12 @@
-//! Folder-driven library index (`SPEC.md` §7.1–7.2). JSON-only in Phase 2;
-//! `SQLite` lands in Phase 4b.
+//! Folder-driven library index (`SPEC.md` §7.1–7.2). The on-disk index is
+//! `SQLite` from Phase 4b onward (`SPEC §14.5`); the JSON helpers below stay
+//! in place as the source for the one-shot migration in [`migrate`].
+
+pub mod db;
+pub mod migrate;
+
+pub use db::{DbError, LibraryDb, SCHEMA_VERSION};
+pub use migrate::{MigrationError, migrate_json_to_sqlite};
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;

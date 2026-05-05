@@ -15,7 +15,8 @@ use superpanels_core::library::{LibraryFilter as CoreLibraryFilter, apply_librar
 use crate::bridge::{CallResult, ok_payload, ok_unit};
 use crate::errors::IpcError;
 
-const THUMBNAIL_MAX_EDGE: u32 = 320;
+/// Floor when `LibraryConfig::thumbnail_size` is misconfigured (`SPEC §14.1`).
+const THUMBNAIL_MIN_EDGE: u32 = 64;
 
 pub fn dispatch(method: &str, params: &Value, config_path: Option<&Path>) -> CallResult {
     match method {
@@ -30,6 +31,10 @@ pub fn dispatch(method: &str, params: &Value, config_path: Option<&Path>) -> Cal
         "library_tag" => Err(IpcError::internal(
             "library_tag is not implemented in-process; requires daemon library state",
         )),
+        "library_delete" => Err(IpcError::internal(
+            "library_delete is not implemented in-process; requires daemon library state",
+        )),
+        "library_rescan" => library_rescan(config_path),
         "get_config" => get_config(config_path),
         "save_config" => save_config(params, config_path),
         "current_state" => Ok(current_state()),
@@ -196,14 +201,24 @@ fn library_list(params: &Value, config_path: Option<&Path>) -> CallResult {
     Ok(ok_payload(page))
 }
 
+fn library_rescan(config_path: Option<&Path>) -> CallResult {
+    let cfg = load_config(config_path)?;
+    let mut count: usize = 0;
+    for root in &cfg.library.roots {
+        count += superpanels_core::scan_folder(root, cfg.library.recursive, |_| {}).len();
+    }
+    Ok(json!({ "count": count }))
+}
+
 fn library_thumbnail(params: &Value, config_path: Option<&Path>) -> CallResult {
     let path = params
         .get("path")
         .and_then(Value::as_str)
         .ok_or_else(|| IpcError::invalid("params.path required"))?;
     let cfg = load_config(config_path)?;
+    let edge = cfg.library.thumbnail_size.max(THUMBNAIL_MIN_EDGE);
     let canonical = canonicalise_inside_roots(Path::new(path), &cfg.library.roots)?;
-    let img = superpanels_core::image::load_thumbnail(&canonical, THUMBNAIL_MAX_EDGE)
+    let img = superpanels_core::image::load_thumbnail(&canonical, edge)
         .map_err(|e| IpcError::Image(e.to_string()))?;
     let bytes =
         superpanels_core::image::encode_png(&img).map_err(|e| IpcError::Image(e.to_string()))?;
