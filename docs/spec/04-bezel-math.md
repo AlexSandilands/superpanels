@@ -64,3 +64,8 @@ A portrait monitor contributes its rotated dimensions to the physical canvas: a 
 - It doesn't try to hide image content "behind" the bezel by *omitting* the bezel pixels from the source — that produces visible duplication at the seam. It crops at the bezel boundary and skips the gap.
 - It doesn't perspective-correct angled monitors. If the user toes their monitors in, that's their problem (see roadmap).
 - It doesn't try to be smart about subject framing (e.g. "keep the face on the centre monitor"). v2.
+
+**Phase 4c additions:**
+
+- The crop algorithm now honours an optional user-supplied `image_size_px` per profile. When set, the source rectangle on the canvas is `(offset.x, offset.y, image_size_px.0, image_size_px.1)` regardless of `FitMode` — the GUI's free transform overrides the FitMode-driven placement.
+- Per-monitor `src_rect` is always **clamped** to `[0, image_w] × [0, image_h]`. Anything outside the image becomes letterbox padding: the apply pipeline's `compose_on_black` step paints those pixels black at the slice's `dst_offset` / outside its `slice_dst_size`. There is no longer a hard `LayoutError` for drag offsets that push the source rectangle off-image.

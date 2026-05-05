@@ -34,13 +34,22 @@ Selectable from the left rail. Grid of thumbnails (320 px), filterable by tag, a
 
 ## 12.3 Monitor preview canvas
 
-The canvas is the heart of the UI. Five-layer compositing:
+The canvas is the heart of the UI. Phase 4c uses a free-positioning model:
+the image floats freely across the canvas; monitors are crop windows that
+hover over it. Seven-layer compositing:
 
-1. **Base layer:** wallpaper image, scaled to the canvas size and positioned per the live offset.
-2. **Mask layer:** dark semi-transparent overlay covering the entire canvas.
-3. **Cut-out:** `destination-out` composite punches a hole through the mask for each monitor rectangle. The monitors appear as lit windows revealing the image beneath; everything outside is dimmed.
-4. **Bezel bars:** solid dark rectangles between monitors, sized proportionally to the configured physical gap.
-5. **Outlines & labels:** thin light borders, monitor name labels, and on-hover tooltips.
+1. **Background:** canvas-wide slate fill.
+2. **Image rectangle:** drawn at `(offset, image_size_px)` across the whole canvas, no layout-bbox clip. When `image_size_px` is `None`, the rectangle is derived from `FitMode` (legacy behaviour).
+3. **Off-monitor dim:** translucent black over everything outside the monitor rects. Toggleable (the `D` key flips it).
+4. **Per-monitor backing:** opaque black fill at each monitor's rect — what the user actually sees on the panel when the source rectangle doesn't cover it (the letterbox pixels).
+5. **Image inside monitors:** the image redrawn at full alpha, clipped to the union of the monitor rects.
+6. **Bezel bars:** solid dark rectangles between monitors, sized proportionally to the configured physical gap.
+7. **Monitor chrome:** thin coloured outlines, labels, hover glow, and corner resize handles around the image rectangle (when the user has pinned an explicit transform).
+
+`SpanProfile.image_size_px: Option<[u32; 2]>` toggles between the two modes.
+`None` defers to `FitMode`; `Some([w, h])` is the GUI's free transform — the
+canvas, the Rust crop algorithm, and the apply pipeline all agree the image
+rectangle on the canvas is `(offset.x, offset.y, w, h)` regardless of fit.
 
 **Accuracy:**
 - Monitors rendered at correct relative *physical* sizes in mm. A 27" 4K and a 24" 1080p look visibly different in the canvas.
@@ -49,11 +58,12 @@ The canvas is the heart of the UI. Five-layer compositing:
 - Bezel bars sized proportionally to the configured mm gap.
 
 **Interactivity:**
-- Drag the image to reposition; on each drag tick (16 ms), an IPC `preview_crop` call returns updated `Vec<CropSpec>` and the canvas redraws.
+- Drag inside the image rectangle to **pan**; the offset is committed on pointer-up.
+- Drag a corner handle to **resize**; aspect-locked by default. Hit priority is corner handles → image body → monitor rect.
+- "Cover all monitors" snaps offset + `image_size_px` to the smallest scale that covers the union of monitor rects (useful for portrait + landscape pairs that share no common axis).
 - Bezel sliders update in real time — gap bars grow/shrink, image shifts to compensate.
 - Hover a monitor: glow highlight + tooltip showing pixel range and physical-size info.
 - Click a monitor: side popout showing the exact crop as it will appear on that screen.
-- `R` resets the offset to centred.
 - Pinch/scroll on the canvas: zoom (within 0.5×–2.0×) for inspection, doesn't change the applied result.
 
 **Apply animation:** a fast (< 400 ms) flash per monitor confirming the apply.
@@ -103,7 +113,8 @@ The GUI also exposes a local-only `source_thumbnail(path: String)` command for s
 | `Ctrl+1/2/3` | Switch to top three profiles |
 | `Space` | Pause/resume slideshow |
 | `→` / `←` | Slideshow next / prev |
-| `R` | Reset image offset |
+| `R` | Reset image transform (offset + image_size_px) |
+| `D` | Toggle off-monitor dim |
 | `F5` | Re-detect monitors |
 | `Ctrl+,` | Open settings |
 | `Ctrl+L` | Focus library search |
