@@ -233,6 +233,7 @@ mod tests {
                 },
                 fit: crate::layout::FitMode::Fill,
                 offset: [0, 0],
+                image_size_px: None,
             }),
             bezels: BezelConfig {
                 horizontal_mm: 8.0,

@@ -197,6 +197,7 @@ fn save_profile(args: &SetArgs, name: &str, config_path: Option<&Path>) -> Resul
             },
             fit: args.fit,
             offset: args.offset.map_or([0, 0], |(x, y)| [x, y]),
+            image_size_px: None,
         }),
         bezels: BezelConfig {
             horizontal_mm: args.bezel_h.unwrap_or(0.0),

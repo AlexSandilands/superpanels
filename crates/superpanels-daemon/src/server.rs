@@ -159,6 +159,7 @@ mod tests {
                 },
                 fit: LayoutFitMode::Fill,
                 offset: [0, 0],
+                image_size_px: None,
             }),
             bezels: BezelConfig {
                 horizontal_mm: 0.0,

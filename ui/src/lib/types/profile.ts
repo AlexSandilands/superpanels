@@ -34,6 +34,9 @@ export type SpanProfile = {
   source: SpanSource;
   fit: FitMode;
   offset: [number, number];
+  // `null` defers to FitMode (legacy behaviour); a tuple pins the GUI's free
+  // transform on top of the bezel-aware canvas. See docs/spec/12-gui.md §12.3.
+  image_size_px?: [number, number] | null;
 };
 
 export type MonitorRef = {

@@ -25,6 +25,10 @@ pub struct SpanProfile {
     /// Image-position offset in canvas px (`SPEC.md` §8.3).
     #[serde(default)]
     pub offset: [i32; 2],
+    /// Explicit image rectangle in canvas px (`docs/spec/12-gui.md` §12.3).
+    /// `None` defers to `fit`; `Some([w, h])` pins the GUI's free transform.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_size_px: Option<[u32; 2]>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -163,6 +167,7 @@ mod tests {
             },
             fit: FitMode::Fill,
             offset: [10, 0],
+            image_size_px: None,
         });
 
         // Act
@@ -193,6 +198,7 @@ mod tests {
             },
             fit: FitMode::Fill,
             offset: [0, 0],
+            image_size_px: None,
         });
 
         // Act
@@ -201,5 +207,76 @@ mod tests {
 
         // Assert
         assert_eq!(back, body);
+    }
+
+    #[test]
+    fn span_profile_image_size_px_round_trips_through_toml() {
+        // Arrange
+        let body = ProfileBody::Span(SpanProfile {
+            source: SpanSource::Single {
+                path: PathBuf::from("/walls/x.jpg"),
+            },
+            fit: FitMode::Fill,
+            offset: [10, -20],
+            image_size_px: Some([3840, 2160]),
+        });
+
+        // Act
+        let s = toml::to_string(&body).unwrap();
+        let back: ProfileBody = toml::from_str(&s).unwrap();
+
+        // Assert
+        assert_eq!(back, body);
+        assert!(
+            s.contains("image_size_px"),
+            "expected image_size_px to be serialised when Some, TOML was: {s}"
+        );
+    }
+
+    #[test]
+    fn span_profile_image_size_px_skipped_when_none() {
+        // Arrange — `skip_serializing_if = Option::is_none` keeps existing
+        // configs visually unchanged when the user hasn't touched the GUI's
+        // free transform.
+        let body = ProfileBody::Span(SpanProfile {
+            source: SpanSource::Single {
+                path: PathBuf::from("/walls/x.jpg"),
+            },
+            fit: FitMode::Fill,
+            offset: [0, 0],
+            image_size_px: None,
+        });
+
+        // Act
+        let s = toml::to_string(&body).unwrap();
+
+        // Assert
+        assert!(
+            !s.contains("image_size_px"),
+            "expected image_size_px to be omitted when None, TOML was: {s}"
+        );
+    }
+
+    #[test]
+    fn span_profile_legacy_toml_without_image_size_px_loads_with_none() {
+        // Arrange — a Phase 4a profile block with no image_size_px.
+        let toml_text = r#"
+type = "span"
+fit = "fill"
+offset = [0, 0]
+
+[source]
+type = "single"
+path = "/walls/x.jpg"
+"#;
+
+        // Act
+        let body: ProfileBody = toml::from_str(toml_text).unwrap();
+
+        // Assert
+        match body {
+            ProfileBody::Span(span) => assert_eq!(span.image_size_px, None),
+            other => panic!("expected Span body, got {other:?}"),
+        }
     }
 }
