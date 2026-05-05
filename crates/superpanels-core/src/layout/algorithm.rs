@@ -309,45 +309,43 @@ impl SrcMapping {
         reference_ppi: f64,
         image_size: (u32, u32),
         offset_px: [i32; 2],
-    ) -> Result<CropSliceSpec, LayoutError> {
-        let (img_w, img_h) = image_size;
+    ) -> CropSliceSpec {
         let mm_to_canvas_px = reference_ppi / MM_PER_INCH;
         let canvas_x = origin_mm.0 * mm_to_canvas_px;
         let canvas_y = origin_mm.1 * mm_to_canvas_px;
         let canvas_w = size_mm.0 * mm_to_canvas_px;
         let canvas_h = size_mm.1 * mm_to_canvas_px;
 
-        let src_left =
-            self.src_origin.0 + (canvas_x - f64::from(offset_px[0])) * self.src_per_canvas.0;
-        let src_top =
-            self.src_origin.1 + (canvas_y - f64::from(offset_px[1])) * self.src_per_canvas.1;
-        let src_width = canvas_w * self.src_per_canvas.0;
-        let src_height = canvas_h * self.src_per_canvas.1;
-
-        let (mon_dst_w, mon_dst_h) = mon_dst_size;
-        Ok(clamp_to_slice(
-            src_left, src_top, src_width, src_height, img_w, img_h, mon_dst_w, mon_dst_h,
-        ))
+        let unclamped = UnclampedSrc {
+            left: self.src_origin.0 + (canvas_x - f64::from(offset_px[0])) * self.src_per_canvas.0,
+            top: self.src_origin.1 + (canvas_y - f64::from(offset_px[1])) * self.src_per_canvas.1,
+            width: canvas_w * self.src_per_canvas.0,
+            height: canvas_h * self.src_per_canvas.1,
+        };
+        clamp_to_slice(&unclamped, image_size, mon_dst_size)
     }
+}
+
+/// Pre-clamp source rectangle in float pixels, before bounding to the image.
+struct UnclampedSrc {
+    left: f64,
+    top: f64,
+    width: f64,
+    height: f64,
 }
 
 /// Clamp the un-clamped source rectangle to the image, deriving the matching
 /// destination region. Anything outside the image becomes letterbox padding —
 /// `dst_offset` for clipping at the start, reduced `dst_size` at the end.
 fn clamp_to_slice(
-    src_left: f64,
-    src_top: f64,
-    src_width: f64,
-    src_height: f64,
-    img_w: u32,
-    img_h: u32,
-    mon_dst_w: u32,
-    mon_dst_h: u32,
+    src: &UnclampedSrc,
+    image_size: (u32, u32),
+    mon_dst_size: (u32, u32),
 ) -> CropSliceSpec {
-    let img_w_f = f64::from(img_w);
-    let img_h_f = f64::from(img_h);
-    let (sx, dox, dsw) = clamp_axis(src_left, src_width, img_w_f, mon_dst_w);
-    let (sy, doy, dsh) = clamp_axis(src_top, src_height, img_h_f, mon_dst_h);
+    let img_extent_x = f64::from(image_size.0);
+    let img_extent_y = f64::from(image_size.1);
+    let (sx, dox, dsw) = clamp_axis(src.left, src.width, img_extent_x, mon_dst_size.0);
+    let (sy, doy, dsh) = clamp_axis(src.top, src.height, img_extent_y, mon_dst_size.1);
     if dsw == 0 || dsh == 0 {
         return CropSliceSpec {
             src_rect: Rect {
@@ -360,14 +358,14 @@ fn clamp_to_slice(
             dst_size: (0, 0),
         };
     }
-    let src_w_clamped = clamp_dim(sx, src_left, src_width, img_w_f);
-    let src_h_clamped = clamp_dim(sy, src_top, src_height, img_h_f);
+    let clamped_w = clamp_dim(sx, src.left, src.width, img_extent_x);
+    let clamped_h = clamp_dim(sy, src.top, src.height, img_extent_y);
     CropSliceSpec {
         src_rect: Rect {
             x: round_to_u32(sx),
             y: round_to_u32(sy),
-            w: round_to_u32(src_w_clamped),
-            h: round_to_u32(src_h_clamped),
+            w: round_to_u32(clamped_w),
+            h: round_to_u32(clamped_h),
         },
         dst_offset: (dox, doy),
         dst_size: (dsw, dsh),

@@ -78,6 +78,7 @@ pub(crate) fn run_span_apply(
     )
 }
 
+#[allow(clippy::too_many_arguments)] // reason: each arg is independent profile state; bundling into a struct reads worse
 pub(crate) fn run_immediate_set_with_offset(
     image_path: &Path,
     monitors: &[Monitor],

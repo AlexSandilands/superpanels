@@ -206,6 +206,7 @@ pub(crate) fn import_cmd(file: &Path, config_path: Option<&Path>) -> Result<()> 
 
 // --- in-process apply helpers ---
 
+#[allow(clippy::too_many_arguments)] // reason: each arg is independent profile state; bundling into a struct reads worse
 fn run_span_apply(
     image_path: &Path,
     monitors: &[Monitor],

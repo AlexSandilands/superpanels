@@ -178,7 +178,7 @@ pub fn compute_crop_specs_with_offset(
             reference_ppi,
             image_size,
             offset_px,
-        )?;
+        );
         specs.push(CropSpec {
             monitor_id: m.id,
             src_rect: slice.src_rect,

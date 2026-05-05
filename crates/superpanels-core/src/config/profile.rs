@@ -153,6 +153,7 @@ mod duration_secs {
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)] // reason: tests fail loudly on serde errors
+#[allow(clippy::panic)] // reason: panic on unexpected enum shape is the test failure
 mod tests {
     use super::*;
     use crate::layout::FitMode;
@@ -274,9 +275,9 @@ path = "/walls/x.jpg"
         let body: ProfileBody = toml::from_str(toml_text).unwrap();
 
         // Assert
-        match body {
-            ProfileBody::Span(span) => assert_eq!(span.image_size_px, None),
-            other => panic!("expected Span body, got {other:?}"),
-        }
+        let ProfileBody::Span(span) = body else {
+            panic!("expected Span body");
+        };
+        assert_eq!(span.image_size_px, None);
     }
 }
