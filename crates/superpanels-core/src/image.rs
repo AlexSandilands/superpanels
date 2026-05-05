@@ -8,7 +8,7 @@ use image::{DynamicImage, ImageReader, imageops};
 use thiserror::Error;
 
 use crate::display::Rotation;
-use crate::layout::Rect;
+use crate::layout::{CropSpec, Rect};
 
 mod temp;
 
@@ -217,6 +217,63 @@ pub fn crop(img: &DynamicImage, rect: Rect) -> Result<DynamicImage, ImageError> 
     Ok(img.crop_imm(rect.x, rect.y, rect.w, rect.h))
 }
 
+/// Crop, scale, and letterbox a `source` image per `spec`. Skips
+/// `compose_on_black` for the fully-covered legacy path so non-letterboxed
+/// applies are byte-identical to the pre-Phase-4c pipeline
+/// (`docs/plan/phase-4c-free-positioning.md` §4c.3). Empty slices (the user
+/// dragged the image entirely off-monitor) return an all-black canvas.
+pub fn render_slice(source: &DynamicImage, spec: &CropSpec) -> Result<DynamicImage, ImageError> {
+    if spec.slice_dst_size.0 == 0 || spec.slice_dst_size.1 == 0 {
+        let (w, h) = spec.dst_size;
+        return Ok(DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+            w.max(1),
+            h.max(1),
+            image::Rgba([0, 0, 0, 255]),
+        )));
+    }
+    let cropped = crop(source, spec.src_rect)?;
+    let resized = scale_to_fit(&cropped, spec.slice_dst_size, FitMode::Stretch);
+    if spec.needs_letterbox() {
+        Ok(compose_on_black(&resized, spec.dst_size, spec.dst_offset))
+    } else {
+        Ok(resized)
+    }
+}
+
+/// Compose `slice` onto a black `dst_size` canvas at `dst_offset`. Used by the
+/// apply pipeline when the user has free-positioned the image and parts of a
+/// monitor fall outside the source rect (`docs/plan/phase-4c-free-positioning.md`
+/// §4c.3). Pixels outside the slice stay opaque black.
+#[must_use]
+pub fn compose_on_black(
+    slice: &DynamicImage,
+    dst_size: (u32, u32),
+    dst_offset: (u32, u32),
+) -> DynamicImage {
+    let (dw, dh) = dst_size;
+    let mut canvas =
+        image::RgbaImage::from_pixel(dw.max(1), dh.max(1), image::Rgba([0, 0, 0, 255]));
+    let (sw, sh) = (slice.width(), slice.height());
+    if sw == 0 || sh == 0 || dw == 0 || dh == 0 {
+        return DynamicImage::ImageRgba8(canvas);
+    }
+    let max_w = dw.saturating_sub(dst_offset.0);
+    let max_h = dh.saturating_sub(dst_offset.1);
+    let paste_w = sw.min(max_w);
+    let paste_h = sh.min(max_h);
+    if paste_w == 0 || paste_h == 0 {
+        return DynamicImage::ImageRgba8(canvas);
+    }
+    let cropped = slice.crop_imm(0, 0, paste_w, paste_h).to_rgba8();
+    image::imageops::overlay(
+        &mut canvas,
+        &cropped,
+        i64::from(dst_offset.0),
+        i64::from(dst_offset.1),
+    );
+    DynamicImage::ImageRgba8(canvas)
+}
+
 /// Rotate `img` by 90/180/270 °. `Rotation::None` clones.
 #[must_use]
 pub fn rotate(img: &DynamicImage, rotation: Rotation) -> DynamicImage {
@@ -402,6 +459,157 @@ mod tests {
 
         // Assert
         assert!(matches!(result, Err(ImageError::CropOutOfBounds { .. })));
+    }
+
+    fn span_spec(
+        src_rect: Rect,
+        dst_offset: (u32, u32),
+        dst_size: (u32, u32),
+        slice_dst_size: (u32, u32),
+    ) -> CropSpec {
+        use crate::display::MonitorId;
+        use crate::layout::FitMode as LFitMode;
+        CropSpec {
+            monitor_id: MonitorId(0),
+            src_rect,
+            dst_offset,
+            dst_size,
+            slice_dst_size,
+            rotation: Rotation::None,
+            fit: LFitMode::Fill,
+        }
+    }
+
+    #[test]
+    fn render_slice_fully_covered_skips_compose() {
+        // Arrange — a full-coverage spec; render_slice should produce a normal
+        // resized image and *not* invoke compose_on_black (no black border).
+        let src = solid_image(20, 10, [255, 0, 0, 255]);
+        let spec = span_spec(
+            Rect {
+                x: 0,
+                y: 0,
+                w: 20,
+                h: 10,
+            },
+            (0, 0),
+            (40, 20),
+            (40, 20),
+        );
+
+        // Act
+        let out = render_slice(&src, &spec).unwrap();
+
+        // Assert — every pixel is red; no black border around the slice.
+        assert_eq!((out.width(), out.height()), (40, 20));
+        let rgba = out.to_rgba8();
+        for x in 0..40 {
+            for y in 0..20 {
+                assert_eq!(rgba.get_pixel(x, y).0, [255, 0, 0, 255]);
+            }
+        }
+    }
+
+    #[test]
+    fn render_slice_letterbox_pads_with_black() {
+        // Arrange — slice covers half the monitor, offset by 5,0.
+        let src = solid_image(10, 10, [0, 0, 255, 255]);
+        let spec = span_spec(
+            Rect {
+                x: 0,
+                y: 0,
+                w: 10,
+                h: 10,
+            },
+            (5, 0),
+            (20, 10),
+            (10, 10),
+        );
+
+        // Act
+        let out = render_slice(&src, &spec).unwrap();
+
+        // Assert — full canvas is dst_size; left strip is black, right strip is blue.
+        assert_eq!((out.width(), out.height()), (20, 10));
+        let rgba = out.to_rgba8();
+        assert_eq!(rgba.get_pixel(0, 0).0, [0, 0, 0, 255]);
+        assert_eq!(rgba.get_pixel(4, 0).0, [0, 0, 0, 255]);
+        assert_eq!(rgba.get_pixel(10, 0).0, [0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn render_slice_empty_slice_returns_full_black() {
+        // Arrange — entirely off-image drag.
+        let src = solid_image(10, 10, [255, 255, 0, 255]);
+        let spec = span_spec(
+            Rect {
+                x: 0,
+                y: 0,
+                w: 0,
+                h: 0,
+            },
+            (0, 0),
+            (8, 6),
+            (0, 0),
+        );
+
+        // Act
+        let out = render_slice(&src, &spec).unwrap();
+
+        // Assert
+        assert_eq!((out.width(), out.height()), (8, 6));
+        let rgba = out.to_rgba8();
+        assert_eq!(rgba.get_pixel(0, 0).0, [0, 0, 0, 255]);
+        assert_eq!(rgba.get_pixel(7, 5).0, [0, 0, 0, 255]);
+    }
+
+    #[test]
+    fn compose_on_black_pads_around_slice() {
+        // Arrange — 4×4 red slice on a 10×10 canvas, offset (2, 3).
+        let slice = solid_image(4, 4, [255, 0, 0, 255]);
+
+        // Act
+        let out = compose_on_black(&slice, (10, 10), (2, 3));
+
+        // Assert — slice pixel lit red; outside pixel still black.
+        assert_eq!((out.width(), out.height()), (10, 10));
+        let rgba = out.to_rgba8();
+        assert_eq!(rgba.get_pixel(3, 4).0, [255, 0, 0, 255]);
+        assert_eq!(rgba.get_pixel(0, 0).0, [0, 0, 0, 255]);
+        assert_eq!(rgba.get_pixel(8, 8).0, [0, 0, 0, 255]);
+    }
+
+    #[test]
+    fn compose_on_black_clips_slice_extending_past_dst() {
+        // Arrange — slice larger than the remaining dst region; the overflow
+        // must clip rather than panic.
+        let slice = solid_image(20, 20, [0, 255, 0, 255]);
+
+        // Act
+        let out = compose_on_black(&slice, (10, 10), (5, 5));
+
+        // Assert — output stays at dst_size; the visible portion is the
+        // top-left 5×5 of the slice composited at (5, 5).
+        assert_eq!((out.width(), out.height()), (10, 10));
+        let rgba = out.to_rgba8();
+        assert_eq!(rgba.get_pixel(9, 9).0, [0, 255, 0, 255]);
+        assert_eq!(rgba.get_pixel(0, 0).0, [0, 0, 0, 255]);
+    }
+
+    #[test]
+    fn compose_on_black_with_zero_slice_returns_full_black_canvas() {
+        // Arrange — empty slice (0×0) means the monitor is fully off-image
+        // and the temp file should be entirely black.
+        let slice = solid_image(0, 0, [0, 0, 0, 0]);
+
+        // Act
+        let out = compose_on_black(&slice, (4, 4), (0, 0));
+
+        // Assert
+        assert_eq!((out.width(), out.height()), (4, 4));
+        let rgba = out.to_rgba8();
+        assert_eq!(rgba.get_pixel(0, 0).0, [0, 0, 0, 255]);
+        assert_eq!(rgba.get_pixel(3, 3).0, [0, 0, 0, 255]);
     }
 
     #[test]

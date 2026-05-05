@@ -12,9 +12,7 @@ use superpanels_core::config::{
 };
 use superpanels_core::detect;
 use superpanels_core::display::{Monitor, MonitorRef};
-use superpanels_core::image::{
-    FitMode as ImageFitMode, clear_temp_dir, crop, load, rotate, save_temp, scale_to_fit,
-};
+use superpanels_core::image::{clear_temp_dir, load, render_slice, rotate, save_temp};
 use superpanels_core::layout::{
     BezelConfig, CropSpec, FitMode as LayoutFitMode, compute_crop_specs_with_offset,
 };
@@ -267,11 +265,8 @@ fn render_per_monitor(
     let mut out = Vec::with_capacity(specs.len());
     for spec in specs {
         let monitor = monitor_for_spec(monitors, spec)?;
-        let cropped = crop(source, spec.src_rect)?;
-        // Crop already matches the monitor's physical aspect — Stretch to dst_size
-        // avoids re-introducing letterboxing.
-        let resized = scale_to_fit(&cropped, spec.dst_size, ImageFitMode::Stretch);
-        let rotated = rotate(&resized, spec.rotation);
+        let composed = render_slice(source, spec)?;
+        let rotated = rotate(&composed, spec.rotation);
         let safe = sanitise_filename(&monitor.name);
         // Per-apply cache-buster: Plasma's org.kde.image plugin caches by URL,
         // so a unique filename per apply forces a redraw. `clear_temp_dir()`

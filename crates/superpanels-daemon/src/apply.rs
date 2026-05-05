@@ -11,7 +11,7 @@ use superpanels_core::config::{
 };
 use superpanels_core::display::{Monitor, MonitorRef};
 use superpanels_core::image::{
-    FitMode as ImageFitMode, clear_temp_dir, crop, load, rotate, save_temp, scale_to_fit,
+    FitMode as ImageFitMode, clear_temp_dir, load, render_slice, rotate, save_temp, scale_to_fit,
 };
 use superpanels_core::layout::{FitMode, compute_crop_specs_with_offset};
 use superpanels_core::slideshow::{
@@ -121,9 +121,8 @@ pub(crate) fn run_immediate_set_with_offset(
             .ok_or_else(|| {
                 anyhow::anyhow!("crop spec references unknown monitor {:?}", spec.monitor_id)
             })?;
-        let cropped = crop(&source, spec.src_rect).context("cropping image")?;
-        let resized = scale_to_fit(&cropped, spec.dst_size, ImageFitMode::Stretch);
-        let rotated = rotate(&resized, spec.rotation);
+        let composed = render_slice(&source, spec).context("composing slice")?;
+        let rotated = rotate(&composed, spec.rotation);
         let safe = sanitise_filename(&monitor.name);
         let filename = format!("{safe}-{token}.png");
         let path = save_temp(&rotated, &filename).context("saving temp slice")?;
