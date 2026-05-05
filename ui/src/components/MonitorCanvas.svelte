@@ -11,7 +11,10 @@
   import type { CanvasLayout, MonitorRect } from '$lib/canvas/types';
   import { loadThumbnail, peekThumbnail } from '$lib/canvas/image_cache';
   import { CanvasInteraction } from '$lib/canvas/interaction.svelte';
+  import { paintInstrumentationEnabled, recordPaint } from '$lib/canvas/paint_bench';
+  import { snapToCoverTransform } from '$lib/canvas/snap_to_cover';
   import MonitorPopout from './MonitorPopout.svelte';
+  import CanvasOverlayChrome from './CanvasOverlayChrome.svelte';
 
   type Props = {
     monitors: Monitor[];
@@ -46,8 +49,7 @@
   }: Props = $props();
 
   let dropHoverIdx = $state<number | null>(null);
-  // Local-only UI state. Aspect-lock defaults to on (the common case for
-  // photographs); the user can release it to stretch.
+  // Aspect-lock defaults to on (the common case for photographs).
   let aspectLock = $state(true);
 
   let wrapperEl: HTMLDivElement | undefined = $state();
@@ -217,11 +219,13 @@
     };
   });
 
+  const benchEnabled = paintInstrumentationEnabled();
+
   function paint() {
     if (!canvasEl) return;
     const ctx = canvasEl.getContext('2d');
     if (!ctx) return;
-    const t0 = paintInstrumentation ? performance.now() : 0;
+    const t0 = benchEnabled ? performance.now() : 0;
     drawCanvasLayers(ctx, layout, {
       dpr,
       viewportW,
@@ -239,20 +243,7 @@
       showResizeHandles: imageSizePx !== null,
     });
     drawFlash(ctx);
-    if (paintInstrumentation) recordPaint(performance.now() - t0);
-  }
-
-  // Opt-in baseline-capture hook for SPEC §19's "Canvas drag → redraw frame"
-  // budget (< 8 ms). Toggle via `localStorage.setItem('superpanels.bench', '1')`
-  // in the webview console; results land on `window.__superpanelsPaint`.
-  const paintInstrumentation =
-    typeof window !== 'undefined' && window.localStorage?.getItem('superpanels.bench') === '1';
-
-  function recordPaint(ms: number) {
-    const w = window as Window & { __superpanelsPaint?: number[] };
-    if (!w.__superpanelsPaint) w.__superpanelsPaint = [];
-    w.__superpanelsPaint.push(ms);
-    if (w.__superpanelsPaint.length > 240) w.__superpanelsPaint.shift();
+    if (benchEnabled) recordPaint(performance.now() - t0);
   }
 
   function drawFlash(ctx: CanvasRenderingContext2D) {
@@ -277,30 +268,10 @@
     }
   }
 
-  // "Cover all monitors": the smallest aspect-preserving image rect that
-  // fully covers the canvas (union of monitor rects + bezels). Saves the
-  // user from manually scaling for the portrait + landscape case.
   function snapToCover() {
-    if (!image || image.naturalWidth <= 0 || image.naturalHeight <= 0) return;
-    const coreCanvasW = layout.totalMmW * layout.coreMmToPx;
-    const coreCanvasH = layout.totalMmH * layout.coreMmToPx;
-    if (coreCanvasW <= 0 || coreCanvasH <= 0) return;
-    const aspect = image.naturalWidth / image.naturalHeight;
-    let w: number;
-    let h: number;
-    if (coreCanvasW / aspect >= coreCanvasH) {
-      w = coreCanvasW;
-      h = coreCanvasW / aspect;
-    } else {
-      w = coreCanvasH * aspect;
-      h = coreCanvasH;
-    }
-    const offX = (coreCanvasW - w) / 2;
-    const offY = (coreCanvasH - h) / 2;
-    onTransformCommit?.(
-      [Math.round(offX), Math.round(offY)],
-      [Math.max(1, Math.round(w)), Math.max(1, Math.round(h))],
-    );
+    if (!image) return;
+    const next = snapToCoverTransform(layout, image.naturalWidth, image.naturalHeight);
+    if (next) onTransformCommit?.(next.offset, next.imageSizePx);
   }
 
   const cursorStyle = $derived.by(() => {
@@ -412,16 +383,14 @@
     </div>
   {/if}
 
-  <div
-    class="pointer-events-none absolute right-2 top-2 flex flex-col items-end gap-1 text-[10px] uppercase tracking-wide text-slate-400"
-  >
-    <span class="rounded bg-slate-900/70 px-1.5 py-0.5">
-      zoom {(interaction.zoom * 100).toFixed(0)}%
-    </span>
-    <span class="rounded bg-slate-900/70 px-1.5 py-0.5">
-      dim {interaction.dim ? 'on' : 'off'} · D
-    </span>
-  </div>
+  <CanvasOverlayChrome
+    showActionButtons={!!(image && imagePath)}
+    {aspectLock}
+    onSnapToCover={snapToCover}
+    onToggleAspectLock={() => (aspectLock = !aspectLock)}
+    zoom={interaction.zoom}
+    dim={interaction.dim}
+  />
 
   {#if dropHoverIdx !== null}
     {@const m = layout.monitors.find((r) => r.monitorIndex === dropHoverIdx)}
@@ -434,32 +403,6 @@
         style:height={`${m.h}px`}
       ></div>
     {/if}
-  {/if}
-
-  {#if image && imagePath}
-    <div class="absolute left-2 top-2 flex gap-1 text-[10px] uppercase text-slate-200">
-      <button
-        type="button"
-        class="rounded bg-slate-900/80 px-2 py-1 hover:bg-slate-800"
-        title="Snap the image to cover all monitors at the smallest aspect-preserving scale."
-        onclick={snapToCover}
-      >
-        Cover all monitors
-      </button>
-      <button
-        type="button"
-        class="rounded px-2 py-1 hover:bg-slate-800"
-        class:bg-slate-900={!aspectLock}
-        class:bg-accent={aspectLock}
-        class:text-slate-900={aspectLock}
-        title={aspectLock
-          ? 'Aspect lock on — corner resize keeps the natural image ratio.'
-          : 'Aspect lock off — corner resize stretches each axis independently.'}
-        onclick={() => (aspectLock = !aspectLock)}
-      >
-        Lock aspect{aspectLock ? ' · on' : ' · off'}
-      </button>
-    </div>
   {/if}
 
   {#if popoutRect}
