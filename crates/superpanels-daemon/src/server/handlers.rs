@@ -16,7 +16,10 @@ use crate::state::DaemonState;
 
 mod library;
 
-pub(crate) use library::{cmd_library_list, cmd_library_tag, cmd_library_thumbnail};
+pub(crate) use library::{
+    cmd_library_delete, cmd_library_list, cmd_library_rescan, cmd_library_tag,
+    cmd_library_thumbnail,
+};
 
 pub(super) async fn cmd_list_profiles(state: Arc<Mutex<DaemonState>>) -> IpcResponse {
     let guard = state.lock().await;
@@ -107,7 +110,11 @@ pub(super) async fn cmd_save_config(
     if let Err(e) = new_cfg.save_to(&path) {
         return IpcResponse::failure(e.to_string());
     }
+    let roots_changed = guard.config.library.roots != new_cfg.library.roots;
     guard.config = new_cfg;
+    if roots_changed {
+        guard.refresh_watcher();
+    }
     info!("config saved");
     IpcResponse::success(json!({}))
 }

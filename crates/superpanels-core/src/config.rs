@@ -118,7 +118,10 @@ fn default_recursive() -> bool {
 }
 
 fn default_thumbnail_size() -> u32 {
-    320
+    // 512 px gives a crisp tile at 2x DPR with up to ~256 px CSS-pixel tiles
+    // in the library grid; the encode cost is still well under a frame and
+    // the on-disk thumb cache is bounded so size growth is tolerable.
+    512
 }
 
 fn default_auto_scan() -> bool {

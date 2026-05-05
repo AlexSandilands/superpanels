@@ -8,13 +8,26 @@ use std::sync::Arc;
 use base64::Engine;
 use serde_json::{Value, json};
 use superpanels_core::ipc::{IpcRequest, IpcResponse};
-use superpanels_core::library::{LibraryEntry, LibraryFilter, apply_library_filter, persist_index};
+use superpanels_core::library::{LibraryEntry, LibraryFilter, apply_library_filter};
 use tokio::sync::Mutex;
 use tracing::warn;
 
 use crate::state::DaemonState;
 
-const THUMBNAIL_MAX_EDGE: u32 = 320;
+/// Hard floor on the thumbnail edge so a misconfigured `thumbnail_size = 0`
+/// doesn't crash `image::resize`. Production default is whatever
+/// `LibraryConfig::thumbnail_size` resolves to (`SPEC §14.1`).
+const THUMBNAIL_MIN_EDGE: u32 = 64;
+
+/// Force a synchronous rescan of every configured root, persist the result
+/// into the library DB, and refresh the in-memory cache. Returns the post-
+/// rescan entry count so the GUI can surface "scanned N images" feedback.
+pub(crate) async fn cmd_library_rescan(state: Arc<Mutex<DaemonState>>) -> IpcResponse {
+    let mut guard = state.lock().await;
+    guard.rescan_library();
+    let count = guard.library.len();
+    IpcResponse::success(json!({ "count": count }))
+}
 
 pub(crate) async fn cmd_library_list(
     req: IpcRequest,
@@ -44,9 +57,12 @@ pub(crate) async fn cmd_library_thumbnail(
         return IpcResponse::failure("params.path (string) required");
     };
 
-    let roots = {
+    let (roots, edge) = {
         let guard = state.lock().await;
-        guard.config.library.roots.clone()
+        (
+            guard.config.library.roots.clone(),
+            guard.config.library.thumbnail_size.max(THUMBNAIL_MIN_EDGE),
+        )
     };
 
     let canonical = match canonicalise_inside_roots(Path::new(raw_path), &roots) {
@@ -54,7 +70,7 @@ pub(crate) async fn cmd_library_thumbnail(
         Err(e) => return IpcResponse::failure(e),
     };
 
-    let result = tokio::task::spawn_blocking(move || render_thumbnail(&canonical)).await;
+    let result = tokio::task::spawn_blocking(move || render_thumbnail(&canonical, edge)).await;
     match result {
         Ok(Ok((bytes, mime))) => {
             let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
@@ -63,6 +79,37 @@ pub(crate) async fn cmd_library_thumbnail(
         Ok(Err(e)) => IpcResponse::failure(e),
         Err(e) => IpcResponse::failure(format!("thumbnail task panicked: {e}")),
     }
+}
+
+pub(crate) async fn cmd_library_delete(
+    req: IpcRequest,
+    state: Arc<Mutex<DaemonState>>,
+) -> IpcResponse {
+    let Some(path) = req.params.get("path").and_then(Value::as_str) else {
+        return IpcResponse::failure("params.path (string) required");
+    };
+    let target = Path::new(path);
+
+    let mut guard = state.lock().await;
+    let removed_from_db = if let Some(db) = guard.library_db.as_mut() {
+        match db.delete_entry(target) {
+            Ok(b) => b,
+            Err(e) => {
+                warn!(error = %e, "library DB delete failed");
+                return IpcResponse::failure(format!("library DB delete failed: {e}"));
+            }
+        }
+    } else {
+        false
+    };
+    let before = guard.library.len();
+    guard.library.retain(|e| e.path != target);
+    let removed_from_cache = guard.library.len() < before;
+
+    if !removed_from_db && !removed_from_cache {
+        return IpcResponse::failure(format!("path '{path}' not in library"));
+    }
+    IpcResponse::success(json!({ "path": path }))
 }
 
 pub(crate) async fn cmd_library_tag(
@@ -81,29 +128,36 @@ pub(crate) async fn cmd_library_tag(
 
     let mut guard = state.lock().await;
     let target = Path::new(path);
-    let Some(entry) = guard.library.iter_mut().find(|e| e.path == target) else {
+    if !guard.library.iter().any(|e| e.path == target) {
         return IpcResponse::failure(format!("path '{path}' not in library"));
-    };
-    apply_tag(entry, tag, on);
-
-    if let Some(state_dir) = DaemonState::state_dir() {
-        let index_path = state_dir.join("library-index.json");
-        if let Err(e) = persist_index(&guard.library, &index_path) {
-            warn!(error = %e, "failed to persist library index after tag update");
+    }
+    if let Some(db) = guard.library_db.as_mut() {
+        if let Err(e) = db.set_tag(target, tag, on) {
+            warn!(error = %e, "library DB tag write failed");
+            return IpcResponse::failure(format!("library DB tag write failed: {e}"));
         }
+    }
+    if let Some(entry) = guard.library.iter_mut().find(|e| e.path == target) {
+        apply_tag(entry, tag, on);
     }
     IpcResponse::success(json!({ "path": path, "tag": tag, "on": on }))
 }
 
 fn apply_tag(entry: &mut LibraryEntry, tag: &str, on: bool) {
-    if tag == "favourite" {
+    if tag.eq_ignore_ascii_case("favourite") {
         entry.favourite = on;
         return;
     }
-    let owned = tag.to_owned();
-    let position = entry.tags.iter().position(|t| t == &owned);
+    let normalised = tag.trim().to_ascii_lowercase();
+    if normalised.is_empty() {
+        return;
+    }
+    let position = entry
+        .tags
+        .iter()
+        .position(|t| t.eq_ignore_ascii_case(&normalised));
     match (on, position) {
-        (true, None) => entry.tags.push(owned),
+        (true, None) => entry.tags.push(normalised),
         (false, Some(idx)) => {
             entry.tags.swap_remove(idx);
         }
@@ -135,9 +189,8 @@ pub(crate) fn canonicalise_inside_roots(
     Ok(canonical)
 }
 
-fn render_thumbnail(path: &Path) -> Result<(Vec<u8>, &'static str), String> {
-    let img = superpanels_core::image::load_thumbnail(path, THUMBNAIL_MAX_EDGE)
-        .map_err(|e| e.to_string())?;
+fn render_thumbnail(path: &Path, edge: u32) -> Result<(Vec<u8>, &'static str), String> {
+    let img = superpanels_core::image::load_thumbnail(path, edge).map_err(|e| e.to_string())?;
     let bytes = superpanels_core::image::encode_png(&img).map_err(|e| e.to_string())?;
     Ok((bytes, "image/png"))
 }

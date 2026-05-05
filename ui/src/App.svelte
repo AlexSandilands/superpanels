@@ -11,7 +11,13 @@
   import Toast from './components/Toast.svelte';
   import { monitorStore } from '$lib/stores/monitors.svelte';
   import { profileStore } from '$lib/stores/profile.svelte';
-  import { isSpanBody } from '$lib/types/profile';
+  import {
+    defaultBezels,
+    isPerMonitorBody,
+    isSpanBody,
+    type PerMonitorAssignment,
+    type ProfileV2,
+  } from '$lib/types/profile';
   import { toast } from '$lib/stores/toast.svelte';
 
   type Tab = 'profiles' | 'library' | 'settings';
@@ -19,6 +25,64 @@
   let dragOverlay = $state(false);
   let flashIndices = $state<number[]>([]);
   let applyOverlay = $state(false);
+
+  const PANEL_KEY = 'superpanels.bottomPanelHeight';
+  const PANEL_MIN = 120;
+  const PANEL_MAX_FRACTION = 0.85;
+  let panelHeight = $state<number>(readPanelHeight());
+  let resizing = $state(false);
+  let resizeStartY = 0;
+  let resizeStartH = 0;
+
+  function readPanelHeight(): number {
+    if (typeof window === 'undefined') return 260;
+    const raw = window.localStorage?.getItem(PANEL_KEY);
+    const n = raw ? Number.parseInt(raw, 10) : NaN;
+    return Number.isFinite(n) && n >= PANEL_MIN ? n : 260;
+  }
+
+  function writePanelHeight(h: number) {
+    try {
+      window.localStorage?.setItem(PANEL_KEY, String(Math.round(h)));
+    } catch {
+      // localStorage may be unavailable (private mode); ignore.
+    }
+  }
+
+  function startResize(ev: PointerEvent) {
+    ev.preventDefault();
+    resizing = true;
+    resizeStartY = ev.clientY;
+    resizeStartH = panelHeight;
+    (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
+  }
+
+  function moveResize(ev: PointerEvent) {
+    if (!resizing) return;
+    const max = Math.max(PANEL_MIN, window.innerHeight * PANEL_MAX_FRACTION);
+    const next = Math.max(PANEL_MIN, Math.min(max, resizeStartH - (ev.clientY - resizeStartY)));
+    panelHeight = next;
+  }
+
+  function endResize(ev: PointerEvent) {
+    if (!resizing) return;
+    resizing = false;
+    (ev.currentTarget as HTMLElement).releasePointerCapture(ev.pointerId);
+    writePanelHeight(panelHeight);
+  }
+
+  function onResizeKey(ev: KeyboardEvent) {
+    const step = ev.shiftKey ? 80 : 24;
+    if (ev.key === 'ArrowUp') {
+      ev.preventDefault();
+      panelHeight = Math.min(window.innerHeight * PANEL_MAX_FRACTION, panelHeight + step);
+      writePanelHeight(panelHeight);
+    } else if (ev.key === 'ArrowDown') {
+      ev.preventDefault();
+      panelHeight = Math.max(PANEL_MIN, panelHeight - step);
+      writePanelHeight(panelHeight);
+    }
+  }
 
   const draft = $derived(profileStore.draft);
   const span = $derived(draft && isSpanBody(draft.body) ? draft.body : null);
@@ -54,6 +118,41 @@
     }
     profileStore.select(profileStore.activeName);
     return true;
+  }
+
+  function pinImageToMonitor(monitorIndex: number, path: string) {
+    if (!prepareDropTarget()) return;
+    const m = monitorStore.monitors[monitorIndex];
+    if (!m) {
+      toast.error('Drop ignored', 'monitor not found in layout');
+      return;
+    }
+    const assignment: PerMonitorAssignment = {
+      monitor: { stable_id: m.stable_id ?? '', name: m.name },
+      path,
+    };
+    profileStore.patchDraft((d: ProfileV2) => {
+      if (!isPerMonitorBody(d.body)) {
+        d.body = { type: 'per_monitor', assignments: [assignment], fit: 'fill' };
+        return;
+      }
+      const idx = d.body.assignments.findIndex(
+        (a) =>
+          (a.monitor.stable_id !== '' && a.monitor.stable_id === assignment.monitor.stable_id) ||
+          a.monitor.name === assignment.monitor.name,
+      );
+      if (idx >= 0) d.body.assignments[idx] = assignment;
+      else d.body.assignments.push(assignment);
+    });
+    if (!profileStore.draft) {
+      const base: ProfileV2 = {
+        name: 'untitled',
+        body: { type: 'per_monitor', assignments: [assignment], fit: 'fill' },
+        bezels: defaultBezels(),
+      };
+      profileStore.replaceDraft(base);
+    }
+    toast.success('Image pinned', `${m.name}: ${path.split('/').pop() ?? path}`);
   }
 
   function setSpanImage(path: string) {
@@ -160,6 +259,7 @@
           {offset}
           onOffsetCommit={commitOffset}
           onResetOffset={resetOffset}
+          onMonitorDrop={pinImageToMonitor}
           onImageLoadError={handleImageLoadError}
           {flashIndices}
         />
@@ -190,13 +290,39 @@
       {/if}
     </section>
 
+    <!-- reason: a horizontal resize gripper is a real interactive control,
+         but `role="separator"` is the correct ARIA role per WAI-ARIA's
+         resize pattern; svelte-eslint flags `tabindex` on a non-interactive
+         element by default. The keyboard handler is the canonical a11y
+         affordance for this pattern, so the warnings are intentional. -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div
+      role="separator"
+      tabindex="0"
+      aria-orientation="horizontal"
+      aria-label="Resize bottom panel"
+      class="group relative -my-1.5 flex h-3 shrink-0 cursor-row-resize items-center justify-center"
+      class:bg-accent={resizing}
+      class:bg-opacity-20={resizing}
+      onpointerdown={startResize}
+      onpointermove={moveResize}
+      onpointerup={endResize}
+      onpointercancel={endResize}
+      onkeydown={onResizeKey}
+    >
+      <span class="h-1 w-12 rounded bg-slate-700 group-hover:bg-accent" class:bg-accent={resizing}
+      ></span>
+    </div>
+
     <section
-      class="h-[260px] shrink-0 overflow-auto rounded border border-slate-800 bg-slate-900/30 p-3"
+      class="shrink-0 overflow-auto rounded border border-slate-800 bg-slate-900/30 p-3"
+      style:height={`${panelHeight}px`}
     >
       {#if tab === 'profiles'}
         <ProfileList />
       {:else if tab === 'library'}
-        <LibraryPane />
+        <LibraryPane onApplyAsSpan={setSpanImage} />
       {:else}
         <SettingsPane />
       {/if}

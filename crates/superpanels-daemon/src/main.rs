@@ -14,7 +14,6 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use superpanels_core::ipc::socket_path;
-use superpanels_core::library::persist_index;
 use superpanels_core::slideshow::persist_state as persist_slideshow;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{Mutex, watch};
@@ -163,22 +162,14 @@ async fn run_daemon(cli: Cli) -> Result<()> {
     let (timer_tx, timer_rx) = watch::channel::<Option<Duration>>(None);
     let (watcher_tx, watcher_rx) = tokio::sync::mpsc::unbounded_channel::<notify::Event>();
 
-    // Start FS watcher if library roots are configured.
-    let roots: Vec<PathBuf> = {
-        let guard = state.lock().await;
-        guard.config.library.roots.clone()
-    };
-    let _watcher = if roots.is_empty() {
-        None
-    } else {
-        match watcher::make_watcher(&roots, watcher_tx) {
-            Ok(w) => Some(w),
-            Err(e) => {
-                warn!(error = %e, "FS watcher could not be initialised; library will not auto-update");
-                None
-            }
-        }
-    };
+    // The watcher lives inside DaemonState so handlers (specifically
+    // `save_config`) can rebuild it when library roots change without a
+    // daemon restart.
+    {
+        let mut guard = state.lock().await;
+        guard.watcher_tx = Some(watcher_tx);
+        guard.refresh_watcher();
+    }
 
     // Spawn background tasks.
     let timer_state = Arc::clone(&state);
@@ -235,11 +226,7 @@ async fn persist_daemon_state(state: &Arc<Mutex<DaemonState>>) {
         warn!(error = %e, "could not create state dir");
         return;
     }
-    // Persist library index.
-    let index_path = dir.join("library-index.json");
-    if let Err(e) = persist_index(&guard.library, &index_path) {
-        warn!(error = %e, "failed to persist library index");
-    }
+    // Library DB writes are flushed on each mutation; nothing to persist here.
     // Persist slideshow state.
     if let Some(picker) = &guard.slideshow_picker {
         let state_path = dir.join("slideshow-state.json");
