@@ -1,12 +1,16 @@
 _default:
     @just --list
 
-# Build release binaries for the whole workspace.
-build:
+# Build the Svelte frontend bundle into ui/dist (consumed by the GUI).
+ui-build:
+    npm --prefix ui run build
+
+# Build release binaries for the whole workspace (includes frontend bundle).
+build: ui-build
     cargo build --release --workspace
 
-# Build debug binaries for fast iteration.
-build-debug:
+# Build debug binaries for fast iteration (includes frontend bundle).
+build-debug: ui-build
     cargo build --workspace
 
 # Run the daemon in the foreground (kills any existing instance first).
