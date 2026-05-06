@@ -93,17 +93,22 @@
   );
 
   const offsetScale: number = $derived(layout.mmToPx / layout.coreMmToPx);
-  const displayOffset = $derived<[number, number]>([
-    offset[0] * offsetScale,
-    offset[1] * offsetScale,
+  // Read drag state inside the derivation so $derived re-runs as the user
+  // drags, not just on commit.
+  const livePreview = $derived.by(() => {
+    void interaction.dragLiveDelta;
+    void interaction.dragMode;
+    return interaction.livePreview();
+  });
+  const liveDisplayOffset = $derived<[number, number]>([
+    livePreview.offset[0] * offsetScale,
+    livePreview.offset[1] * offsetScale,
   ]);
   const imageSizeDisplayPx = $derived<[number, number] | null>(
-    imageSizePx ? [imageSizePx[0] * offsetScale, imageSizePx[1] * offsetScale] : null,
+    livePreview.imageSizePx
+      ? [livePreview.imageSizePx[0] * offsetScale, livePreview.imageSizePx[1] * offsetScale]
+      : null,
   );
-  const liveDisplayOffset = $derived<[number, number]>([
-    displayOffset[0] + (interaction.dragMode?.kind === 'pan' ? interaction.dragLiveDelta[0] : 0),
-    displayOffset[1] + (interaction.dragMode?.kind === 'pan' ? interaction.dragLiveDelta[1] : 0),
-  ]);
 
   const imageRectDisplay: ImgRect = $derived(
     image

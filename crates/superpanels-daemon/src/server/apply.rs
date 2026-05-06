@@ -74,7 +74,7 @@ pub(super) async fn cmd_set(req: IpcRequest, state: Arc<Mutex<DaemonState>>) -> 
     .await;
     match report {
         Ok(Ok(r)) => IpcResponse::success(applied_json(&r)),
-        Ok(Err(e)) => IpcResponse::failure(e.to_string()),
+        Ok(Err(e)) => IpcResponse::failure(format!("{e:#}")),
         Err(e) => IpcResponse::failure(format!("task panic: {e}")),
     }
 }
@@ -117,7 +117,7 @@ pub(super) async fn cmd_apply_profile(
         .await;
         let report = match report {
             Ok(Ok(r)) => r,
-            Ok(Err(e)) => return IpcResponse::failure(e.to_string()),
+            Ok(Err(e)) => return IpcResponse::failure(format!("{e:#}")),
             Err(e) => return IpcResponse::failure(format!("task panic: {e}")),
         };
         update_active_profile(&state, &name).await;

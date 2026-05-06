@@ -167,6 +167,32 @@ export class CanvasInteraction {
     this.deps.onTransformCommit?.(next.offset, next.imageSizePx);
   }
 
+  /// Live transform during a drag, in core-canvas px. Returns the saved
+  /// values when no drag is in progress. Lets the canvas paint the in-flight
+  /// pan / resize without waiting for the pointer-up commit.
+  livePreview(): { offset: [number, number]; imageSizePx: [number, number] | null } {
+    const savedOffset = this.deps.getOffset();
+    const savedImageSizePx = this.deps.getImageSizePx();
+    if (!this.dragging || !this.dragMode) {
+      return { offset: savedOffset, imageSizePx: savedImageSizePx };
+    }
+    const scale = this.deps.getOffsetScale();
+    if (!Number.isFinite(scale) || scale <= 0) {
+      return { offset: savedOffset, imageSizePx: savedImageSizePx };
+    }
+    const dx = this.dragLiveDelta[0] / scale;
+    const dy = this.dragLiveDelta[1] / scale;
+    if (this.dragMode.kind === 'pan') {
+      return {
+        offset: [savedOffset[0] + dx, savedOffset[1] + dy],
+        imageSizePx: savedImageSizePx,
+      };
+    }
+    const next = this.computeResize(this.dragMode.corner, dx, dy);
+    if (!next) return { offset: savedOffset, imageSizePx: savedImageSizePx };
+    return next;
+  }
+
   private computeResize(
     corner: ResizeCorner,
     dx: number,

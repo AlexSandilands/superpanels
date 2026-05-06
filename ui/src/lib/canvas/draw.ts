@@ -120,7 +120,7 @@ export function computeImageRect(layout: CanvasLayout, opts: DrawOptions): Image
   if (imageW <= 0 || imageH <= 0) return null;
   if (imageSizeDisplayPx) {
     const [w, h] = imageSizeDisplayPx;
-    return { x: offsetX, y: offsetY, w, h };
+    return { x: layout.offsetX + offsetX, y: layout.offsetY + offsetY, w, h };
   }
   // Legacy FitMode-derived placement; mirrors the Phase 4a math so saved
   // profiles without `image_size_px` render identically to before.
