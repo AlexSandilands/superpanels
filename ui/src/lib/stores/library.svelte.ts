@@ -6,6 +6,7 @@
 // IPC roundtrip per keystroke.
 
 import { api, errorMessage, type LibraryEntry } from '$lib/api';
+import { getLibraryThumbUrl } from '$lib/library/thumb_cache';
 import type { LibraryFilter } from '$lib/types/LibraryFilter';
 import { toast } from './toast.svelte';
 
@@ -115,6 +116,19 @@ function allTags(): string[] {
   return [...set].sort();
 }
 
+// Number of thumbnails to prewarm into `thumb_cache` after a refresh. Sized to
+// cover the initial viewport of `LibraryModal` (~4 cols × ~4 rows at the
+// default 1100×720 modal size) plus headroom for taller windows. Without this,
+// the first time the modal opens the visible thumbs each fire their own
+// `library_thumbnail` IPC roundtrip on mount, which adds a ~200 ms paint
+// stutter even when the entry list itself is already in memory.
+const PREWARM_THUMBS = 32;
+
+function prewarmThumbnails(list: LibraryEntry[]): void {
+  const head = [...list].sort((a, b) => compare(a, b, 'date_added')).slice(0, PREWARM_THUMBS);
+  for (const e of head) void getLibraryThumbUrl(e.path).catch(() => {});
+}
+
 // Walk `library_list` pages until either the daemon returns a short page (no
 // more entries) or we hit MAX_ENTRIES. Avoids the 1 MiB IPC frame cap that a
 // single huge-limit request would smash into for libraries of more than a few
@@ -201,6 +215,7 @@ export const libraryStore = {
       ]);
       entries = list;
       roots = config.library?.roots ?? [];
+      prewarmThumbnails(list);
     } catch (err) {
       toast.error('Could not load library', errorMessage(err));
       entries = [];
@@ -214,6 +229,7 @@ export const libraryStore = {
     try {
       const r = await api.libraryRescan();
       entries = await fetchAllEntries();
+      prewarmThumbnails(entries);
       toast.success('Library rescanned', `${r.count} entries`);
     } catch (err) {
       toast.error('Rescan failed', errorMessage(err));

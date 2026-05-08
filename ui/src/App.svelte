@@ -5,6 +5,7 @@
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { api, errorMessage, type Profile } from '$lib/api';
   import { canvasView, type MonitorOverride } from '$lib/stores/canvasView.svelte';
+  import { libraryStore } from '$lib/stores/library.svelte';
   import { monitorStore } from '$lib/stores/monitors.svelte';
   import { profileStore } from '$lib/stores/profile.svelte';
   import { runtime } from '$lib/stores/runtime.svelte';
@@ -398,6 +399,7 @@
   onMount(() => {
     void monitorStore.refresh();
     void profileStore.refresh().then(refreshRuntime);
+    void libraryStore.refresh();
 
     let unTray: UnlistenFn | undefined;
     let unDrop: UnlistenFn | undefined;

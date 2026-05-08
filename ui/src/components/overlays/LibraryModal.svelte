@@ -64,7 +64,9 @@
   );
 
   onMount(() => {
-    void libraryStore.refresh();
+    if (libraryStore.entries.length === 0 && !libraryStore.loading) {
+      void libraryStore.refresh();
+    }
     if (searchEl) searchEl.focus();
     if (!scrollEl) return;
     const ro = new ResizeObserver(() => measure());
