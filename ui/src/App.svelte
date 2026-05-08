@@ -49,6 +49,7 @@
 
   let libraryOpen = $state(false);
   let settingsOpen = $state(false);
+  let settingsSection = $state<'general' | 'monitors'>('general');
   let trayOpen = $state(false);
   let dragOverlay = $state(false);
 
@@ -554,7 +555,13 @@
     <div class="banner">
       <span class="dot warn"></span>
       <span>One or more monitors are missing physical size — bezel math will be approximate.</span>
-      <button class="btn sm" onclick={() => (settingsOpen = true)}>Fix</button>
+      <button
+        class="btn sm"
+        onclick={() => {
+          settingsSection = 'monitors';
+          settingsOpen = true;
+        }}>Fix</button
+      >
     </div>
   {/if}
 
@@ -567,7 +574,13 @@
   {/if}
 
   {#if settingsOpen}
-    <SettingsModal onClose={() => (settingsOpen = false)} />
+    <SettingsModal
+      initialSection={settingsSection}
+      onClose={() => {
+        settingsOpen = false;
+        settingsSection = 'general';
+      }}
+    />
   {/if}
 
   {#if trayOpen}
