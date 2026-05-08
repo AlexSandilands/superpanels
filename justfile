@@ -57,3 +57,9 @@ clean:
 
 clean-cache:
     rm -rf ~/.cache/superpanels/temp
+
+# Reset local data to simulate a first-run experience. Backs up to
+# ~/superpanels-backup-<timestamp>/ first. Pass `--no-backup` or
+# `--autostart` to forward to the script.
+wipe *ARGS:
+    ./scripts/reset-local-data.sh -y {{ARGS}}
