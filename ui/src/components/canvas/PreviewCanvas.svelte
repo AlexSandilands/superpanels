@@ -137,16 +137,17 @@
         return { type: 'monitor', id: m.id };
       }
     }
-    if (
-      imageUrl &&
-      px >= imgRect.x &&
-      px <= imgRect.x + imgRect.w &&
-      py >= imgRect.y &&
-      py <= imgRect.y + imgRect.h
-    ) {
-      if (Math.hypot(imgRect.x + imgRect.w - px, imgRect.y + imgRect.h - py) < 14)
+    if (imageUrl) {
+      if (Math.hypot(imgRect.x + imgRect.w - px, imgRect.y + imgRect.h - py) < 24)
         return { type: 'image-resize' };
-      return { type: 'image' };
+      if (
+        px >= imgRect.x &&
+        px <= imgRect.x + imgRect.w &&
+        py >= imgRect.y &&
+        py <= imgRect.y + imgRect.h
+      ) {
+        return { type: 'image' };
+      }
     }
     return { type: 'stage' };
   }
