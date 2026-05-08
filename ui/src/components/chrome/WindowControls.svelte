@@ -25,14 +25,14 @@
   }
 </script>
 
-<div class="flex gap-1 pl-0.5" data-tauri-drag-region="false">
-  <button class="wc" onclick={minimise} title="Minimize" data-tauri-drag-region="false">
+<div class="flex gap-1 pl-0.5">
+  <button class="wc" onclick={minimise} title="Minimize">
     <Icon name="win-min" size={10} />
   </button>
-  <button class="wc" onclick={toggleMaximise} title="Maximize" data-tauri-drag-region="false">
+  <button class="wc" onclick={toggleMaximise} title="Maximize">
     <Icon name="win-max" size={10} />
   </button>
-  <button class="wc wc-close" onclick={close} title="Close" data-tauri-drag-region="false">
+  <button class="wc wc-close" onclick={close} title="Close">
     <Icon name="win-close" size={10} />
   </button>
 </div>

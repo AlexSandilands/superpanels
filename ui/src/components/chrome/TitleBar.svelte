@@ -1,8 +1,10 @@
 <script lang="ts">
+  import { getCurrentWindow } from '@tauri-apps/api/window';
   import type { Profile } from '$lib/api';
   import Icon from '../Icon.svelte';
   import WindowControls from './WindowControls.svelte';
   import ProfileMenu from './ProfileMenu.svelte';
+  import WindowMenu from './WindowMenu.svelte';
   import { runtime } from '$lib/stores/runtime.svelte';
 
   type Props = {
@@ -33,10 +35,51 @@
   let menuOpen = $state(false);
   let nowMs = $state(Date.now());
 
+  let winMenu = $state<{ x: number; y: number } | null>(null);
+  let isMaximized = $state(false);
+  let alwaysOnTop = $state(false);
+
   $effect(() => {
     const id = window.setInterval(() => (nowMs = Date.now()), 1000);
     return () => window.clearInterval(id);
   });
+
+  $effect(() => {
+    const w = (() => {
+      try {
+        return getCurrentWindow();
+      } catch {
+        return null;
+      }
+    })();
+    if (!w) return;
+    void w.isMaximized().then((v) => (isMaximized = v));
+    const unlisten = w.onResized(() => {
+      void w.isMaximized().then((v) => (isMaximized = v));
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  });
+
+  function onTitlebarContextMenu(e: MouseEvent) {
+    if ((e.target as HTMLElement).closest('button, input, select, textarea, [role="menu"]')) return;
+    e.preventDefault();
+    winMenu = { x: e.clientX, y: e.clientY };
+  }
+
+  function onTitlebarMouseDown(e: MouseEvent) {
+    if (e.button !== 0) return;
+    if (e.detail >= 2) return; // let dblclick fire for maximize-toggle
+    if ((e.target as HTMLElement).closest('button, input, select, textarea, [role="menu"]')) return;
+    void getCurrentWindow()
+      .startDragging()
+      .catch((err) => {
+        // surface failures to devtools so we can tell if startDragging is rejecting
+        // (e.g. Wayland serial issue) vs. the handler not firing at all.
+        console.warn('[titlebar] startDragging failed', err);
+      });
+  }
 
   const lastApplyText = $derived(runtime.describeLastApply(nowMs));
   const activeProfile = $derived(profiles.find((p) => p.name === activeName) ?? null);
@@ -49,7 +92,17 @@
   style:gap="10px"
   style:background="color-mix(in oklab, var(--bg) 70%, transparent)"
   style:border-bottom="1px solid var(--line)"
-  data-tauri-drag-region
+  role="toolbar"
+  aria-label="Window titlebar"
+  tabindex="-1"
+  onmousedown={onTitlebarMouseDown}
+  oncontextmenu={onTitlebarContextMenu}
+  ondblclick={(e) => {
+    if ((e.target as HTMLElement).closest('button, input, select, textarea')) return;
+    void getCurrentWindow()
+      .toggleMaximize()
+      .catch(() => {});
+  }}
 >
   <div class="flex items-center" style:gap="8px" style:margin-right="6px">
     <Icon name="logo" size={20} />
@@ -60,13 +113,12 @@
 
   <div style:width="1px" style:height="18px" style:background="var(--line)"></div>
 
-  <div class="relative" data-tauri-drag-region="false">
+  <div class="relative">
     <button
       class="btn"
       style:height="26px"
       style:font-size="12px"
       onclick={() => (menuOpen = !menuOpen)}
-      data-tauri-drag-region="false"
     >
       <span class="dot live"></span>
       <span style:font-weight="600">
@@ -98,45 +150,24 @@
 
   <div style:flex="1"></div>
 
-  <div class="flex items-center" style:gap="8px" data-tauri-drag-region="false">
-    <span class="chip" title="Last apply" data-tauri-drag-region="false">
+  <div class="flex items-center" style:gap="8px">
+    <span class="chip" title="Last apply">
       <span class="dot ok"></span>
       <span class="mono" style:color="var(--text-2)">{backendName}</span>
       <span style:color="var(--text-3)">·</span>
       <span class="mono" style:color="var(--text-3)">{lastApplyText}</span>
     </span>
-    <button
-      class="btn ghost icon"
-      title="Library (Ctrl+L)"
-      onclick={onOpenLibrary}
-      data-tauri-drag-region="false"
-    >
+    <button class="btn ghost icon" title="Library (Ctrl+L)" onclick={onOpenLibrary}>
       <Icon name="grid" />
     </button>
-    <button
-      class="btn ghost icon"
-      title="Settings (Ctrl+,)"
-      onclick={onOpenSettings}
-      data-tauri-drag-region="false"
-    >
+    <button class="btn ghost icon" title="Settings (Ctrl+,)" onclick={onOpenSettings}>
       <Icon name="gear" />
     </button>
-    <button
-      class="btn ghost icon"
-      title="Tray menu"
-      onclick={onTrayClick}
-      data-tauri-drag-region="false"
-    >
+    <button class="btn ghost icon" title="Tray menu" onclick={onTrayClick}>
       <Icon name="tray" />
     </button>
     <div style:width="1px" style:height="18px" style:background="var(--line)"></div>
-    <button
-      class="btn primary"
-      disabled={!canApply}
-      onclick={onApply}
-      title="Apply (Enter)"
-      data-tauri-drag-region="false"
-    >
+    <button class="btn primary" disabled={!canApply} onclick={onApply} title="Apply (Enter)">
       <Icon name="check" size={13} /> Apply
       <span
         class="kbd"
@@ -152,3 +183,14 @@
     <WindowControls />
   </div>
 </div>
+
+{#if winMenu}
+  <WindowMenu
+    x={winMenu.x}
+    y={winMenu.y}
+    {isMaximized}
+    {alwaysOnTop}
+    onClose={() => (winMenu = null)}
+    onAlwaysOnTopChange={(v) => (alwaysOnTop = v)}
+  />
+{/if}
