@@ -22,6 +22,68 @@ affected stacks (track upstream WebKit / `webkit2gtk` Arch package).
 `desktop_body_includes_webkit_dmabuf_workaround` test assertions in
 `autostart.rs`.
 
+## Strip Tauri devtools from release builds
+
+`Cargo.toml` enables `"devtools"` in the workspace `tauri` features array
+(around line 79). The runtime auto-open call has been removed from
+`crates/superpanels-gui/src/lib.rs`, but with the feature flag still on,
+Ctrl+Shift+I and right-click → Inspect remain functional in a release
+build.
+
+**Revisit when:** preparing the first user-facing release, or sooner if
+shipping signed builds.
+
+**Action:** drop `"devtools"` from the `tauri` features list in
+`Cargo.toml`. If devtools-during-development is still wanted, gate it via
+a Cargo feature on `superpanels-gui` (e.g. `[features] dev-tools =
+["tauri/devtools"]`) and only build with it locally. Verify by running a
+release build and confirming Ctrl+Shift+I no longer opens anything.
+
+## MonitorSizeEditor — clamp physical-mm upper bound (defence-in-depth)
+
+Logged 2026-05-09 from the UI-overhaul agent-team review (Security
+advisory). `set_monitor_physical_size` server-side validation enforces
+`is_finite() && > 0` only. The UI's `StepperInput` has a 5000 mm `max`,
+but a frontend bypass would let arbitrary positive finite values reach
+`validate_monitors` and poison bezel math.
+
+For the v1 single-user threat model (cooperating webview) this is fine.
+
+**Revisit when:** SPEC §17 threat model upgrades the webview to
+"potentially compromised" — e.g. shipping signed builds, or any flow that
+opens the WebView to non-local content.
+
+**Action:** add an upper bound (e.g. ≤ 10000 mm) in `validate_monitors`
+and mirror it in `parse_physical_mm` on both the daemon
+(`server/handlers.rs`) and in-process (`commands/in_process.rs`) paths.
+
+## Canvas-redraw vitest bench
+
+`PreviewCanvas` re-derives `dimLines`, `imgRect`, hover, and cursor on
+every pointer move; `previewLayout/gaps.ts::hNeighbourPairs` and
+`vNeighbourPairs` are O(N³) and run per frame. At N ≤ 9 monitors this
+sits comfortably under SPEC §19's 8 ms canvas-frame budget, but no
+benchmark pins it. `cross-cutting.md` §"Performance baselines" already
+has an unfilled placeholder for this.
+
+**Revisit when:** taking on Phase 6 stabilisation, or sooner if a
+high-N multi-monitor user reports drag jank.
+
+**Action:** add a vitest `bench` (or a Rust-side `criterion` mirror of
+the algorithm) for an N=9 layout pointer-move scenario; capture the
+baseline; track regressions per SPEC §19.
+
+## Rename `thumb_cache.ts` → `thumbCache.ts`
+
+`docs/style-frontend.md` settled on **camelCase** for TS module file
+names (matches `previewLayout.ts`, `sourceImage.ts`, `profileSwatch.ts`).
+`ui/src/lib/library/thumb_cache.ts` is the last `snake_case` holdout.
+
+**Revisit when:** any non-trivial change to that file lands; bundle the
+rename to keep history-following with `git mv`.
+
+**Action:** `git mv` + update imports.
+
 ## Phase 3 review nitpicks (advisory)
 
 Logged by the agent-team review on 2026-04-30 after Phase 3 landed. None
@@ -37,6 +99,10 @@ blocked; all are small enough to defer.
   `crates/superpanels-daemon/src/server/handlers.rs` and
   `crates/superpanels-gui/src/commands/in_process.rs`. Move to a shared
   helper in `superpanels-core` next time bezel parsing changes.
+- `parse_monitor_identifier` and `parse_physical_mm` (added with the
+  `set_monitor_physical_size` IPC) are now duplicated near-verbatim between
+  the same two sites — one returns `String`, the other `IpcError`. Same
+  follow-up scope.
 
 **IPC validation consistency**
 
@@ -62,16 +128,18 @@ blocked; all are small enough to defer.
 **Library thumbnail cache**
 
 - `cmd_library_thumbnail` decodes + resizes on every call. Add an LRU keyed
-  on `(canonicalised_path, mtime)` (cap at ~64 entries / ~16 MiB) once the
-  GUI starts hitting it at scale. Phase 4a / 4b territory.
+  on `(canonicalised_path, mtime)` (cap at ~64 entries / ~16 MiB). The GUI
+  is now hitting this path at scale via the library prewarm and slideshow
+  advance flows — Phase 4 series is closed, so this is on whichever phase
+  next touches the daemon thumbnail path.
 
 **Benches missing for new hot paths**
 
 - No `criterion` bench covers `read_dimensions`, `library_thumbnail` at
   4K source, `library_list` at 5K entries, or the `temp::save_temp_in`
-  fast-PNG change. Add them in the Phase 4a PR that wires the canvas drag
-  so SPEC §19's 5 ms / call canvas budget and 200 ms / 4K thumbnail target
-  become tracked baselines.
+  fast-PNG change. Add them so SPEC §19's 5 ms / call canvas budget and
+  200 ms / 4K thumbnail target become tracked baselines. Phase 6
+  stabilisation is the natural home.
 
 **GUI hygiene**
 
@@ -79,14 +147,20 @@ blocked; all are small enough to defer.
   Tighten to `pub(crate)` for the modules that aren't part of the
   `tauri::generate_handler!` consumer surface (`autostart`, `bridge`,
   `notifications`, `state`, `tray`, `window_state`, `ipc_client`).
-- `ui/eslint.config.js` allows `console.warn` and `console.error` via
-  `no-console: ['error', { allow: ['warn', 'error'] }]`. The frontend
-  style guide disallows `console.error` in committed code too — drop the
-  allow-list.
-- `crates/superpanels-gui/src/commands.rs` is at 274 LoC, nearing the 400
-  soft limit. If non-§12.4 commands keep accreting, peel
-  `commands/autostart.rs` off (the `commands/in_process.rs` precedent
-  establishes the directory form).
+- `ui/eslint.config.js:17` carries
+  `'no-console': ['error', { allow: ['warn', 'error'] }]` from before the
+  post-overhaul style guide. The current rule (`docs/style-frontend.md`
+  §Forbidden patterns) is "no `console.*` in committed code" with a
+  carve-out for deliberate dev-diagnostic `console.warn` carrying an
+  inline `// reason: …` justification. Drop the blanket `allow` and rely
+  on per-line `// eslint-disable-next-line no-console -- reason: …`
+  comments so the eslint rule matches the doc.
+- `crates/superpanels-gui/src/commands.rs` is at 453 LoC — well past the
+  400 soft limit (and approaching the 600 hard limit) after the
+  `set_monitor_physical_size` addition. Peel by responsibility — the
+  `commands/in_process.rs` precedent establishes the directory form;
+  `commands/autostart.rs` and `commands/monitors.rs` are obvious next
+  splits.
 
 **Test gaps**
 
@@ -98,6 +172,12 @@ blocked; all are small enough to defer.
 - `tray::handle_menu_event`'s profile-prefix parsing (`name != "empty"`
   guard) has no unit coverage. Tauri-bound code is hard to drive in unit
   tests; consider extracting the pure-string parsing into a helper.
+- `cmd_set_monitor_physical_size` parameter-validation paths
+  (`stable_id` empty, NaN, negative, missing identifier) aren't tested
+  on either the daemon (`server/handlers.rs:122–184`) or in-process
+  (`commands/in_process.rs:251–289`) side. The underlying
+  `write_monitor_block` is covered; the parsing helpers introduced with
+  the IPC are net-new logic.
 
 **Misc small things**
 
