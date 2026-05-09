@@ -71,9 +71,45 @@ pub(crate) async fn cmd_library_thumbnail(
         Err(e) => return IpcResponse::failure(e),
     };
 
-    let result = tokio::task::spawn_blocking(move || render_thumbnail(&canonical, edge)).await;
+    // Cache key needs the source mtime so a write to the file invalidates
+    // stale bytes the next time we stat it. A failed stat just skips the
+    // cache — the render path stays correct.
+    let mtime = std::fs::metadata(&canonical)
+        .ok()
+        .and_then(|m| m.modified().ok());
+
+    if let Some(mtime) = mtime {
+        let mut guard = state.lock().await;
+        if let Some(cached) = guard.thumbnail_cache.get(&canonical, mtime) {
+            let encoded = base64::engine::general_purpose::STANDARD.encode(&cached.bytes);
+            return IpcResponse::success(json!({ "data": encoded, "mime": cached.mime }));
+        }
+    }
+
+    let canonical_for_task = canonical.clone();
+    let result =
+        tokio::task::spawn_blocking(move || render_thumbnail(&canonical_for_task, edge)).await;
+    cache_and_respond(result, state, canonical, mtime).await
+}
+
+// reason: clippy's `similar_names` flags `mime` vs `mtime`, but `mime` is the
+// established render-path name and renaming would just trade the lint for
+// reviewer confusion.
+#[allow(clippy::similar_names)]
+async fn cache_and_respond(
+    result: Result<Result<(Vec<u8>, &'static str), String>, tokio::task::JoinError>,
+    state: Arc<Mutex<DaemonState>>,
+    canonical: PathBuf,
+    mtime: Option<std::time::SystemTime>,
+) -> IpcResponse {
     match result {
         Ok(Ok((bytes, mime))) => {
+            if let Some(mtime) = mtime {
+                let mut guard = state.lock().await;
+                guard
+                    .thumbnail_cache
+                    .put(canonical, mtime, bytes.clone(), mime);
+            }
             let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
             IpcResponse::success(json!({ "data": encoded, "mime": mime }))
         }
@@ -394,6 +430,46 @@ mod tests {
         // Reasonable PNG of a 64x64 image is well under 1 MiB.
         assert!(!data.is_empty());
         assert!(data.len() < 1024 * 1024);
+    }
+
+    #[tokio::test]
+    async fn library_thumbnail_second_call_hits_cache() {
+        // First call decodes + resizes + encodes; second call for the same
+        // (path, mtime) must satisfy from the cache. We verify by inspecting
+        // the cache state directly — driving wallclock-timing assertions in a
+        // unit test would be flaky.
+        let dir = tempdir().unwrap();
+        let img_path = dir.path().join("img.png");
+        write_dummy_png(&img_path, 64, 64);
+
+        let mut cfg = Config::default();
+        cfg.library.roots = vec![dir.path().to_path_buf()];
+        let state = make_state(cfg);
+
+        let first = cmd_library_thumbnail(
+            req(
+                "library_thumbnail",
+                json!({"path": img_path.to_string_lossy()}),
+            ),
+            Arc::clone(&state),
+        )
+        .await;
+        assert!(first.is_ok(), "first render failed: {:?}", first.error);
+        assert_eq!(state.lock().await.thumbnail_cache.len(), 1);
+
+        let second = cmd_library_thumbnail(
+            req(
+                "library_thumbnail",
+                json!({"path": img_path.to_string_lossy()}),
+            ),
+            Arc::clone(&state),
+        )
+        .await;
+        assert!(second.is_ok());
+        // Both calls return identical base64 — the cache must serve byte-for-byte.
+        assert_eq!(first.result, second.result);
+        // Still exactly one entry — no double-counting on hit.
+        assert_eq!(state.lock().await.thumbnail_cache.len(), 1);
     }
 
     #[tokio::test]

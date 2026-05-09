@@ -25,6 +25,7 @@ mod pool;
 mod schedule;
 mod server;
 mod state;
+mod thumbnail_cache;
 mod timer;
 mod unit;
 mod watcher;

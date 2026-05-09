@@ -27,14 +27,6 @@ affected stacks (track upstream WebKit / `webkit2gtk` Arch package).
 Logged by the agent-team review on 2026-04-30 after Phase 3 landed. None
 blocked; all are small enough to defer.
 
-**Library thumbnail cache**
-
-- `cmd_library_thumbnail` decodes + resizes on every call. Add an LRU keyed
-  on `(canonicalised_path, mtime)` (cap at ~64 entries / ~16 MiB). The GUI
-  is now hitting this path at scale via the library prewarm and slideshow
-  advance flows — Phase 4 series is closed, so this is on whichever phase
-  next touches the daemon thumbnail path.
-
 **Benches missing for new hot paths**
 
 - No `criterion` bench covers `read_dimensions`, `library_thumbnail` at

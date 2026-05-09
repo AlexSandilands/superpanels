@@ -16,6 +16,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, info, warn};
 
 use crate::schedule::ScheduleChecker;
+use crate::thumbnail_cache::ThumbnailCache;
 
 pub(crate) struct DaemonState {
     pub config: Config,
@@ -45,6 +46,9 @@ pub(crate) struct DaemonState {
     /// Sender wired into the watcher task; required to (re)build [`watcher`].
     /// Set once at daemon startup; `None` only inside test fixtures.
     pub watcher_tx: Option<UnboundedSender<notify::Event>>,
+    /// LRU cache of `cmd_library_thumbnail` outputs, keyed on
+    /// (canonicalised path, mtime). See [`ThumbnailCache`] for the bounds.
+    pub thumbnail_cache: ThumbnailCache,
 }
 
 impl DaemonState {
@@ -75,6 +79,7 @@ impl DaemonState {
             schedule_checker: ScheduleChecker::new(),
             watcher: None,
             watcher_tx: None,
+            thumbnail_cache: ThumbnailCache::new(),
         })
     }
 
@@ -248,6 +253,7 @@ impl DaemonState {
             schedule_checker: ScheduleChecker::new(),
             watcher: None,
             watcher_tx: None,
+            thumbnail_cache: ThumbnailCache::new(),
         }
     }
 
