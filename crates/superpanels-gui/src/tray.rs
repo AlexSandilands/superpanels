@@ -62,13 +62,19 @@ pub(crate) fn install(app: &App, state: Arc<AppState>) -> tauri::Result<()> {
 /// Background poller that re-fetches `current_state` and rebuilds the tray
 /// menu when the active profile or pause flag changes. Keeps the tick mark
 /// and "Pause / Resume" label in sync without the user re-opening the menu.
+///
+/// Exits within one `POLL_INTERVAL` after [`AppState::request_shutdown`] is
+/// called, so it doesn't outlive the Tauri runtime on `ExitRequested`.
 pub(crate) fn spawn_poller(handle: AppHandle, state: Arc<AppState>) {
     std::thread::Builder::new()
         .name("tray-poller".into())
         .spawn(move || {
             let mut last_signature: Option<String> = None;
-            loop {
+            while !state.shutting_down() {
                 std::thread::sleep(POLL_INTERVAL);
+                if state.shutting_down() {
+                    break;
+                }
                 refresh_snapshot(&state);
                 let snap = state.snapshot();
                 let sig = format!(

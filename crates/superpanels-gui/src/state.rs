@@ -4,6 +4,7 @@
 
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Debug, Default)]
 pub(crate) struct AppState {
@@ -11,6 +12,10 @@ pub(crate) struct AppState {
     pub(crate) last_runtime: Mutex<Option<RuntimeSnapshot>>,
     /// Optional override for the config path; `None` means use the XDG default.
     pub(crate) config_path: Mutex<Option<PathBuf>>,
+    /// Signal long-running background workers (currently only `tray::spawn_poller`)
+    /// to exit cleanly. Set on `RunEvent::ExitRequested` so the poller doesn't
+    /// outlive the Tauri runtime and dial into a torn-down daemon during shutdown.
+    pub(crate) shutdown: AtomicBool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -42,6 +47,14 @@ impl AppState {
             *g = Some(snap);
         }
     }
+
+    pub(crate) fn request_shutdown(&self) {
+        self.shutdown.store(true, Ordering::SeqCst);
+    }
+
+    pub(crate) fn shutting_down(&self) -> bool {
+        self.shutdown.load(Ordering::SeqCst)
+    }
 }
 
 #[cfg(test)]
@@ -54,6 +67,17 @@ mod tests {
         let snap = s.snapshot();
         assert!(snap.active_profile.is_none());
         assert!(!snap.paused);
+    }
+
+    #[test]
+    fn shutdown_flag_is_off_by_default_and_latches_on_request() {
+        let s = AppState::new();
+        assert!(!s.shutting_down());
+        s.request_shutdown();
+        assert!(s.shutting_down());
+        // Idempotent — repeat requests don't unset.
+        s.request_shutdown();
+        assert!(s.shutting_down());
     }
 
     #[test]

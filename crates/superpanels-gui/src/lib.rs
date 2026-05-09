@@ -93,8 +93,12 @@ fn build_app() -> tauri::App {
 
 // reason: Tauri's run callback signature requires owned `RunEvent`.
 #[allow(clippy::needless_pass_by_value)]
-fn handle_event(_app: &tauri::AppHandle, event: tauri::RunEvent) {
+fn handle_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
     if let tauri::RunEvent::ExitRequested { code, .. } = &event {
+        use tauri::Manager;
         tracing::info!(code = ?code, "exit requested");
+        if let Some(state) = app.try_state::<Arc<AppState>>() {
+            state.request_shutdown();
+        }
     }
 }
