@@ -1,3 +1,4 @@
+<!-- reason: monolithic SVG sprite map, no logic — exempt from the 350-line cap -->
 <script lang="ts">
   // One Svelte component for the entire icon set so colour/size flow through
   // currentColor without 30 tiny files. Matches the design's icon vocabulary.
