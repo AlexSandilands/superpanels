@@ -89,23 +89,59 @@ function recordAndToast(r: Awaited<ReturnType<typeof api.applyProfile>>, t0: num
   return elapsed;
 }
 
+/** Push the current canvas state to the desktop without persisting it
+ *  (§4e.11.1). The active profile name (if any) is sent alongside so the
+ *  daemon updates `last_applied_at` and rotates `active_profile`, but
+ *  `monitor_state`, image transform, and source on disk stay untouched. */
 export async function applyDraftProfile(): Promise<void> {
   const draft = profileStore.draft;
   if (!draft) return;
   syncDraftMonitorStateFromCanvas();
-  if (profileStore.dirty) {
-    const saved = await profileStore.save();
-    if (!saved) return;
-  }
+  const refreshed = profileStore.draft;
+  if (!refreshed) return;
   try {
     const t0 = performance.now();
-    const r = await api.applyProfile(draft.name);
+    const r = await api.applyCanvas(refreshed, profileStore.activeName);
     const elapsed = recordAndToast(r, t0);
-    toast.success(`Applied '${draft.name}'`, `${r.backend ?? 'backend'} · ${elapsed} ms`);
+    toast.success(`Applied '${refreshed.name}'`, `${r.backend ?? 'backend'} · ${elapsed} ms`);
     void profileStore.refresh();
   } catch (err) {
     toast.error('Apply failed', errorMessage(err));
   }
+}
+
+/** Commit the current canvas state into the active profile's TOML
+ *  (§4e.11.3 Save). No-op when there is no active profile. */
+export async function saveActiveProfile(): Promise<boolean> {
+  const draft = profileStore.draft;
+  const active = profileStore.activeName;
+  if (!draft || !active) return false;
+  syncDraftMonitorStateFromCanvas();
+  const refreshed = profileStore.draft;
+  if (!refreshed) return false;
+  const payload: Profile = { ...refreshed, name: active };
+  try {
+    await api.saveProfile(payload);
+    void profileStore.refresh();
+    profileStore.clearDirty();
+    toast.success(`Saved '${active}'`);
+    return true;
+  } catch (err) {
+    toast.error(`Failed to save '${active}'`, errorMessage(err));
+    return false;
+  }
+}
+
+/** Re-pull the active profile's persisted state into the canvas
+ *  (§4e.11.4 Revert). */
+export function revertCanvasToActive(): void {
+  const saved = profileStore.revertToActive();
+  if (!saved) {
+    toast.info('Nothing to revert', 'no active profile');
+    return;
+  }
+  applyMonitorStateToCanvas(saved);
+  toast.info(`Reverted to '${saved.name}'`);
 }
 
 export async function switchAndApply(p: Profile): Promise<void> {

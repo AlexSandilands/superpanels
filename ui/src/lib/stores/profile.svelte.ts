@@ -1,6 +1,7 @@
 // Profile store. Owns the profile list, the active profile name, and the
 // per-edit "draft" buffer that the canvas, docks, and settings panes mutate.
-// Saving commits the draft via `save_profile`; refresh discards it.
+// `Save` (§4e.11) commits the draft via `save_profile`; `Revert` re-pulls
+// the active profile's persisted state.
 
 import { api, errorMessage, type Profile } from '$lib/api';
 import { defaultSlideshowConfig } from '$lib/types/profile-helpers';
@@ -20,6 +21,9 @@ export const profileStore = {
   },
   get activeName() {
     return activeName;
+  },
+  get activeProfile(): Profile | null {
+    return activeName ? (profiles.find((p) => p.name === activeName) ?? null) : null;
   },
   get selectedName() {
     return selectedName;
@@ -83,6 +87,28 @@ export const profileStore = {
     if (!selectedName) return;
     const saved = profiles.find((p) => p.name === selectedName) ?? null;
     draft = saved ? snapshotClone(saved) : null;
+    dirty = false;
+  },
+
+  /** Re-pull the *active* profile (§4e.11.4 Revert). The Revert button in the
+   *  TitleBar uses this rather than `revertDraft` because the canvas is
+   *  conceptually authored against the active profile, not the manager-pane
+   *  selection. Returns the active profile snapshot the caller can use to
+   *  re-seed canvas-view + image-transform stores. */
+  revertToActive(): Profile | null {
+    if (!activeName) return null;
+    const saved = profiles.find((p) => p.name === activeName) ?? null;
+    if (!saved) return null;
+    selectedName = activeName;
+    draft = snapshotClone(saved);
+    dirty = false;
+    return saved;
+  },
+
+  /** Force-clear the dirty flag (e.g. after a successful Save commits the
+   *  active profile via `save_profile`). The caller is responsible for
+   *  ensuring the in-memory profile list reflects the committed state. */
+  clearDirty(): void {
     dirty = false;
   },
 

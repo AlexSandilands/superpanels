@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
   import type { Profile } from '$lib/api';
   import { canvasView } from '$lib/stores/canvas-view.svelte';
   import { libraryStore } from '$lib/stores/library.svelte';
@@ -19,6 +20,8 @@
     openMainWindow,
     pinImageToMonitor,
     quitApp,
+    revertCanvasToActive,
+    saveActiveProfile,
     setSpanImage,
     switchAndApply,
   } from '$lib/actions';
@@ -50,6 +53,7 @@
   import TitleBar from './components/chrome/TitleBar.svelte';
   import Toast from './components/widgets/Toast.svelte';
   import ToolDock from './components/chrome/ToolDock.svelte';
+  import ConfirmDiscardModal from './components/overlays/ConfirmDiscardModal.svelte';
   import LibraryModal from './components/overlays/LibraryModal.svelte';
   import ProfileManagerModal from './components/overlays/ProfileManagerModal.svelte';
   import SettingsModal from './components/overlays/SettingsModal.svelte';
@@ -157,6 +161,111 @@
 
   const canApply = $derived(Boolean(draft && draft.name.trim() && !profileStore.saving));
 
+  // Dirty detection (§4e.11.3). The canvas is dirty whenever any field that
+  // the active profile would persist differs from what the user is looking
+  // at. The store's own `dirty` flag covers explicit `patchDraft` calls
+  // (image source, body shape); we additionally compare the canvas-view
+  // overrides against the active profile's `monitor_state` so drag /
+  // rotate edits show up here too. Image transform isn't compared yet —
+  // it lives in mm-space while the profile stores pixels; tracking it
+  // would need a converter pass and is deferred to a follow-up.
+  const canvasDirty = $derived.by(() => {
+    if (profileStore.dirty) return true;
+    const active = profileStore.activeProfile;
+    if (!active) return false;
+    for (const [id, persisted] of Object.entries(active.monitor_state)) {
+      const live = canvasView.overrides[id];
+      if (!live) continue;
+      if (Math.abs(live.xMm - persisted.x_mm) > 0.5 || Math.abs(live.yMm - persisted.y_mm) > 0.5) {
+        return true;
+      }
+      const persistedDeg =
+        persisted.rotation === 'right'
+          ? 90
+          : persisted.rotation === 'inverted'
+            ? 180
+            : persisted.rotation === 'left'
+              ? 270
+              : 0;
+      if (live.rotation !== persistedDeg) return true;
+    }
+    return false;
+  });
+  const canSave = $derived(Boolean(profileStore.activeName) && !profileStore.saving);
+  const canRevert = $derived(canvasDirty && Boolean(profileStore.activeName));
+
+  // Confirm-discard modal (§4e.11.5). When the user initiates an action
+  // that would silently drop unsaved canvas state, hold the action in
+  // `pendingDiscard` and surface the modal. Cancel keeps the canvas;
+  // Confirm runs the held action. Schedule-driven switches do not pass
+  // through this gate — see the schedule preemption toast wiring below.
+  let pendingDiscard = $state<{
+    label: string;
+    perform: () => void | Promise<void>;
+  } | null>(null);
+
+  function guardedDiscard(label: string, perform: () => void | Promise<void>): void {
+    if (canvasDirty) {
+      pendingDiscard = { label, perform };
+      return;
+    }
+    void perform();
+  }
+
+  // Schedule-preemption tracking (§4e.11.6). `userActiveSentinel` is the
+  // last active-profile name we know the user (or our own apply path)
+  // intended. When the polling refresh observes a different
+  // `runtime.active_profile`, that change came from outside this window —
+  // most likely a schedule fire — so if the canvas is dirty we surface a
+  // toast with Undo instead of silently discarding the edits.
+  let userActiveSentinel = $state<string | null>(null);
+  let lastDirtyCanvasSnapshot: Profile | null = null;
+
+  $effect(() => {
+    // Keep the sentinel in lockstep with the runtime view *unless* the
+    // change is a candidate schedule preemption (active changed while
+    // we have a dirty canvas snapshot ready to undo).
+    const seen = profileStore.activeName;
+    if (seen === userActiveSentinel) return;
+    if (
+      userActiveSentinel !== null &&
+      seen !== userActiveSentinel &&
+      lastDirtyCanvasSnapshot !== null
+    ) {
+      const snapshot = lastDirtyCanvasSnapshot;
+      const prev = userActiveSentinel;
+      lastDirtyCanvasSnapshot = null;
+      toast.info(`Schedule switched to '${seen ?? 'unknown'}'`, {
+        detail: `Unsaved changes to '${prev}' were discarded`,
+        action: {
+          label: 'Undo',
+          onClick: () => {
+            void api
+              .applyCanvas(snapshot, prev)
+              .then(() => {
+                toast.success(`Restored canvas for '${prev}'`);
+              })
+              .catch((err) => {
+                toast.error('Undo failed', errorMessage(err));
+              });
+          },
+        },
+      });
+    }
+    userActiveSentinel = seen;
+  });
+
+  // Snapshot the dirty canvas state so the Undo action above has
+  // something to restore. Updated on every dirty-canvas frame; cleared
+  // when the canvas is clean.
+  $effect(() => {
+    if (canvasDirty && draft) {
+      lastDirtyCanvasSnapshot = $state.snapshot(draft) as Profile;
+    } else if (!canvasDirty) {
+      lastDirtyCanvasSnapshot = null;
+    }
+  });
+
   seedOverridesFromMonitors(
     () => monitorStore.monitors,
     () => 0,
@@ -201,6 +310,39 @@
       onDrop: (path) => setSpanImage(path),
     });
 
+    // Window-close interception (§4e.11.5). When the canvas is dirty we
+    // veto the close, surface the modal, and re-issue the close on
+    // confirm. Tauri's `onCloseRequested` handler calls `preventDefault`
+    // on the supplied event to abort the close.
+    let closeUnlistenFn: (() => void) | null = null;
+    const winRef = (() => {
+      try {
+        return getCurrentWindow();
+      } catch {
+        return null;
+      }
+    })();
+    if (winRef) {
+      void winRef
+        .onCloseRequested((event) => {
+          if (canvasDirty) {
+            event.preventDefault();
+            pendingDiscard = {
+              label: 'Closing the window',
+              perform: () => {
+                void winRef.destroy();
+              },
+            };
+          }
+        })
+        .then((fn) => {
+          closeUnlistenFn = fn;
+        })
+        .catch(() => {
+          // ignore — webviews without a window context (tests, etc.)
+        });
+    }
+
     window.addEventListener('keydown', onKey);
     const interval = window.setInterval(() => {
       void profileStore.refresh();
@@ -211,6 +353,7 @@
       detachWindow();
       window.clearInterval(interval);
       window.removeEventListener('keydown', onKey);
+      if (closeUnlistenFn) closeUnlistenFn();
     };
   });
 
@@ -255,9 +398,14 @@
     {backendName}
     {canApply}
     canSaveAsNew={Boolean(sourcePath)}
+    {canSave}
+    {canRevert}
+    saveDirty={canvasDirty}
     onApply={() => void applyDraftProfile()}
+    onSave={() => void saveActiveProfile()}
     onSaveAsNew={() => (saveDialogOpen = true)}
-    onSwitchProfile={(p) => void switchAndApply(p)}
+    onRevert={revertCanvasToActive}
+    onSwitchProfile={(p) => guardedDiscard(`Switch to '${p.name}'`, () => switchAndApply(p))}
     onOpenLibrary={() => (libraryOpen = true)}
     onOpenSettings={() => (settingsOpen = true)}
     onOpenProfileManager={() => (profileManagerOpen = true)}
@@ -359,7 +507,7 @@
       slideshowPaused={slideshowController.state?.paused ?? false}
       onSwitch={(p) => {
         trayOpen = false;
-        void switchAndApply(p);
+        guardedDiscard(`Switch to '${p.name}'`, () => switchAndApply(p));
       }}
       onPrev={() => void slideshowController.prev()}
       onNext={() => void slideshowController.next()}
@@ -377,6 +525,19 @@
         void quitApp();
       }}
       onClose={() => (trayOpen = false)}
+    />
+  {/if}
+
+  {#if pendingDiscard}
+    <ConfirmDiscardModal
+      activeName={profileStore.activeName}
+      actionLabel={pendingDiscard.label}
+      onCancel={() => (pendingDiscard = null)}
+      onConfirm={() => {
+        const next = pendingDiscard;
+        pendingDiscard = null;
+        if (next) void next.perform();
+      }}
     />
   {/if}
 

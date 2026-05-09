@@ -78,6 +78,8 @@ export const api = {
       validity: { profile: string; validity: ProfileValidity }[];
     }>('list_profiles'),
   applyProfile: (name: string) => call<AppliedReport>('apply_profile', { name }),
+  applyCanvas: (profile: Profile, activeName: string | null) =>
+    call<AppliedReport>('apply_canvas', { profile, activeName }),
   saveProfile: (profile: Profile) => call<void>('save_profile', { profile }),
   deleteProfile: (name: string) => call<void>('delete_profile', { name }),
   duplicateProfile: (name: string, newName: string) =>
