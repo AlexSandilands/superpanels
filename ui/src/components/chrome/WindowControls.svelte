@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getCurrentWindow } from '@tauri-apps/api/window';
-  import Icon from '../Icon.svelte';
+  import Icon from '../widgets/Icon.svelte';
 
   async function minimise() {
     try {

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import type { Profile } from '$lib/api';
-  import Icon from '../Icon.svelte';
+  import Icon from '../widgets/Icon.svelte';
   import WindowControls from './WindowControls.svelte';
   import ProfileMenu from './ProfileMenu.svelte';
   import WindowMenu from './WindowMenu.svelte';

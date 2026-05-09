@@ -2,7 +2,7 @@
   import type { LibraryEntry } from '$lib/api';
   import { libraryStore } from '$lib/stores/library.svelte';
   import { toast } from '$lib/stores/toast.svelte';
-  import Icon from '../Icon.svelte';
+  import Icon from '../widgets/Icon.svelte';
   import LibraryThumb from './LibraryThumb.svelte';
   import LibraryPinMenu from './LibraryPinMenu.svelte';
 

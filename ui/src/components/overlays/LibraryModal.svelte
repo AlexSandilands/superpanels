@@ -3,9 +3,9 @@
   import { open } from '@tauri-apps/plugin-dialog';
   import type { LibraryEntry } from '$lib/api';
   import { libraryStore } from '$lib/stores/library.svelte';
-  import Backdrop from '../chrome/Backdrop.svelte';
-  import StepperInput from '../chrome/StepperInput.svelte';
-  import Icon from '../Icon.svelte';
+  import Backdrop from '../widgets/Backdrop.svelte';
+  import StepperInput from '../widgets/StepperInput.svelte';
+  import Icon from '../widgets/Icon.svelte';
   import LibraryGrid from './LibraryGrid.svelte';
 
   type AspectFilter = 'all' | 'wide' | 'square' | 'portrait';

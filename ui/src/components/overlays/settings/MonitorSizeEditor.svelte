@@ -3,7 +3,7 @@
   import { monitorStore } from '$lib/stores/monitors.svelte';
   import { profileStore } from '$lib/stores/profile.svelte';
   import { toast } from '$lib/stores/toast.svelte';
-  import StepperInput from '../../chrome/StepperInput.svelte';
+  import StepperInput from '../../widgets/StepperInput.svelte';
 
   type Props = {
     monitor: Monitor;

@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { open } from '@tauri-apps/plugin-dialog';
   import { libraryStore } from '$lib/stores/library.svelte';
-  import Icon from '../../Icon.svelte';
+  import Icon from '../../widgets/Icon.svelte';
   import SectionHeader from './SectionHeader.svelte';
 
   onMount(() => {

@@ -48,7 +48,7 @@
   import MonitorInspector from './components/chrome/MonitorInspector.svelte';
   import SourceDock from './components/chrome/SourceDock.svelte';
   import TitleBar from './components/chrome/TitleBar.svelte';
-  import Toast from './components/chrome/Toast.svelte';
+  import Toast from './components/widgets/Toast.svelte';
   import ToolDock from './components/chrome/ToolDock.svelte';
   import LibraryModal from './components/overlays/LibraryModal.svelte';
   import SettingsModal from './components/overlays/SettingsModal.svelte';

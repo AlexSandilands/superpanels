@@ -1,7 +1,7 @@
 <script lang="ts">
   import { monitorStore } from '$lib/stores/monitors.svelte';
   import { toast } from '$lib/stores/toast.svelte';
-  import Icon from '../../Icon.svelte';
+  import Icon from '../../widgets/Icon.svelte';
   import MonitorSizeEditor from './MonitorSizeEditor.svelte';
   import SectionHeader from './SectionHeader.svelte';
 

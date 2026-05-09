@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Profile } from '$lib/api';
   import { profileSwatch } from '$lib/profileSwatch';
-  import Icon from '../Icon.svelte';
+  import Icon from '../widgets/Icon.svelte';
 
   import { toast } from '$lib/stores/toast.svelte';
 

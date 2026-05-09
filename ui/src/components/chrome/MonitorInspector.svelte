@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { PreviewMonitor } from '$lib/canvas/previewLayout';
   import { canvasView } from '$lib/stores/canvasView.svelte';
-  import StepperInput from './StepperInput.svelte';
+  import StepperInput from '../widgets/StepperInput.svelte';
 
   type ImageTransform = {
     offsetMmX: number;

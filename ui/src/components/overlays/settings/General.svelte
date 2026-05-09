@@ -4,7 +4,7 @@
   import { toast } from '$lib/stores/toast.svelte';
   import { ui } from '$lib/stores/ui.svelte';
   import SectionHeader from './SectionHeader.svelte';
-  import Select from '../../chrome/Select.svelte';
+  import Select from '../../widgets/Select.svelte';
   import SettingRow from './SettingRow.svelte';
   import Toggle from './Toggle.svelte';
 

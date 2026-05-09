@@ -1,5 +1,5 @@
 <script lang="ts">
-  import StepperInput from './StepperInput.svelte';
+  import StepperInput from '../widgets/StepperInput.svelte';
   import CollapseChevron from './CollapseChevron.svelte';
   import CollapseTab from './CollapseTab.svelte';
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Backdrop from '../chrome/Backdrop.svelte';
+  import Backdrop from '../widgets/Backdrop.svelte';
   import About from './settings/About.svelte';
   import Appearance from './settings/Appearance.svelte';
   import Backends from './settings/Backends.svelte';
