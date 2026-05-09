@@ -13,11 +13,10 @@
     bbox,
     buildPreviewMonitors,
     hNeighbourPairs,
-    monitorRect,
     vNeighbourPairs,
     type PreviewMonitor,
-    type Rect,
   } from '$lib/canvas/previewLayout';
+  import { createDragController } from '$lib/canvas/drag.svelte';
   import CanvasGrid from './CanvasGrid.svelte';
   import DimensionLines from './DimensionLines.svelte';
 
@@ -50,27 +49,6 @@
   let stageW = $state(1200);
   let stageH = $state(700);
 
-  type Drag =
-    | { kind: 'image'; startX: number; startY: number; startMmX: number; startMmY: number }
-    | {
-        kind: 'image-resize';
-        startX: number;
-        startW: number;
-        startH: number;
-        aspect: number;
-      }
-    | {
-        kind: 'monitor';
-        id: string;
-        startX: number;
-        startY: number;
-        startMmX: number;
-        startMmY: number;
-      }
-    | { kind: 'pan'; startX: number; startY: number; startOx: number; startOy: number };
-
-  let drag = $state<Drag | null>(null);
-  let guides = $state<Array<{ kind: 'h'; y: number } | { kind: 'v'; x: number }>>([]);
   let tip = $state<{ x: number; y: number; m: PreviewMonitor } | null>(null);
   let dropHover = $state<string | null>(null);
 
@@ -107,6 +85,14 @@
       w: imageTransform.widthMm * layout.scale,
       h: imageTransform.heightMm * layout.scale,
     };
+  });
+
+  const dragController = createDragController({
+    monitors: () => previewMonitors,
+    imageTransform: () => imageTransform,
+    scale: () => layout.scale,
+    bezelHmm: () => bezelHmm,
+    setImageTransform: (t) => onImageTransformChange(t),
   });
 
   type Hit =
@@ -172,39 +158,39 @@
       const m = previewMonitors.find((x) => x.id === hit.id);
       if (!m) return;
       canvasView.setSelectId(hit.id);
-      drag = {
+      dragController.begin({
         kind: 'monitor',
         id: hit.id,
         startX: ev.clientX,
         startY: ev.clientY,
         startMmX: m.xMm,
         startMmY: m.yMm,
-      };
+      });
     } else if (hit.type === 'image') {
-      drag = {
+      dragController.begin({
         kind: 'image',
         startX: ev.clientX,
         startY: ev.clientY,
         startMmX: imageTransform.offsetMmX,
         startMmY: imageTransform.offsetMmY,
-      };
+      });
     } else if (hit.type === 'image-resize') {
-      drag = {
+      dragController.begin({
         kind: 'image-resize',
         startX: ev.clientX,
         startW: imageTransform.widthMm,
         startH: imageTransform.heightMm,
         aspect: imageTransform.widthMm / imageTransform.heightMm,
-      };
+      });
     } else {
       canvasView.setSelectId(null);
-      drag = {
+      dragController.begin({
         kind: 'pan',
         startX: ev.clientX,
         startY: ev.clientY,
         startOx: canvasView.panX,
         startOy: canvasView.panY,
-      };
+      });
     }
     if (stageEl) stageEl.setPointerCapture(ev.pointerId);
   }
@@ -215,7 +201,7 @@
     const px = ev.clientX - r.left;
     const py = ev.clientY - r.top;
 
-    if (!drag) {
+    if (!dragController.drag) {
       const hit = hitTest(ev.clientX, ev.clientY);
       if (hit.type === 'rotate') {
         canvasView.setHoverId(null);
@@ -241,80 +227,12 @@
       }
       return;
     }
-
-    const dx = ev.clientX - drag.startX;
-    const dxMm = dx / layout.scale;
-    const dy = drag.kind === 'image-resize' ? 0 : ev.clientY - drag.startY;
-    const dyMm = dy / layout.scale;
-
-    if (drag.kind === 'image') {
-      onImageTransformChange({
-        ...imageTransform,
-        offsetMmX: drag.startMmX + dxMm,
-        offsetMmY: drag.startMmY + dyMm,
-      });
-    } else if (drag.kind === 'image-resize') {
-      const newW = Math.max(50, drag.startW + dxMm);
-      const newH = newW / drag.aspect;
-      onImageTransformChange({ ...imageTransform, widthMm: newW, heightMm: newH });
-    } else if (drag.kind === 'monitor') {
-      let newX = drag.startMmX + dxMm;
-      let newY = drag.startMmY + dyMm;
-      if (!ev.altKey) {
-        const snapped = snap(drag.id, newX, newY);
-        newX = snapped.x;
-        newY = snapped.y;
-        guides = snapped.guides;
-      } else {
-        guides = [];
-      }
-      canvasView.override(drag.id, { xMm: newX, yMm: newY });
-    } else if (drag.kind === 'pan') {
-      canvasView.setPan(drag.startOx + dx, drag.startOy + dy);
-    }
+    dragController.move(ev);
   }
 
   function onPointerUp(ev: PointerEvent) {
-    drag = null;
-    guides = [];
+    dragController.end();
     if (stageEl) stageEl.releasePointerCapture(ev.pointerId);
-  }
-
-  function snap(
-    id: string,
-    x: number,
-    y: number,
-  ): { x: number; y: number; guides: Array<{ kind: 'h'; y: number } | { kind: 'v'; x: number }> } {
-    const me = previewMonitors.find((m) => m.id === id);
-    if (!me) return { x, y, guides: [] };
-    const meR: Rect = { x, y, w: me.wMm, h: me.hMm };
-    const dist = 8 / layout.scale;
-    const out: Array<{ kind: 'h'; y: number } | { kind: 'v'; x: number }> = [];
-    let nx = x;
-    let ny = y;
-    for (const o of previewMonitors) {
-      if (o.id === id) continue;
-      const oR = monitorRect(o);
-      if (Math.abs(meR.y - oR.y) < dist) {
-        ny = oR.y;
-        out.push({ kind: 'h', y: oR.y });
-      }
-      if (Math.abs(meR.y + meR.h - (oR.y + oR.h)) < dist) {
-        ny = oR.y + oR.h - meR.h;
-        out.push({ kind: 'h', y: oR.y + oR.h });
-      }
-      if (Math.abs(meR.x - oR.x) < dist) {
-        nx = oR.x;
-        out.push({ kind: 'v', x: oR.x });
-      }
-      if (Math.abs(meR.x + meR.w - (oR.x + oR.w)) < dist) {
-        nx = oR.x + oR.w - meR.w;
-        out.push({ kind: 'v', x: oR.x + oR.w });
-      }
-      if (Math.abs(meR.x - (oR.x + oR.w + bezelHmm)) < dist) nx = oR.x + oR.w + bezelHmm;
-      if (Math.abs(meR.x + meR.w - (oR.x - bezelHmm)) < dist) nx = oR.x - bezelHmm - meR.w;
-    }
-    return { x: nx, y: ny, guides: out };
   }
 
   function onWheel(ev: WheelEvent) {
@@ -324,7 +242,8 @@
 
   const dimLines = $derived.by(() => {
     const showAlways = ui.dimsAlways;
-    if (!showAlways && !drag && !canvasView.hoverId && !canvasView.selectId) return [];
+    if (!showAlways && !dragController.drag && !canvasView.hoverId && !canvasView.selectId)
+      return [];
     const out: Array<{ x1: number; y1: number; x2: number; y2: number; label: string }> = [];
     for (const p of hNeighbourPairs(previewMonitors)) {
       if (p.gapMm <= 0.1) continue;
@@ -407,7 +326,7 @@
       style:background-size="cover"
       style:background-position="center"
       style:opacity={canvasView.dim ? '0.18' : '1'}
-      style:transition={drag ? 'none' : 'opacity 200ms ease'}
+      style:transition={dragController.drag ? 'none' : 'opacity 200ms ease'}
       style:box-shadow={canvasView.dim ? 'none' : '0 0 0 1px oklch(1 0 0 / 0.06)'}
     ></div>
 
@@ -531,7 +450,7 @@
 
   <DimensionLines lines={dimLines} />
 
-  {#each guides as g, i (i)}
+  {#each dragController.guides as g, i (i)}
     {#if g.kind === 'h'}
       {@const p = mm2px(0, g.y)}
       <div
