@@ -75,8 +75,7 @@
     void getCurrentWindow()
       .startDragging()
       .catch((err) => {
-        // reason: surface startDragging failures to devtools so we can tell if it's rejecting
-        // (e.g. Wayland serial issue) vs. the handler not firing at all.
+        // eslint-disable-next-line no-console -- reason: surface startDragging failures to devtools so we can tell if it's rejecting (e.g. Wayland serial issue) vs. the handler not firing at all.
         console.warn('[titlebar] startDragging failed', err);
       });
   }

@@ -14,7 +14,7 @@ export default ts.config(
     },
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',
-      'no-console': ['error', { allow: ['warn', 'error'] }],
+      'no-console': 'error',
       '@typescript-eslint/consistent-type-imports': ['error', { prefer: 'type-imports' }],
       // Returning Promise<void> from API helpers is fine; the rule fires
       // on `Promise<void>` usage which we want.
