@@ -70,7 +70,28 @@ fn detect_monitors(config_path: Option<&Path>) -> CallResult {
 
 fn list_profiles(config_path: Option<&Path>) -> CallResult {
     let cfg = load_config(config_path)?;
-    Ok(ok_payload(cfg.profiles))
+    // Validity needs detected monitors merged with config-supplied physical
+    // sizes (`SPEC §6 / §10`). If detection fails (no compositor in scope —
+    // e.g. CI, headless dev), fall through with an empty validity list so
+    // the rest of the GUI keeps working; the daemon path is the source of
+    // truth in production.
+    let validity_entries: Vec<Value> = match detect(None) {
+        Ok(mut monitors) => {
+            cfg.merge_into_monitors(&mut monitors);
+            cfg.profiles
+                .iter()
+                .map(|p| {
+                    let v = superpanels_core::ProfileValidity::evaluate(p, &monitors);
+                    json!({ "profile": p.name, "validity": v })
+                })
+                .collect()
+        }
+        Err(_) => Vec::new(),
+    };
+    Ok(json!({
+        "profiles": cfg.profiles,
+        "validity": validity_entries,
+    }))
 }
 
 fn apply_profile() -> CallResult {
@@ -282,12 +303,19 @@ mod tests {
     }
 
     #[test]
-    fn list_profiles_reads_from_explicit_config_path() {
+    fn list_profiles_returns_profiles_and_validity_object() {
+        // Frontend types in `ui/src/lib/api.ts` expect a
+        // `{ profiles: Profile[], validity: [...] }` object — same shape the
+        // daemon's `cmd_list_profiles` returns. A bare array (the old
+        // in-process shape) made `profileStore.refresh()` read undefined for
+        // `resp.profiles` and silently break the GUI when no daemon was up.
         let dir = tempdir().unwrap();
         let path = dir.path().join("config.toml");
         Config::default().save_to(&path).unwrap();
         let v = list_profiles(Some(&path)).unwrap();
-        assert!(v.is_array());
+        assert!(v.is_object(), "expected object, got {v}");
+        assert!(v.get("profiles").is_some_and(Value::is_array));
+        assert!(v.get("validity").is_some_and(Value::is_array));
     }
 
     #[test]
