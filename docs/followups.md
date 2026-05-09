@@ -73,16 +73,32 @@ high-N multi-monitor user reports drag jank.
 the algorithm) for an N=9 layout pointer-move scenario; capture the
 baseline; track regressions per SPEC §19.
 
-## Rename `thumb_cache.ts` → `thumbCache.ts`
+## Switch TS module file names to kebab-case
 
-`docs/style-frontend.md` settled on **camelCase** for TS module file
-names (matches `previewLayout.ts`, `sourceImage.ts`, `profileSwatch.ts`).
-`ui/src/lib/library/thumb_cache.ts` is the last `snake_case` holdout.
+`docs/style-frontend.md` §Naming currently prescribes **camelCase** for
+TS module files (matching the post-overhaul code: `previewLayout.ts`,
+`sourceImage.ts`, etc.) — but kebab-case is more conventional in the TS
+ecosystem broadly. Settling on kebab-case fixes the `thumb_cache.ts`
+snake-case outlier in the same pass.
 
-**Revisit when:** any non-trivial change to that file lands; bundle the
-rename to keep history-following with `git mv`.
+**Revisit when:** convenient (it's a mechanical rename); ideally before
+much more new TS lands so the diff stays narrow.
 
-**Action:** `git mv` + update imports.
+**Action:**
+- Rewrite `docs/style-frontend.md` §Naming: TS modules use
+  `kebab-case.ts`. Update the inline examples that reference
+  `previewLayout.ts` / `sourceImage.ts` / `profileSwatch.ts` paths.
+- `git mv` every multi-word TS module to kebab-case. Known offenders
+  (camelCase): `previewLayout.ts`, `sourceImage.ts`, `profileSwatch.ts`,
+  `imageTransform.svelte.ts`, `canvasView.svelte.ts`,
+  `transformActions.ts`, `slideshowController.svelte.ts` (audit
+  `ui/src/lib/` for any I missed). Snake-case: `thumb_cache.ts`.
+- Co-located test files follow (`*.test.ts`).
+- Update all imports. Run `cd ui && npm run check && npm test` to
+  confirm.
+- Single-word modules (`api.ts`, `keymap.ts`, `runtime.svelte.ts`,
+  `library.svelte.ts`, `profile.svelte.ts`, `toast.svelte.ts`,
+  `ui.svelte.ts`, `actions.ts`, etc.) are unaffected.
 
 ## Phase 3 review nitpicks (advisory)
 
