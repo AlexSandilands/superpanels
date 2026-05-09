@@ -166,6 +166,11 @@ fn preview_crop(params: &Value, config_path: Option<&Path>) -> CallResult {
     Ok(ok_payload(specs))
 }
 
+/// In-process mirror of `daemon::handlers::library::canonicalise_inside_roots`
+/// (`SPEC §17`). Same fail-deny posture: empty roots reject; failure to
+/// canonicalise `requested` rejects; a root that itself fails to canonicalise
+/// is *silently skipped* via `is_ok_and`, so misconfigured/unreadable roots
+/// shrink the allowlist instead of expanding it.
 fn canonicalise_inside_roots(requested: &Path, roots: &[PathBuf]) -> Result<PathBuf, IpcError> {
     if roots.is_empty() {
         return Err(IpcError::invalid("library has no configured roots"));

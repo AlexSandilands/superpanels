@@ -205,6 +205,14 @@ fn apply_tag(entry: &mut LibraryEntry, tag: &str, on: bool) {
 /// Canonicalise `requested` and ensure the result lives under one of the
 /// configured library roots (`SPEC §17`). Returns the canonical path on
 /// success or a user-facing error string on rejection.
+///
+/// **Fail-deny by construction.** Empty roots reject. A failure to canonicalise
+/// `requested` rejects (no symlink-race window — the resolved path is what we
+/// compare). A root that itself fails to canonicalise (deleted, EACCES,
+/// symlink loop) is *silently skipped* from the allowlist via `is_ok_and`,
+/// so a misconfigured or unreadable root reduces permitted paths instead of
+/// expanding them. Don't replace `is_ok_and` with `unwrap_or` or `?`-propagation
+/// without re-reasoning about that property.
 pub(crate) fn canonicalise_inside_roots(
     requested: &Path,
     roots: &[PathBuf],
