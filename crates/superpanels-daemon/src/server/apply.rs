@@ -170,6 +170,103 @@ pub(super) async fn cmd_apply_profile(
     IpcResponse::success(applied_json(&report))
 }
 
+/// Push a transient canvas payload to the desktop without persisting it
+/// (`docs/spec/09-profiles-schedules.md` §9.1.2). Mirrors the apply pipeline
+/// of `cmd_apply_profile` but takes the profile as an in-memory payload so
+/// the live config is left untouched. If `params.active_name` matches a
+/// stored profile, that profile becomes the active one and its
+/// `last_applied_at` is bumped — but `monitor_state`, image transform, and
+/// source on disk are preserved.
+pub(super) async fn cmd_apply_canvas(
+    req: IpcRequest,
+    state: Arc<Mutex<DaemonState>>,
+    timer_tx: watch::Sender<Option<Duration>>,
+) -> IpcResponse {
+    let Some(profile_val) = req.params.get("profile") else {
+        return IpcResponse::failure("params.profile required");
+    };
+    let profile: superpanels_core::Profile = match serde_json::from_value(profile_val.clone()) {
+        Ok(p) => p,
+        Err(e) => return IpcResponse::failure(format!("profile is malformed: {e}")),
+    };
+    let active_name = req
+        .params
+        .get("active_name")
+        .and_then(|v| v.as_str())
+        .map(str::to_owned);
+
+    let (monitors, backend_kind, custom_cmd) = {
+        let guard = state.lock().await;
+        let backend_kind = profile
+            .backend_override
+            .unwrap_or(guard.config.backend.prefer);
+        (
+            guard.monitors.clone(),
+            backend_kind,
+            guard.config.backend.custom_command.clone(),
+        )
+    };
+
+    if let ProfileBody::PerMonitor(pm) = &profile.body {
+        let assignments = pm.assignments.clone();
+        let fit = pm.fit;
+        let report = tokio::task::spawn_blocking(move || {
+            run_per_monitor_apply(&assignments, &monitors, fit, backend_kind, &custom_cmd)
+        })
+        .await;
+        let report = match report {
+            Ok(Ok(r)) => r,
+            Ok(Err(e)) => return IpcResponse::failure(format!("{e:#}")),
+            Err(e) => return IpcResponse::failure(format!("task panic: {e}")),
+        };
+        if let Some(name) = active_name.as_deref() {
+            update_active_profile(&state, name).await;
+            update_timer(&state, &timer_tx).await;
+        }
+        return IpcResponse::success(applied_json(&report));
+    }
+
+    let image_path = match &profile.body {
+        ProfileBody::Span(span) => match &span.source {
+            SpanSource::Single { path } => path.clone(),
+            SpanSource::Slideshow { images, .. } => {
+                let Some(pool) = resolve_pool(&state, images).await else {
+                    return IpcResponse::failure("slideshow pool is empty");
+                };
+                let Some(first) = pool.into_iter().next() else {
+                    return IpcResponse::failure("slideshow pool is empty");
+                };
+                first
+            }
+        },
+        ProfileBody::PerMonitor(_) => unreachable!("handled above"),
+    };
+
+    let profile_clone = profile.clone();
+    let monitors_clone = monitors.clone();
+    let report = tokio::task::spawn_blocking(move || {
+        run_span_apply(
+            &image_path,
+            &monitors_clone,
+            &profile_clone,
+            backend_kind,
+            &custom_cmd,
+        )
+    })
+    .await;
+    let report = match report {
+        Ok(Ok(r)) => r,
+        Ok(Err(e)) => return IpcResponse::failure(e.to_string()),
+        Err(e) => return IpcResponse::failure(format!("task panic: {e}")),
+    };
+
+    if let Some(name) = active_name.as_deref() {
+        update_active_profile(&state, name).await;
+        update_timer(&state, &timer_tx).await;
+    }
+    IpcResponse::success(applied_json(&report))
+}
+
 pub(super) async fn cmd_redetect(state: Arc<Mutex<DaemonState>>) -> IpcResponse {
     let mut guard = state.lock().await;
     match superpanels_core::detect(None) {

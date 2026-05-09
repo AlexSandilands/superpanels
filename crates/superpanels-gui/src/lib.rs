@@ -63,6 +63,7 @@ fn build_app() -> tauri::App {
             commands::monitors::set_monitor_physical_size,
             commands::profiles::list_profiles,
             commands::profiles::apply_profile,
+            commands::profiles::apply_canvas,
             commands::profiles::save_profile,
             commands::profiles::delete_profile,
             commands::profiles::duplicate_profile,

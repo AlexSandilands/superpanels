@@ -92,6 +92,7 @@ async fn dispatch(
     match req.method.as_str() {
         "set" => apply::cmd_set(req, state).await,
         "apply_profile" => apply::cmd_apply_profile(req, state, timer_tx).await,
+        "apply_canvas" => apply::cmd_apply_canvas(req, state, timer_tx).await,
         "slideshow_next" => slideshow::cmd_slideshow_advance(state, timer_tx, false).await,
         "slideshow_prev" => slideshow::cmd_slideshow_prev(state).await,
         "slideshow_pause" => slideshow::cmd_slideshow_pause(req, state).await,
@@ -444,6 +445,107 @@ mod tests {
         let guard = state.lock().await;
         let picker = guard.slideshow_picker.as_ref().expect("picker created");
         assert_eq!(picker.state().history.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn apply_canvas_does_not_mutate_persisted_profile_state() {
+        // Build a profile with a known empty monitor_state, then issue
+        // `apply_canvas` with a payload that carries DIFFERENT monitor_state.
+        // The persisted profile must not pick up the canvas placement
+        // (Phase 4e §4e.11.1 — Apply is ephemeral). The desktop apply itself
+        // is allowed to fail (Custom backend, no real environment); what we
+        // pin is the absence of a write-through to `config.profiles`.
+        let dir = tempdir().unwrap();
+        let img = dir.path().join("a.png");
+        write_dummy_image(&img);
+        let mut config = Config::default();
+        let mut profile = Profile {
+            name: "p".to_owned(),
+            body: ProfileBody::Span(SpanProfile {
+                source: SpanSource::Single { path: img.clone() },
+                fit: LayoutFitMode::Fill,
+                offset: [0, 0],
+                image_size_px: None,
+            }),
+            monitor_state: HashMap::new(),
+            topology: TopologyFingerprint(String::new()),
+            colour: ProfileColour::default(),
+            description: None,
+            created_at: superpanels_core::config::now_timestamp(),
+            updated_at: superpanels_core::config::now_timestamp(),
+            last_applied_at: None,
+            backend_override: Some(BackendKind::Custom),
+        };
+        profile.monitor_state.insert(
+            "persisted".to_owned(),
+            superpanels_core::MonitorPlacement {
+                x_mm: 0.0,
+                y_mm: 0.0,
+                rotation: superpanels_core::Rotation::None,
+            },
+        );
+        config.profiles.push(profile.clone());
+        let state = make_state_arc(DaemonState::for_tests(config));
+
+        // Canvas payload carries a different placement set.
+        let mut canvas = profile.clone();
+        canvas.monitor_state.clear();
+        canvas.monitor_state.insert(
+            "ephemeral".to_owned(),
+            superpanels_core::MonitorPlacement {
+                x_mm: 999.0,
+                y_mm: 0.0,
+                rotation: superpanels_core::Rotation::None,
+            },
+        );
+
+        let _ = dispatch_for_tests(
+            IpcRequest {
+                v: PROTOCOL_VERSION,
+                method: "apply_canvas".to_owned(),
+                params: json!({
+                    "profile": serde_json::to_value(&canvas).unwrap(),
+                    "active_name": "p",
+                }),
+            },
+            Arc::clone(&state),
+            timer_pair(),
+        )
+        .await;
+
+        let guard = state.lock().await;
+        let stored = guard
+            .config
+            .profiles
+            .iter()
+            .find(|p| p.name == "p")
+            .expect("profile still present");
+        assert!(
+            stored.monitor_state.contains_key("persisted"),
+            "expected persisted monitor_state to remain unchanged"
+        );
+        assert!(
+            !stored.monitor_state.contains_key("ephemeral"),
+            "apply_canvas leaked transient placement into config: {:?}",
+            stored.monitor_state.keys().collect::<Vec<_>>()
+        );
+    }
+
+    #[tokio::test]
+    async fn apply_canvas_rejects_malformed_profile_payload() {
+        let state = make_state_arc(DaemonState::for_tests(Config::default()));
+        let resp = dispatch_for_tests(
+            IpcRequest {
+                v: PROTOCOL_VERSION,
+                method: "apply_canvas".to_owned(),
+                params: json!({"profile": "not-an-object"}),
+            },
+            state,
+            timer_pair(),
+        )
+        .await;
+        assert!(!resp.is_ok());
+        assert!(resp.error.unwrap().contains("malformed"));
     }
 
     #[tokio::test]

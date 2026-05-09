@@ -45,6 +45,19 @@ pub(crate) fn save_profile(
 }
 
 #[tauri::command]
+pub(crate) fn apply_canvas(
+    profile: Value,
+    active_name: Option<String>,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Value, IpcError> {
+    bridge::call(
+        "apply_canvas",
+        json!({ "profile": profile, "active_name": active_name }),
+        state.config_path().as_deref(),
+    )
+}
+
+#[tauri::command]
 pub(crate) fn delete_profile(
     name: String,
     state: tauri::State<'_, Arc<AppState>>,

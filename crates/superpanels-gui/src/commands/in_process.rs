@@ -24,6 +24,7 @@ pub(crate) fn dispatch(method: &str, params: &Value, config_path: Option<&Path>)
         "detect_monitors" | "redetect" => detect_monitors(config_path),
         "list_profiles" => list_profiles(config_path),
         "apply_profile" => apply_profile(),
+        "apply_canvas" => apply_canvas(),
         "save_profile" => save_profile(params, config_path),
         "delete_profile" => delete_profile(params, config_path),
         "preview_crop" => preview_crop(params, config_path),
@@ -76,6 +77,13 @@ fn apply_profile() -> CallResult {
     Err(IpcError::internal(
         "apply_profile in-process requires daemon-equivalent runtime state; \
          start `superpanels-daemon` to apply profiles from the GUI",
+    ))
+}
+
+fn apply_canvas() -> CallResult {
+    Err(IpcError::internal(
+        "apply_canvas in-process requires daemon-equivalent runtime state; \
+         start `superpanels-daemon` to apply canvas state from the GUI",
     ))
 }
 
