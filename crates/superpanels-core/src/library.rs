@@ -43,6 +43,11 @@ pub struct LibraryFilter {
 /// stay well under the 1 MiB IPC frame cap for a 5 000-entry library.
 pub const DEFAULT_LIBRARY_PAGE: usize = 200;
 
+/// Hard cap on caller-supplied `filter.limit` (`SPEC §17`). A hostile webview
+/// that asks for `u32::MAX` entries would otherwise force the daemon to
+/// materialise the full library into a response Vec.
+pub const MAX_LIBRARY_PAGE: usize = 1_000;
+
 /// Apply `filter` to `entries`, returning a new owned `Vec`. Pure function;
 /// no I/O. Tag matching is case-sensitive and exact.
 #[must_use]
@@ -51,7 +56,8 @@ pub fn apply_library_filter(entries: &[LibraryEntry], filter: &LibraryFilter) ->
     let limit = filter
         .limit
         .and_then(|l| usize::try_from(l).ok())
-        .unwrap_or(DEFAULT_LIBRARY_PAGE);
+        .unwrap_or(DEFAULT_LIBRARY_PAGE)
+        .min(MAX_LIBRARY_PAGE);
     entries
         .iter()
         .filter(|e| matches_filter(e, filter))

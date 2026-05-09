@@ -16,6 +16,7 @@ use std::sync::Arc;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use superpanels_core::ipc::validate as v;
 use tracing::warn;
 use ts_rs::TS;
 
@@ -277,11 +278,13 @@ pub fn set_monitor_physical_size(
     if stable_id.as_deref().is_none_or(str::is_empty) && name.as_deref().is_none_or(str::is_empty) {
         return Err(IpcError::invalid("stable_id or name is required"));
     }
-    if !physical_mm.iter().all(|v| v.is_finite() && *v > 0.0) {
-        return Err(IpcError::invalid(
-            "physical_mm components must be finite and > 0",
-        ));
+    if let Some(id) = stable_id.as_deref().filter(|s| !s.is_empty()) {
+        v::validate_monitor_id_string(id, "stable_id").map_err(|e| IpcError::invalid(e.0))?;
     }
+    if let Some(n) = name.as_deref().filter(|s| !s.is_empty()) {
+        v::validate_monitor_id_string(n, "name").map_err(|e| IpcError::invalid(e.0))?;
+    }
+    v::validate_physical_mm(physical_mm).map_err(|e| IpcError::invalid(e.0))?;
     let mut params = json!({ "physical_mm": physical_mm });
     if let Some(id) = stable_id {
         if !id.is_empty() {

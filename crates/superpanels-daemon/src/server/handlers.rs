@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use serde_json::{Value, json};
 use superpanels_core::config::{Config, MonitorIdentifier, write_monitor_block};
+use superpanels_core::ipc::validate as v;
 use superpanels_core::ipc::{IpcRequest, IpcResponse};
 use superpanels_core::layout::{BezelConfig, FitMode, compute_crop_specs_with_offset};
 use tokio::sync::Mutex;
@@ -159,28 +160,29 @@ pub(super) async fn cmd_set_monitor_physical_size(
 fn parse_monitor_identifier(req: &IpcRequest) -> Result<MonitorIdentifier, String> {
     if let Some(id) = req.params.get("stable_id").and_then(Value::as_str) {
         if !id.is_empty() {
-            return Ok(MonitorIdentifier::StableId(id.to_owned()));
+            return v::validate_monitor_id_string(id, "stable_id")
+                .map(|s| MonitorIdentifier::StableId(s.to_owned()))
+                .map_err(|e| e.0);
         }
     }
     if let Some(name) = req.params.get("name").and_then(Value::as_str) {
         if !name.is_empty() {
-            return Ok(MonitorIdentifier::Name(name.to_owned()));
+            return v::validate_monitor_id_string(name, "name")
+                .map(|s| MonitorIdentifier::Name(s.to_owned()))
+                .map_err(|e| e.0);
         }
     }
     Err("params.stable_id or params.name (non-empty string) required".to_owned())
 }
 
 fn parse_physical_mm(req: &IpcRequest) -> Result<[f64; 2], String> {
-    let v = req
+    let val = req
         .params
         .get("physical_mm")
         .ok_or_else(|| "params.physical_mm required".to_owned())?;
-    let raw: [f64; 2] = serde_json::from_value(v.clone())
+    let raw: [f64; 2] = serde_json::from_value(val.clone())
         .map_err(|e| format!("physical_mm must be [number, number]: {e}"))?;
-    if !raw.iter().all(|v| v.is_finite() && *v > 0.0) {
-        return Err("physical_mm components must be finite and > 0".to_owned());
-    }
-    Ok(raw)
+    v::validate_physical_mm(raw).map_err(|e| e.0)
 }
 
 pub(super) async fn cmd_detect_monitors(state: Arc<Mutex<DaemonState>>) -> IpcResponse {
@@ -222,10 +224,21 @@ pub(super) async fn cmd_preview_crop(
         .get("offset_px")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or([0, 0]);
+    let offset_px = match v::validate_preview_offset(offset_px) {
+        Ok(o) => o,
+        Err(e) => return IpcResponse::failure(e.0),
+    };
     let image_size_px: Option<[u32; 2]> = req
         .params
         .get("image_size_px")
         .and_then(|v| serde_json::from_value(v.clone()).ok());
+    let image_size_px = match image_size_px
+        .map(v::validate_preview_image_size)
+        .transpose()
+    {
+        Ok(s) => s,
+        Err(e) => return IpcResponse::failure(e.0),
+    };
     let bezels = match (bezel_mm_to_f32(bezel_h), bezel_mm_to_f32(bezel_v)) {
         (Some(h), Some(v)) => BezelConfig {
             horizontal_mm: h,
@@ -511,6 +524,70 @@ mod tests {
         )
         .await;
         assert!(!resp.is_ok());
+    }
+
+    #[tokio::test]
+    async fn set_monitor_physical_size_rejects_above_cap() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        Config::default().save_to(&path).unwrap();
+        let state = make_state_with_path(Config::default(), path);
+        let resp = cmd_set_monitor_physical_size(
+            req(
+                "set_monitor_physical_size",
+                json!({
+                    "stable_id": "abc",
+                    "physical_mm": [1.0e30, 100.0],
+                }),
+            ),
+            state,
+        )
+        .await;
+        assert!(!resp.is_ok());
+        assert!(resp.error.unwrap().contains("must be in (0,"));
+    }
+
+    #[tokio::test]
+    async fn set_monitor_physical_size_rejects_oversize_stable_id() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        Config::default().save_to(&path).unwrap();
+        let state = make_state_with_path(Config::default(), path);
+        let big_id = "x".repeat(super::v::MAX_MONITOR_ID_CHARS + 1);
+        let resp = cmd_set_monitor_physical_size(
+            req(
+                "set_monitor_physical_size",
+                json!({
+                    "stable_id": big_id,
+                    "physical_mm": [100.0, 100.0],
+                }),
+            ),
+            state,
+        )
+        .await;
+        assert!(!resp.is_ok());
+        assert!(resp.error.unwrap().contains("exceeds"));
+    }
+
+    #[tokio::test]
+    async fn set_monitor_physical_size_rejects_control_chars_in_name() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        Config::default().save_to(&path).unwrap();
+        let state = make_state_with_path(Config::default(), path);
+        let resp = cmd_set_monitor_physical_size(
+            req(
+                "set_monitor_physical_size",
+                json!({
+                    "name": "DP-1\nname=injected",
+                    "physical_mm": [100.0, 100.0],
+                }),
+            ),
+            state,
+        )
+        .await;
+        assert!(!resp.is_ok());
+        assert!(resp.error.unwrap().contains("control"));
     }
 
     #[tokio::test]

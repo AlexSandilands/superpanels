@@ -1,13 +1,11 @@
-//! Field-level validation for [`super::Config`] (`SPEC.md` §14.2).
+//! Field-level validation for [`super::Config`] (`SPEC.md` §14.2, §17).
 
 use std::collections::HashSet;
 use std::path::Path;
 
-use super::{Config, ConfigError};
+use crate::ipc::validate as v;
 
-fn is_valid_mm(v: f64) -> bool {
-    v.is_finite() && v > 0.0
-}
+use super::{Config, ConfigError};
 
 /// Bails on the first failure for a focused error message.
 pub(super) fn validate(cfg: &Config, path: &Path) -> Result<(), ConfigError> {
@@ -17,49 +15,105 @@ pub(super) fn validate(cfg: &Config, path: &Path) -> Result<(), ConfigError> {
     Ok(())
 }
 
+fn invalid(path: &Path, field: impl Into<String>, message: impl Into<String>) -> ConfigError {
+    ConfigError::Invalid {
+        path: path.to_owned(),
+        field: field.into(),
+        message: message.into(),
+    }
+}
+
 fn validate_monitors(cfg: &Config, path: &Path) -> Result<(), ConfigError> {
+    if cfg.monitors.len() > v::MAX_MONITORS {
+        return Err(invalid(
+            path,
+            "monitor",
+            format!(
+                "{} entries exceeds {} cap",
+                cfg.monitors.len(),
+                v::MAX_MONITORS
+            ),
+        ));
+    }
     for (i, m) in cfg.monitors.iter().enumerate() {
         if m.stable_id.is_none() && m.name.is_none() {
-            return Err(ConfigError::Invalid {
-                path: path.to_owned(),
-                field: format!("monitor[{i}]"),
-                message: "at least one of `stable_id` or `name` must be set".to_owned(),
-            });
+            return Err(invalid(
+                path,
+                format!("monitor[{i}]"),
+                "at least one of `stable_id` or `name` must be set",
+            ));
         }
-        if !is_valid_mm(m.physical_mm[0]) || !is_valid_mm(m.physical_mm[1]) {
-            return Err(ConfigError::Invalid {
-                path: path.to_owned(),
-                field: format!("monitor[{i}].physical_mm"),
-                message: "values must be finite and > 0".to_owned(),
-            });
+        if let Some(id) = &m.stable_id {
+            v::validate_monitor_id_string(id, "stable_id")
+                .map_err(|e| invalid(path, format!("monitor[{i}].stable_id"), e.0))?;
         }
+        if let Some(name) = &m.name {
+            v::validate_monitor_id_string(name, "name")
+                .map_err(|e| invalid(path, format!("monitor[{i}].name"), e.0))?;
+        }
+        v::validate_physical_mm(m.physical_mm)
+            .map_err(|e| invalid(path, format!("monitor[{i}].physical_mm"), e.0))?;
     }
     Ok(())
 }
 
 fn validate_profiles(cfg: &Config, path: &Path) -> Result<(), ConfigError> {
+    if cfg.profiles.len() > v::MAX_PROFILES {
+        return Err(invalid(
+            path,
+            "profile",
+            format!(
+                "{} entries exceeds {} cap",
+                cfg.profiles.len(),
+                v::MAX_PROFILES
+            ),
+        ));
+    }
     let mut seen: HashSet<&str> = HashSet::new();
     for (i, p) in cfg.profiles.iter().enumerate() {
-        if p.name.trim().is_empty() {
-            return Err(ConfigError::Invalid {
-                path: path.to_owned(),
-                field: format!("profile[{i}].name"),
-                message: "profile name must be non-empty".to_owned(),
-            });
-        }
+        v::validate_profile_name(&p.name)
+            .map_err(|e| invalid(path, format!("profile[{i}].name"), e.0))?;
         if !seen.insert(p.name.as_str()) {
-            return Err(ConfigError::Invalid {
-                path: path.to_owned(),
-                field: format!("profile[{i}].name"),
-                message: format!("duplicate profile name `{}`", p.name),
-            });
+            return Err(invalid(
+                path,
+                format!("profile[{i}].name"),
+                format!("duplicate profile name `{}`", p.name),
+            ));
         }
         if p.bezels.horizontal_mm < 0.0 || p.bezels.vertical_mm < 0.0 {
-            return Err(ConfigError::Invalid {
-                path: path.to_owned(),
-                field: format!("profile[{i}].bezels"),
-                message: "bezel values must be non-negative".to_owned(),
-            });
+            return Err(invalid(
+                path,
+                format!("profile[{i}].bezels"),
+                "bezel values must be non-negative",
+            ));
+        }
+        validate_profile_body(path, i, &p.body)?;
+    }
+    Ok(())
+}
+
+fn validate_profile_body(
+    path: &Path,
+    i: usize,
+    body: &super::ProfileBody,
+) -> Result<(), ConfigError> {
+    if let super::ProfileBody::Span(span) = body {
+        if let super::SpanSource::Slideshow {
+            images: super::ImageSet::Playlist { paths },
+            ..
+        } = &span.source
+        {
+            if paths.len() > v::MAX_SLIDESHOW_IMAGES {
+                return Err(invalid(
+                    path,
+                    format!("profile[{i}].body.source.images.paths"),
+                    format!(
+                        "{} entries exceeds {} cap",
+                        paths.len(),
+                        v::MAX_SLIDESHOW_IMAGES
+                    ),
+                ));
+            }
         }
     }
     Ok(())

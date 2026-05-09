@@ -10,6 +10,7 @@ use base64::Engine;
 use serde_json::{Value, json};
 use superpanels_core::config::{Config, ConfigError, MonitorIdentifier, write_monitor_block};
 use superpanels_core::detect;
+use superpanels_core::ipc::validate as v;
 use superpanels_core::library::{LibraryFilter as CoreLibraryFilter, apply_library_filter};
 
 use crate::bridge::{CallResult, ok_payload, ok_unit};
@@ -142,9 +143,14 @@ fn preview_crop(params: &Value, config_path: Option<&Path>) -> CallResult {
         .get("offset_px")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or([0, 0]);
+    let offset_px = v::validate_preview_offset(offset_px).map_err(|e| IpcError::invalid(e.0))?;
     let image_size_px: Option<[u32; 2]> = params
         .get("image_size_px")
         .and_then(|v| serde_json::from_value(v.clone()).ok());
+    let image_size_px = image_size_px
+        .map(v::validate_preview_image_size)
+        .transpose()
+        .map_err(|e| IpcError::invalid(e.0))?;
 
     let cfg = load_config(config_path)?;
     let canonical = canonicalise_inside_roots(Path::new(image), &cfg.library.roots)?;
@@ -260,12 +266,16 @@ fn set_monitor_physical_size(params: &Value, config_path: Option<&Path>) -> Call
 fn parse_monitor_identifier(params: &Value) -> Result<MonitorIdentifier, IpcError> {
     if let Some(id) = params.get("stable_id").and_then(Value::as_str) {
         if !id.is_empty() {
-            return Ok(MonitorIdentifier::StableId(id.to_owned()));
+            return v::validate_monitor_id_string(id, "stable_id")
+                .map(|s| MonitorIdentifier::StableId(s.to_owned()))
+                .map_err(|e| IpcError::invalid(e.0));
         }
     }
     if let Some(name) = params.get("name").and_then(Value::as_str) {
         if !name.is_empty() {
-            return Ok(MonitorIdentifier::Name(name.to_owned()));
+            return v::validate_monitor_id_string(name, "name")
+                .map(|s| MonitorIdentifier::Name(s.to_owned()))
+                .map_err(|e| IpcError::invalid(e.0));
         }
     }
     Err(IpcError::invalid(
@@ -274,17 +284,12 @@ fn parse_monitor_identifier(params: &Value) -> Result<MonitorIdentifier, IpcErro
 }
 
 fn parse_physical_mm(params: &Value) -> Result<[f64; 2], IpcError> {
-    let v = params
+    let val = params
         .get("physical_mm")
         .ok_or_else(|| IpcError::invalid("params.physical_mm required"))?;
-    let raw: [f64; 2] = serde_json::from_value(v.clone())
+    let raw: [f64; 2] = serde_json::from_value(val.clone())
         .map_err(|e| IpcError::invalid(format!("physical_mm must be [number, number]: {e}")))?;
-    if !raw.iter().all(|v| v.is_finite() && *v > 0.0) {
-        return Err(IpcError::invalid(
-            "physical_mm components must be finite and > 0",
-        ));
-    }
-    Ok(raw)
+    v::validate_physical_mm(raw).map_err(|e| IpcError::invalid(e.0))
 }
 
 fn current_state() -> Value {

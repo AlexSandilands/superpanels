@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use base64::Engine;
 use serde_json::{Value, json};
+use superpanels_core::ipc::validate as v;
 use superpanels_core::ipc::{IpcRequest, IpcResponse};
 use superpanels_core::library::{LibraryEntry, LibraryFilter, apply_library_filter};
 use tokio::sync::Mutex;
@@ -85,62 +86,98 @@ pub(crate) async fn cmd_library_delete(
     req: IpcRequest,
     state: Arc<Mutex<DaemonState>>,
 ) -> IpcResponse {
-    let Some(path) = req.params.get("path").and_then(Value::as_str) else {
+    let Some(raw_path) = req.params.get("path").and_then(Value::as_str) else {
         return IpcResponse::failure("params.path (string) required");
     };
-    let target = Path::new(path);
+
+    let roots = state.lock().await.config.library.roots.clone();
+    let canonical = match canonicalise_inside_roots(Path::new(raw_path), &roots) {
+        Ok(p) => p,
+        Err(e) => return IpcResponse::failure(e),
+    };
 
     let mut guard = state.lock().await;
     let removed_from_db = if let Some(db) = guard.library_db.as_mut() {
-        match db.delete_entry(target) {
+        let by_canonical = match db.delete_entry(&canonical) {
             Ok(b) => b,
             Err(e) => {
                 warn!(error = %e, "library DB delete failed");
                 return IpcResponse::failure(format!("library DB delete failed: {e}"));
+            }
+        };
+        if by_canonical {
+            true
+        } else {
+            // Fall back to the raw path so legacy entries indexed before
+            // canonicalisation still delete (`SPEC §17`).
+            match db.delete_entry(Path::new(raw_path)) {
+                Ok(b) => b,
+                Err(e) => {
+                    warn!(error = %e, "library DB delete failed");
+                    return IpcResponse::failure(format!("library DB delete failed: {e}"));
+                }
             }
         }
     } else {
         false
     };
     let before = guard.library.len();
-    guard.library.retain(|e| e.path != target);
+    let raw_target = Path::new(raw_path);
+    guard
+        .library
+        .retain(|e| e.path != canonical && e.path != raw_target);
     let removed_from_cache = guard.library.len() < before;
 
     if !removed_from_db && !removed_from_cache {
-        return IpcResponse::failure(format!("path '{path}' not in library"));
+        return IpcResponse::failure(format!("path '{raw_path}' not in library"));
     }
-    IpcResponse::success(json!({ "path": path }))
+    IpcResponse::success(json!({ "path": raw_path }))
 }
 
 pub(crate) async fn cmd_library_tag(
     req: IpcRequest,
     state: Arc<Mutex<DaemonState>>,
 ) -> IpcResponse {
-    let Some(path) = req.params.get("path").and_then(Value::as_str) else {
+    let Some(raw_path) = req.params.get("path").and_then(Value::as_str) else {
         return IpcResponse::failure("params.path (string) required");
     };
-    let Some(tag) = req.params.get("tag").and_then(Value::as_str) else {
+    let Some(raw_tag) = req.params.get("tag").and_then(Value::as_str) else {
         return IpcResponse::failure("params.tag (string) required");
     };
     let Some(on) = req.params.get("on").and_then(Value::as_bool) else {
         return IpcResponse::failure("params.on (bool) required");
     };
+    let tag = match v::validate_tag(raw_tag) {
+        Ok(t) => t,
+        Err(e) => return IpcResponse::failure(e.0),
+    };
+
+    let roots = state.lock().await.config.library.roots.clone();
+    let canonical = match canonicalise_inside_roots(Path::new(raw_path), &roots) {
+        Ok(p) => p,
+        Err(e) => return IpcResponse::failure(e),
+    };
 
     let mut guard = state.lock().await;
-    let target = Path::new(path);
-    if !guard.library.iter().any(|e| e.path == target) {
-        return IpcResponse::failure(format!("path '{path}' not in library"));
-    }
+    let raw_target = Path::new(raw_path);
+    let entry_path = guard
+        .library
+        .iter()
+        .find(|e| e.path == canonical || e.path == raw_target)
+        .map(|e| e.path.clone());
+    let Some(entry_path) = entry_path else {
+        return IpcResponse::failure(format!("path '{raw_path}' not in library"));
+    };
     if let Some(db) = guard.library_db.as_mut() {
-        if let Err(e) = db.set_tag(target, tag, on) {
+        if let Err(e) = db.set_tag(&entry_path, &tag, on) {
             warn!(error = %e, "library DB tag write failed");
             return IpcResponse::failure(format!("library DB tag write failed: {e}"));
         }
     }
-    if let Some(entry) = guard.library.iter_mut().find(|e| e.path == target) {
-        apply_tag(entry, tag, on);
+    if let Some(entry) = guard.library.iter_mut().find(|e| e.path == entry_path) {
+        apply_tag(entry, &tag, on);
     }
-    IpcResponse::success(json!({ "path": path, "tag": tag, "on": on }))
+    IpcResponse::success(json!({ "path": raw_path, "tag": tag, "on": on }))
 }
 
 fn apply_tag(entry: &mut LibraryEntry, tag: &str, on: bool) {
@@ -361,11 +398,18 @@ mod tests {
 
     #[tokio::test]
     async fn library_tag_unknown_path_fails() {
-        let state = make_state(Config::default());
+        // Path is real and inside roots, but not indexed — must fall through
+        // to the "not in library" check (`SPEC §17`).
+        let dir = tempdir().unwrap();
+        let real = dir.path().join("orphan.png");
+        write_dummy_png(&real, 16, 16);
+        let mut cfg = Config::default();
+        cfg.library.roots = vec![dir.path().to_path_buf()];
+        let state = make_state(cfg);
         let resp = cmd_library_tag(
             req(
                 "library_tag",
-                json!({"path": "/no/such.png", "tag": "x", "on": true}),
+                json!({"path": real.to_string_lossy(), "tag": "x", "on": true}),
             ),
             state,
         )
@@ -375,16 +419,65 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn library_tag_rejects_oversize_tag() {
+        let dir = tempdir().unwrap();
+        let real = dir.path().join("img.png");
+        write_dummy_png(&real, 16, 16);
+        let mut cfg = Config::default();
+        cfg.library.roots = vec![dir.path().to_path_buf()];
+        let mut s = DaemonState::for_tests(cfg);
+        s.library.push(dummy_entry(&real));
+        let state = Arc::new(Mutex::new(s));
+
+        let big_tag = "x".repeat(super::v::MAX_TAG_CHARS + 1);
+        let resp = cmd_library_tag(
+            req(
+                "library_tag",
+                json!({"path": real.to_string_lossy(), "tag": big_tag, "on": true}),
+            ),
+            state,
+        )
+        .await;
+        assert!(!resp.is_ok());
+        assert!(resp.error.unwrap().contains("exceeds"));
+    }
+
+    #[tokio::test]
+    async fn library_tag_rejects_path_outside_roots() {
+        let dir = tempdir().unwrap();
+        let other = tempdir().unwrap();
+        let foreign = other.path().join("a.png");
+        write_dummy_png(&foreign, 16, 16);
+        let mut cfg = Config::default();
+        cfg.library.roots = vec![dir.path().to_path_buf()];
+        let state = make_state(cfg);
+        let resp = cmd_library_tag(
+            req(
+                "library_tag",
+                json!({"path": foreign.to_string_lossy(), "tag": "x", "on": true}),
+            ),
+            state,
+        )
+        .await;
+        assert!(!resp.is_ok());
+        assert!(resp.error.unwrap().contains("outside"));
+    }
+
+    #[tokio::test]
     async fn library_tag_toggles_tag_and_favourite() {
-        let mut s = DaemonState::for_tests(Config::default());
-        let path = PathBuf::from("/walls/x.png");
-        s.library.push(dummy_entry(&path));
+        let dir = tempdir().unwrap();
+        let real = dir.path().join("x.png");
+        write_dummy_png(&real, 16, 16);
+        let mut cfg = Config::default();
+        cfg.library.roots = vec![dir.path().to_path_buf()];
+        let mut s = DaemonState::for_tests(cfg);
+        s.library.push(dummy_entry(&real));
         let state = Arc::new(Mutex::new(s));
 
         let _ = cmd_library_tag(
             req(
                 "library_tag",
-                json!({"path": "/walls/x.png", "tag": "blue", "on": true}),
+                json!({"path": real.to_string_lossy(), "tag": "blue", "on": true}),
             ),
             Arc::clone(&state),
         )
@@ -392,7 +485,7 @@ mod tests {
         let _ = cmd_library_tag(
             req(
                 "library_tag",
-                json!({"path": "/walls/x.png", "tag": "favourite", "on": true}),
+                json!({"path": real.to_string_lossy(), "tag": "favourite", "on": true}),
             ),
             Arc::clone(&state),
         )
@@ -408,7 +501,7 @@ mod tests {
         let _ = cmd_library_tag(
             req(
                 "library_tag",
-                json!({"path": "/walls/x.png", "tag": "blue", "on": false}),
+                json!({"path": real.to_string_lossy(), "tag": "blue", "on": false}),
             ),
             Arc::clone(&state),
         )

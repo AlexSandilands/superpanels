@@ -6,6 +6,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+pub mod validate;
+
 pub const PROTOCOL_VERSION: u32 = 1;
 
 /// Outbound request sent by a client over the Unix socket.

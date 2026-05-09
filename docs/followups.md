@@ -22,24 +22,6 @@ affected stacks (track upstream WebKit / `webkit2gtk` Arch package).
 `desktop_body_includes_webkit_dmabuf_workaround` test assertions in
 `autostart.rs`.
 
-## MonitorSizeEditor — clamp physical-mm upper bound (defence-in-depth)
-
-Logged 2026-05-09 from the UI-overhaul agent-team review (Security
-advisory). `set_monitor_physical_size` server-side validation enforces
-`is_finite() && > 0` only. The UI's `StepperInput` has a 5000 mm `max`,
-but a frontend bypass would let arbitrary positive finite values reach
-`validate_monitors` and poison bezel math.
-
-For the v1 single-user threat model (cooperating webview) this is fine.
-
-**Revisit when:** SPEC §17 threat model upgrades the webview to
-"potentially compromised" — e.g. shipping signed builds, or any flow that
-opens the WebView to non-local content.
-
-**Action:** add an upper bound (e.g. ≤ 10000 mm) in `validate_monitors`
-and mirror it in `parse_physical_mm` on both the daemon
-(`server/handlers.rs`) and in-process (`commands/in_process.rs`) paths.
-
 ## Canvas-redraw vitest bench
 
 `PreviewCanvas` re-derives `dimLines`, `imgRect`, hover, and cursor on
@@ -105,11 +87,6 @@ blocked; all are small enough to defer.
 
 **IPC validation consistency**
 
-- `cmd_library_tag` (`server/handlers/library.rs`) does an exact-`PathBuf`
-  match against existing entries; semi-equivalent paths
-  (`/walls/./x.png`, symlinks, trailing slash) silently miss. Apply the
-  existing `canonicalise_inside_roots` helper so all path-bearing IPC
-  commands canonicalise uniformly.
 - `canonicalise_inside_roots` silently skips a configured root whose own
   canonicalisation fails (`is_ok_and(...)` short-circuits). Behaviour is
   fail-deny and correct — add a one-line comment so a future reader doesn't
@@ -171,12 +148,13 @@ blocked; all are small enough to defer.
 - `tray::handle_menu_event`'s profile-prefix parsing (`name != "empty"`
   guard) has no unit coverage. Tauri-bound code is hard to drive in unit
   tests; consider extracting the pure-string parsing into a helper.
-- `cmd_set_monitor_physical_size` parameter-validation paths
-  (`stable_id` empty, NaN, negative, missing identifier) aren't tested
-  on either the daemon (`server/handlers.rs:122–184`) or in-process
-  (`commands/in_process.rs:251–289`) side. The underlying
-  `write_monitor_block` is covered; the parsing helpers introduced with
-  the IPC are net-new logic.
+- `cmd_set_monitor_physical_size` validation tests now cover oversize
+  values, oversize identifiers, and control-character rejection on the
+  daemon side. The in-process mirror (`commands/in_process.rs`) goes
+  through the same `superpanels_core::ipc::validate` helpers but lacks
+  handler-integration coverage; add a parallel test for the empty
+  `stable_id` / missing-identifier paths whenever the in-process file is
+  next touched.
 
 **Misc small things**
 

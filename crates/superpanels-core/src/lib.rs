@@ -28,8 +28,8 @@ pub use layout::{
 };
 pub use library::{
     DEFAULT_LIBRARY_PAGE, DbError, FolderWatcher, LibraryDb, LibraryEntry, LibraryError,
-    LibraryFilter, MigrationError, SCHEMA_VERSION, apply_library_filter, load_index,
-    migrate_json_to_sqlite, persist_index, scan_folder,
+    LibraryFilter, MAX_LIBRARY_PAGE, MigrationError, SCHEMA_VERSION, apply_library_filter,
+    load_index, migrate_json_to_sqlite, persist_index, scan_folder,
 };
 pub use slideshow::{
     SlideshowConfig, SlideshowError, SlideshowPicker, SlideshowSort, SlideshowStart, SlideshowState,
