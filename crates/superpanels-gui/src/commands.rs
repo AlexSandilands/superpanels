@@ -116,11 +116,9 @@ pub(crate) fn preview_crop(
     args: PreviewArgs,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
-    bridge::call(
-        "preview_crop",
-        serde_json::to_value(&args).unwrap_or(Value::Null),
-        state.config_path().as_deref(),
-    )
+    let params = serde_json::to_value(&args)
+        .map_err(|e| IpcError::internal(format!("PreviewArgs serialise: {e}")))?;
+    bridge::call("preview_crop", params, state.config_path().as_deref())
 }
 
 #[tauri::command]
@@ -128,11 +126,9 @@ pub(crate) fn library_list(
     filter: LibraryFilter,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
-    bridge::call(
-        "library_list",
-        serde_json::to_value(&filter).unwrap_or(Value::Null),
-        state.config_path().as_deref(),
-    )
+    let params = serde_json::to_value(&filter)
+        .map_err(|e| IpcError::internal(format!("LibraryFilter serialise: {e}")))?;
+    bridge::call("library_list", params, state.config_path().as_deref())
 }
 
 #[tauri::command]

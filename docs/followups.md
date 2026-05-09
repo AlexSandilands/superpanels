@@ -94,12 +94,6 @@ blocked; all are small enough to defer.
   `stable_id` / missing-identifier paths whenever the in-process file is
   next touched.
 
-**Misc small things**
-
-- `crates/superpanels-gui/src/commands.rs` calls
-  `serde_json::to_value(&args).unwrap_or(Value::Null)` for typed inputs
-  that should never fail to serialise — surface the error instead.
-
 **Supply chain**
 
 - `cargo deny check` flags advisories on Tauri's transitive deps —
