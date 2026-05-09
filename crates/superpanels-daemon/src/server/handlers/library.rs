@@ -516,4 +516,64 @@ mod tests {
         .await;
         assert!(state.lock().await.library[0].tags.is_empty());
     }
+
+    /// Drives `apply_tag` directly so we can exercise the no-op match arms
+    /// without touching the daemon flow / canonical path resolution.
+    fn fresh_entry() -> LibraryEntry {
+        dummy_entry(Path::new("/never/used.png"))
+    }
+
+    #[test]
+    fn apply_tag_on_already_present_tag_is_noop() {
+        // (true, Some(_)) — re-asserting an existing tag must not append a
+        // duplicate. Earlier code accidentally appended on a case-mismatched
+        // tag because the equality predicate was case-sensitive; the case-
+        // insensitive lookup is exactly what this arm exercises.
+        let mut e = fresh_entry();
+        e.tags.push("blue".to_owned());
+        apply_tag(&mut e, "blue", true);
+        assert_eq!(e.tags, vec!["blue"]);
+        // Case-insensitive: "BLUE" must not duplicate "blue" either.
+        apply_tag(&mut e, "BLUE", true);
+        assert_eq!(e.tags, vec!["blue"]);
+    }
+
+    #[test]
+    fn apply_tag_off_for_missing_tag_is_noop() {
+        // (false, None) — clearing a tag that isn't present is fine.
+        let mut e = fresh_entry();
+        apply_tag(&mut e, "missing", false);
+        assert!(e.tags.is_empty());
+        // And it doesn't accidentally clear unrelated tags.
+        e.tags.push("red".to_owned());
+        apply_tag(&mut e, "blue", false);
+        assert_eq!(e.tags, vec!["red"]);
+    }
+
+    #[test]
+    fn apply_tag_favourite_clears_when_off() {
+        // The favourite branch is symmetric: passing on=false must clear the
+        // flag. Existing coverage only set it to true.
+        let mut e = fresh_entry();
+        e.favourite = true;
+        apply_tag(&mut e, "favourite", false);
+        assert!(!e.favourite);
+        // Idempotent — clearing again stays cleared.
+        apply_tag(&mut e, "favourite", false);
+        assert!(!e.favourite);
+        // Case-insensitive on the magic name.
+        e.favourite = true;
+        apply_tag(&mut e, "FAVOURITE", false);
+        assert!(!e.favourite);
+    }
+
+    #[test]
+    fn apply_tag_ignores_blank_tag_after_trim() {
+        // The whitespace-only branch is a silent no-op by design — guards
+        // against the IPC layer accidentally letting an empty payload through.
+        let mut e = fresh_entry();
+        apply_tag(&mut e, "   ", true);
+        apply_tag(&mut e, "", true);
+        assert!(e.tags.is_empty());
+    }
 }

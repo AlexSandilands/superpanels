@@ -45,9 +45,6 @@ blocked; all are small enough to defer.
 
 **Test gaps**
 
-- `apply_tag` no-op match arms (`(true, Some(_))`, `(false, None)`, and
-  the `favourite=false` path) aren't exercised in
-  `library_tag_toggles_tag_and_favourite`.
 - `library_list` multi-roots case isn't exercised in either the daemon or
   in-process tests.
 - `tray::handle_menu_event`'s profile-prefix parsing (`name != "empty"`
