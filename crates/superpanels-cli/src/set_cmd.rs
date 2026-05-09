@@ -407,7 +407,7 @@ mod tests {
                 stable_id: Some("uuid-a".to_owned()),
                 position: (0, 0),
                 resolution: (2560, 1440),
-                physical_size_mm: Some((597, 336)),
+                physical_size_mm: Some((597.0, 336.0)),
                 scale: 1.0,
                 rotation: Rotation::None,
                 refresh_hz: None,
@@ -460,7 +460,7 @@ mod tests {
                     "name": "DP-1",
                     "stable_id": "uuid-a",
                     "resolution": [2560, 1440],
-                    "physical_mm": [597, 336],
+                    "physical_mm": [597.0, 336.0],
                 },
                 {
                     "id": 1,

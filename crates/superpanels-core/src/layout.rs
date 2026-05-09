@@ -221,7 +221,7 @@ mod tests {
             stable_id: None,
             position: (x, y),
             resolution: (w_px, h_px),
-            physical_size_mm: Some((w_mm, h_mm)),
+            physical_size_mm: Some((f64::from(w_mm), f64::from(h_mm))),
             scale: 1.0,
             rotation: Rotation::None,
             refresh_hz: None,
@@ -686,7 +686,7 @@ mod tests {
     fn monitor_with_zero_physical_size_returns_invalid_physical_size() {
         // Arrange
         let mut m = monitor(0, "DP-1", 1920, 1080, 0, 0, 0, 296);
-        m.physical_size_mm = Some((0, 296));
+        m.physical_size_mm = Some((0.0, 296.0));
         let monitors = vec![m];
 
         // Act
@@ -761,7 +761,7 @@ mod tests {
                     stable_id: None,
                     position: (x_offset, 0),
                     resolution: (rw, rh),
-                    physical_size_mm: Some((mw, mh)),
+                    physical_size_mm: Some((f64::from(mw), f64::from(mh))),
                     scale: 1.0,
                     rotation: Rotation::None,
                     refresh_hz: None,

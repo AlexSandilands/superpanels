@@ -9,6 +9,10 @@ pub(super) const MM_PER_INCH: f64 = 25.4;
 /// One millionth of a pixel — used to collapse self-cancelling products to zero.
 const FLOAT_PIXEL_EPSILON: f64 = 1e-6;
 
+fn is_valid_mm(v: f64) -> bool {
+    v.is_finite() && v > 0.0
+}
+
 pub(super) fn validate_inputs(
     monitors: &[Monitor],
     fit: FitMode,
@@ -32,8 +36,8 @@ pub(super) fn validate_inputs(
 
     for m in monitors {
         // Safe: presence checked above.
-        let (w_mm, h_mm) = m.physical_size_mm.unwrap_or((0, 0));
-        if w_mm == 0 || h_mm == 0 {
+        let (w_mm, h_mm) = m.physical_size_mm.unwrap_or((0.0, 0.0));
+        if !is_valid_mm(w_mm) || !is_valid_mm(h_mm) {
             return Err(LayoutError::InvalidPhysicalSize {
                 name: m.name.clone(),
             });
@@ -74,8 +78,8 @@ pub(super) struct EffectiveMonitor {
 
 impl EffectiveMonitor {
     pub(super) fn from_monitor(m: &Monitor) -> Self {
-        // Presence validated by `validate_inputs`; (1, 1) keeps us out of div-by-zero.
-        let phys_mm = m.physical_size_mm.unwrap_or((1, 1));
+        // Presence validated by `validate_inputs`; (1.0, 1.0) keeps us out of div-by-zero.
+        let phys_mm = m.physical_size_mm.unwrap_or((1.0, 1.0));
         let res_px = m.resolution;
 
         let (w_mm, h_mm, w_px, h_px) = match m.rotation {
@@ -98,8 +102,8 @@ impl EffectiveMonitor {
         let pos_y_end = pos_y.saturating_add(logical_h.max(1));
 
         Self {
-            width_mm: f64::from(w_mm),
-            height_mm: f64::from(h_mm),
+            width_mm: w_mm,
+            height_mm: h_mm,
             pixel_w: w_px,
             pixel_h: h_px,
             pos_y,

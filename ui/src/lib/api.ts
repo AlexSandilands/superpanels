@@ -58,6 +58,15 @@ async function call<T>(name: string, args: Record<string, unknown> = {}): Promis
 export const api = {
   detectMonitors: () => call<Monitor[]>('detect_monitors'),
   redetect: () => call<{ monitors: number }>('redetect'),
+  setMonitorPhysicalSize: (
+    identifier: { stableId?: string | null; name?: string | null },
+    physicalMm: [number, number],
+  ) =>
+    call<void>('set_monitor_physical_size', {
+      stableId: identifier.stableId ?? null,
+      name: identifier.name ?? null,
+      physicalMm,
+    }),
   listProfiles: () => call<Profile[]>('list_profiles'),
   applyProfile: (name: string) => call<AppliedReport>('apply_profile', { name }),
   saveProfile: (profile: ProfileV2) => call<void>('save_profile', { profile }),

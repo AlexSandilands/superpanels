@@ -436,7 +436,7 @@ fn write_table<W: Write>(out: &mut W, monitors: &[Monitor]) -> std::io::Result<(
         let physical = match m.physical_size_mm {
             Some((w, h)) => {
                 let ppi = m.ppi.map(|p| format!("  {p:.0} PPI")).unwrap_or_default();
-                format!("{w}x{h}mm{ppi}")
+                format!("{w:.1}x{h:.1}mm{ppi}")
             }
             None => "(no physical size — run `monitor configure`)".to_owned(),
         };

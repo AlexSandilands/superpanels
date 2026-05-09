@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use base64::Engine;
 use serde_json::{Value, json};
-use superpanels_core::config::{Config, ConfigError};
+use superpanels_core::config::{Config, ConfigError, MonitorIdentifier, write_monitor_block};
 use superpanels_core::detect;
 use superpanels_core::library::{LibraryFilter as CoreLibraryFilter, apply_library_filter};
 
@@ -37,6 +37,7 @@ pub fn dispatch(method: &str, params: &Value, config_path: Option<&Path>) -> Cal
         "library_rescan" => library_rescan(config_path),
         "get_config" => get_config(config_path),
         "save_config" => save_config(params, config_path),
+        "set_monitor_physical_size" => set_monitor_physical_size(params, config_path),
         "current_state" => Ok(current_state()),
         other => Err(IpcError::invalid(format!(
             "method '{other}' has no in-process implementation"
@@ -245,6 +246,45 @@ fn save_config(params: &Value, config_path: Option<&Path>) -> CallResult {
     cfg.save_to(&path)
         .map_err(|e: ConfigError| IpcError::Config(e.to_string()))?;
     Ok(ok_unit())
+}
+
+fn set_monitor_physical_size(params: &Value, config_path: Option<&Path>) -> CallResult {
+    let identifier = parse_monitor_identifier(params)?;
+    let physical_mm = parse_physical_mm(params)?;
+    let path = config_path_or_default(config_path)?;
+    write_monitor_block(&path, &identifier, physical_mm)
+        .map_err(|e| IpcError::Config(e.to_string()))?;
+    Ok(ok_unit())
+}
+
+fn parse_monitor_identifier(params: &Value) -> Result<MonitorIdentifier, IpcError> {
+    if let Some(id) = params.get("stable_id").and_then(Value::as_str) {
+        if !id.is_empty() {
+            return Ok(MonitorIdentifier::StableId(id.to_owned()));
+        }
+    }
+    if let Some(name) = params.get("name").and_then(Value::as_str) {
+        if !name.is_empty() {
+            return Ok(MonitorIdentifier::Name(name.to_owned()));
+        }
+    }
+    Err(IpcError::invalid(
+        "params.stable_id or params.name (non-empty string) required",
+    ))
+}
+
+fn parse_physical_mm(params: &Value) -> Result<[f64; 2], IpcError> {
+    let v = params
+        .get("physical_mm")
+        .ok_or_else(|| IpcError::invalid("params.physical_mm required"))?;
+    let raw: [f64; 2] = serde_json::from_value(v.clone())
+        .map_err(|e| IpcError::invalid(format!("physical_mm must be [number, number]: {e}")))?;
+    if !raw.iter().all(|v| v.is_finite() && *v > 0.0) {
+        return Err(IpcError::invalid(
+            "physical_mm components must be finite and > 0",
+        ));
+    }
+    Ok(raw)
 }
 
 fn current_state() -> Value {

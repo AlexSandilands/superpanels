@@ -76,6 +76,7 @@ fn build_app() -> tauri::App {
             commands::get_config,
             commands::save_config,
             commands::redetect,
+            commands::set_monitor_physical_size,
             commands::current_state,
             commands::set_autostart,
             commands::get_autostart,

@@ -36,9 +36,10 @@ fn parse_one(entry: &str, idx: usize) -> Result<Monitor, DetectError> {
     })?;
 
     let mut remainder = entry;
-    let mut physical_size_mm = None;
+    let mut physical_size_mm: Option<(f64, f64)> = None;
     if let Some((head, tail)) = remainder.split_once('?') {
-        physical_size_mm = Some(parse_size(tail, idx, "physical size")?);
+        let (w, h) = parse_size(tail, idx, "physical size")?;
+        physical_size_mm = Some((f64::from(w), f64::from(h)));
         remainder = head;
     }
     let mut rotation = Rotation::None;
@@ -141,14 +142,14 @@ fn parse_rotation(s: &str, idx: usize) -> Result<Rotation, DetectError> {
     }
 }
 
-fn compute_ppi(resolution: (u32, u32), physical_mm: (u32, u32), rotation: Rotation) -> f64 {
+fn compute_ppi(resolution: (u32, u32), physical_mm: (f64, f64), rotation: Rotation) -> f64 {
     let (px_w, px_h) = match rotation {
         Rotation::None | Rotation::Inverted => resolution,
         Rotation::Right | Rotation::Left => (resolution.1, resolution.0),
     };
     let (mm_w, mm_h) = physical_mm;
-    let ppi_w = f64::from(px_w) / (f64::from(mm_w) / 25.4);
-    let ppi_h = f64::from(px_h) / (f64::from(mm_h) / 25.4);
+    let ppi_w = f64::from(px_w) / (mm_w / 25.4);
+    let ppi_h = f64::from(px_h) / (mm_h / 25.4);
     f64::midpoint(ppi_w, ppi_h)
 }
 
@@ -181,7 +182,7 @@ mod tests {
         assert_eq!(m.position, (0, 0));
         assert!((m.scale - 1.5).abs() < f64::EPSILON);
         assert_eq!(m.rotation, Rotation::Right);
-        assert_eq!(m.physical_size_mm, Some((597, 336)));
+        assert_eq!(m.physical_size_mm, Some((597.0, 336.0)));
         let ppi = m.ppi.unwrap();
         assert!(
             ppi > 80.0 && ppi < 130.0,

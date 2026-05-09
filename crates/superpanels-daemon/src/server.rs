@@ -102,6 +102,7 @@ async fn dispatch(
         "delete_profile" => handlers::cmd_delete_profile(req, state).await,
         "get_config" => handlers::cmd_get_config(state).await,
         "save_config" => handlers::cmd_save_config(req, state).await,
+        "set_monitor_physical_size" => handlers::cmd_set_monitor_physical_size(req, state).await,
         "detect_monitors" => handlers::cmd_detect_monitors(state).await,
         "preview_crop" => handlers::cmd_preview_crop(req, state).await,
         "library_list" => handlers::cmd_library_list(req, state).await,

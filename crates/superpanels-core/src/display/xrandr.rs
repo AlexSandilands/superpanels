@@ -116,7 +116,7 @@ struct RawConnector {
     enabled: bool,
     position: (i32, i32),
     resolution: (u32, u32),
-    physical_size_mm: Option<(u32, u32)>,
+    physical_size_mm: Option<(f64, f64)>,
     rotation: Rotation,
     refresh_hz: Option<f32>,
     active_mode_block: bool,
@@ -198,7 +198,7 @@ fn parse_connector_header(line: &str) -> Option<RawConnector> {
             && let Some(height_str) = height_tok.strip_suffix("mm")
             && let Ok(h) = height_str.parse::<u32>()
         {
-            conn.physical_size_mm = Some((w, h));
+            conn.physical_size_mm = Some((f64::from(w), f64::from(h)));
             break;
         }
     }
@@ -380,11 +380,11 @@ mod tests {
         assert_eq!(monitors[0].name, "DP-1");
         assert_eq!(monitors[0].resolution, (2560, 1440));
         assert_eq!(monitors[0].position, (0, 0));
-        assert_eq!(monitors[0].physical_size_mm, Some((597, 336)));
+        assert_eq!(monitors[0].physical_size_mm, Some((597.0, 336.0)));
         assert_eq!(monitors[1].name, "HDMI-1");
         assert_eq!(monitors[1].resolution, (1920, 1080));
         assert_eq!(monitors[1].position, (2560, 0));
-        assert_eq!(monitors[1].physical_size_mm, Some((597, 336)));
+        assert_eq!(monitors[1].physical_size_mm, Some((597.0, 336.0)));
     }
 
     #[test]

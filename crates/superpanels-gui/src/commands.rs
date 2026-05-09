@@ -268,6 +268,39 @@ pub fn redetect(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcErro
 }
 
 #[tauri::command]
+pub fn set_monitor_physical_size(
+    stable_id: Option<String>,
+    name: Option<String>,
+    physical_mm: [f64; 2],
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Value, IpcError> {
+    if stable_id.as_deref().is_none_or(str::is_empty) && name.as_deref().is_none_or(str::is_empty) {
+        return Err(IpcError::invalid("stable_id or name is required"));
+    }
+    if !physical_mm.iter().all(|v| v.is_finite() && *v > 0.0) {
+        return Err(IpcError::invalid(
+            "physical_mm components must be finite and > 0",
+        ));
+    }
+    let mut params = json!({ "physical_mm": physical_mm });
+    if let Some(id) = stable_id {
+        if !id.is_empty() {
+            params["stable_id"] = Value::String(id);
+        }
+    }
+    if let Some(n) = name {
+        if !n.is_empty() {
+            params["name"] = Value::String(n);
+        }
+    }
+    bridge::call(
+        "set_monitor_physical_size",
+        params,
+        state.config_path().as_deref(),
+    )
+}
+
+#[tauri::command]
 pub fn current_state(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
     let v = bridge::call("current_state", json!({}), state.config_path().as_deref())?;
     state.set_snapshot(parse_runtime_snapshot(&v));

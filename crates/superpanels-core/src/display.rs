@@ -34,7 +34,7 @@ pub struct Monitor {
     /// Native-orientation mm. Sourced from `[[monitor]]` config — detectors
     /// don't expose this. `None` until the user fills it in; bezel math
     /// returns `LayoutError::PhysicalSizeMissing` until then.
-    pub physical_size_mm: Option<(u32, u32)>,
+    pub physical_size_mm: Option<(f64, f64)>,
     pub scale: f64,
     pub rotation: Rotation,
     pub refresh_hz: Option<f32>,
@@ -141,7 +141,7 @@ pub fn detect(manual_override: Option<&str>) -> Result<Vec<Monitor>, DetectError
 mod tests {
     use super::*;
 
-    fn sample_monitor(physical_size_mm: Option<(u32, u32)>) -> Monitor {
+    fn sample_monitor(physical_size_mm: Option<(f64, f64)>) -> Monitor {
         Monitor {
             id: MonitorId(0),
             name: "DP-1".to_owned(),
@@ -160,7 +160,7 @@ mod tests {
     #[test]
     fn monitor_with_physical_size_round_trips_through_json() {
         // Arrange
-        let monitor = sample_monitor(Some((597, 336)));
+        let monitor = sample_monitor(Some((597.0, 336.0)));
 
         // Act
         let json = serde_json::to_string(&monitor).unwrap();

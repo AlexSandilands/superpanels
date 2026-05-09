@@ -132,7 +132,7 @@ pub(crate) fn parse_wlr_randr_json(
         let scale = output.scale.unwrap_or(1.0);
         let physical_size_mm = output
             .physical_size
-            .map(|RawSize { width, height }| (width, height));
+            .map(|RawSize { width, height }| (f64::from(width), f64::from(height)));
         let stable_id = hash_edid_triple(
             output.make.as_deref(),
             output.model.as_deref(),

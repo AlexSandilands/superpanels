@@ -5,6 +5,10 @@ use std::path::Path;
 
 use super::{Config, ConfigError};
 
+fn is_valid_mm(v: f64) -> bool {
+    v.is_finite() && v > 0.0
+}
+
 /// Bails on the first failure for a focused error message.
 pub(super) fn validate(cfg: &Config, path: &Path) -> Result<(), ConfigError> {
     validate_monitors(cfg, path)?;
@@ -22,11 +26,11 @@ fn validate_monitors(cfg: &Config, path: &Path) -> Result<(), ConfigError> {
                 message: "at least one of `stable_id` or `name` must be set".to_owned(),
             });
         }
-        if m.physical_mm[0] == 0 || m.physical_mm[1] == 0 {
+        if !is_valid_mm(m.physical_mm[0]) || !is_valid_mm(m.physical_mm[1]) {
             return Err(ConfigError::Invalid {
                 path: path.to_owned(),
                 field: format!("monitor[{i}].physical_mm"),
-                message: "values must be > 0".to_owned(),
+                message: "values must be finite and > 0".to_owned(),
             });
         }
     }

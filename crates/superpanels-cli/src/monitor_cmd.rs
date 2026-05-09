@@ -21,7 +21,7 @@ pub(crate) fn monitor_configure_cmd(
     let path = Config::default_path().context("locating config path")?;
     write_monitor_block(&path, &id, physical_mm).context("writing monitor block")?;
     println!(
-        "wrote {field} = \"{identifier}\", physical_mm = [{w}, {h}] to {p}",
+        "wrote {field} = \"{identifier}\", physical_mm = [{w:.1}, {h:.1}] to {p}",
         field = if stable_id { "stable_id" } else { "name" },
         w = physical_mm[0],
         h = physical_mm[1],
@@ -34,7 +34,7 @@ pub(crate) fn resolve_physical_mm(
     mm: Option<&str>,
     diagonal: Option<&str>,
     aspect: Option<&str>,
-) -> Result<[u32; 2]> {
+) -> Result<[f64; 2]> {
     match (mm, diagonal, aspect) {
         (Some(s), None, None) => parse_mm(s),
         (None, Some(d), Some(a)) => {
@@ -47,14 +47,14 @@ pub(crate) fn resolve_physical_mm(
     }
 }
 
-fn parse_mm(s: &str) -> Result<[u32; 2]> {
+fn parse_mm(s: &str) -> Result<[f64; 2]> {
     let (w, h) = s
         .split_once('x')
         .ok_or_else(|| anyhow!("expected `WxH`, got `{s}`"))?;
-    let w: u32 = w.parse().context("parsing mm width")?;
-    let h: u32 = h.parse().context("parsing mm height")?;
-    if w == 0 || h == 0 {
-        bail!("mm values must be > 0");
+    let w: f64 = w.parse().context("parsing mm width")?;
+    let h: f64 = h.parse().context("parsing mm height")?;
+    if !(w.is_finite() && w > 0.0 && h.is_finite() && h > 0.0) {
+        bail!("mm values must be finite and > 0");
     }
     Ok([w, h])
 }
@@ -98,7 +98,8 @@ mod tests {
         let got = parse_mm("597x336").unwrap();
 
         // Assert
-        assert_eq!(got, [597, 336]);
+        assert!((got[0] - 597.0).abs() < f64::EPSILON);
+        assert!((got[1] - 336.0).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -221,7 +222,18 @@ mod tests {
         let got = resolve_physical_mm(Some("597x336"), None, None).unwrap();
 
         // Assert
-        assert_eq!(got, [597, 336]);
+        assert!((got[0] - 597.0).abs() < f64::EPSILON);
+        assert!((got[1] - 336.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn resolve_physical_mm_arm_mm_only_accepts_fractional_input() {
+        // Act
+        let got = resolve_physical_mm(Some("597.5x336.2"), None, None).unwrap();
+
+        // Assert
+        assert!((got[0] - 597.5).abs() < f64::EPSILON);
+        assert!((got[1] - 336.2).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -231,12 +243,12 @@ mod tests {
 
         // Assert
         assert!(
-            (590..=605).contains(&got[0]),
+            (590.0..=605.0).contains(&got[0]),
             "width was {}, expected ~597",
             got[0]
         );
         assert!(
-            (330..=345).contains(&got[1]),
+            (330.0..=345.0).contains(&got[1]),
             "height was {}, expected ~336",
             got[1]
         );

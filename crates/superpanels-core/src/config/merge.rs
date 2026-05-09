@@ -33,13 +33,13 @@ fn matches_block(block: &MonitorConfig, m: &Monitor) -> bool {
     false
 }
 
-fn compute_ppi(resolution: (u32, u32), physical_mm: (u32, u32), rotation: Rotation) -> f64 {
+fn compute_ppi(resolution: (u32, u32), physical_mm: (f64, f64), rotation: Rotation) -> f64 {
     let (px_w, px_h) = match rotation {
         Rotation::None | Rotation::Inverted => resolution,
         Rotation::Right | Rotation::Left => (resolution.1, resolution.0),
     };
     let (mm_w, mm_h) = physical_mm;
-    let ppi_w = f64::from(px_w) / (f64::from(mm_w) / MM_PER_INCH);
-    let ppi_h = f64::from(px_h) / (f64::from(mm_h) / MM_PER_INCH);
+    let ppi_w = f64::from(px_w) / (mm_w / MM_PER_INCH);
+    let ppi_h = f64::from(px_h) / (mm_h / MM_PER_INCH);
     f64::midpoint(ppi_w, ppi_h)
 }

@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use serde_json::{Value, json};
-use superpanels_core::config::Config;
+use superpanels_core::config::{Config, MonitorIdentifier, write_monitor_block};
 use superpanels_core::ipc::{IpcRequest, IpcResponse};
 use superpanels_core::layout::{BezelConfig, FitMode, compute_crop_specs_with_offset};
 use tokio::sync::Mutex;
@@ -117,6 +117,70 @@ pub(super) async fn cmd_save_config(
     }
     info!("config saved");
     IpcResponse::success(json!({}))
+}
+
+pub(super) async fn cmd_set_monitor_physical_size(
+    req: IpcRequest,
+    state: Arc<Mutex<DaemonState>>,
+) -> IpcResponse {
+    let identifier = match parse_monitor_identifier(&req) {
+        Ok(id) => id,
+        Err(msg) => return IpcResponse::failure(msg),
+    };
+    let physical_mm = match parse_physical_mm(&req) {
+        Ok(mm) => mm,
+        Err(msg) => return IpcResponse::failure(msg),
+    };
+
+    let mut guard = state.lock().await;
+    let path = match guard.config_save_path() {
+        Ok(p) => p,
+        Err(e) => return IpcResponse::failure(e.to_string()),
+    };
+    if let Err(e) = write_monitor_block(&path, &identifier, physical_mm) {
+        return IpcResponse::failure(e.to_string());
+    }
+
+    // Re-read so the in-memory config reflects what's on disk, then re-merge
+    // into the detected monitors so subsequent `detect_monitors` reflects the
+    // new physical size without forcing a rescan.
+    match Config::load_from(&path) {
+        Ok(cfg) => {
+            cfg.merge_into_monitors(&mut guard.monitors);
+            guard.config = cfg;
+        }
+        Err(e) => return IpcResponse::failure(e.to_string()),
+    }
+
+    info!("monitor physical size updated");
+    IpcResponse::success(json!({}))
+}
+
+fn parse_monitor_identifier(req: &IpcRequest) -> Result<MonitorIdentifier, String> {
+    if let Some(id) = req.params.get("stable_id").and_then(Value::as_str) {
+        if !id.is_empty() {
+            return Ok(MonitorIdentifier::StableId(id.to_owned()));
+        }
+    }
+    if let Some(name) = req.params.get("name").and_then(Value::as_str) {
+        if !name.is_empty() {
+            return Ok(MonitorIdentifier::Name(name.to_owned()));
+        }
+    }
+    Err("params.stable_id or params.name (non-empty string) required".to_owned())
+}
+
+fn parse_physical_mm(req: &IpcRequest) -> Result<[f64; 2], String> {
+    let v = req
+        .params
+        .get("physical_mm")
+        .ok_or_else(|| "params.physical_mm required".to_owned())?;
+    let raw: [f64; 2] = serde_json::from_value(v.clone())
+        .map_err(|e| format!("physical_mm must be [number, number]: {e}"))?;
+    if !raw.iter().all(|v| v.is_finite() && *v > 0.0) {
+        return Err("physical_mm components must be finite and > 0".to_owned());
+    }
+    Ok(raw)
 }
 
 pub(super) async fn cmd_detect_monitors(state: Arc<Mutex<DaemonState>>) -> IpcResponse {

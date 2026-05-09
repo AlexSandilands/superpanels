@@ -37,7 +37,7 @@ pub enum MonitorEditError {
 pub fn write_monitor_block(
     path: &Path,
     identifier: &MonitorIdentifier,
-    physical_mm: [u32; 2],
+    physical_mm: [f64; 2],
 ) -> Result<(), MonitorEditError> {
     let existing = match fs::read_to_string(path) {
         Ok(s) => s,
@@ -114,7 +114,7 @@ fn block_matches(block: &Table, identifier: &MonitorIdentifier) -> bool {
     }
 }
 
-fn apply_block_fields(block: &mut Table, identifier: &MonitorIdentifier, physical_mm: [u32; 2]) {
+fn apply_block_fields(block: &mut Table, identifier: &MonitorIdentifier, physical_mm: [f64; 2]) {
     match identifier {
         MonitorIdentifier::StableId(id) => {
             if !block.contains_key("stable_id") {
@@ -128,31 +128,21 @@ fn apply_block_fields(block: &mut Table, identifier: &MonitorIdentifier, physica
         }
     }
     let mut arr = Array::new();
-    arr.push(i64::from(physical_mm[0]));
-    arr.push(i64::from(physical_mm[1]));
+    arr.push(physical_mm[0]);
+    arr.push(physical_mm[1]);
     block.insert("physical_mm", value(arr));
 }
 
 /// Physical mm from a diagonal length and an aspect ratio (e.g. 27.0, 16:9).
+/// Result is rounded to 1dp so it matches what the GUI's mm editor displays.
 #[must_use]
-pub fn diagonal_to_mm(diagonal_inches: f64, aspect_w: u32, aspect_h: u32) -> [u32; 2] {
+pub fn diagonal_to_mm(diagonal_inches: f64, aspect_w: u32, aspect_h: u32) -> [f64; 2] {
     let aw = f64::from(aspect_w);
     let ah = f64::from(aspect_h);
     let diag_mm = diagonal_inches * 25.4;
     let scale = diag_mm / (aw * aw + ah * ah).sqrt();
-    let w = (aw * scale).round();
-    let h = (ah * scale).round();
-    let to_u32 = |v: f64| -> u32 {
-        if v.is_finite() && v >= 0.0 && v <= f64::from(u32::MAX) {
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            // reason: range checked above
-            let n = v as u32;
-            n
-        } else {
-            0
-        }
-    };
-    [to_u32(w), to_u32(h)]
+    let round_1dp = |v: f64| (v * 10.0).round() / 10.0;
+    [round_1dp(aw * scale), round_1dp(ah * scale)]
 }
 
 #[cfg(test)]
@@ -171,7 +161,7 @@ mod tests {
         write_monitor_block(
             &path,
             &MonitorIdentifier::Name("DP-1".to_owned()),
-            [597, 336],
+            [597.0, 336.0],
         )
         .unwrap();
 
@@ -179,7 +169,7 @@ mod tests {
         let written = fs::read_to_string(&path).unwrap();
         assert!(written.contains("[[monitor]]"));
         assert!(written.contains("name = \"DP-1\""));
-        assert!(written.contains("physical_mm = [597, 336]"));
+        assert!(written.contains("physical_mm = [597.0, 336.0]"));
     }
 
     #[test]
@@ -197,7 +187,7 @@ mod tests {
         write_monitor_block(
             &path,
             &MonitorIdentifier::Name("DP-1".to_owned()),
-            [597, 336],
+            [597.0, 336.0],
         )
         .unwrap();
 
@@ -207,7 +197,7 @@ mod tests {
             written.contains("# user comment"),
             "comment was dropped: {written}"
         );
-        assert!(written.contains("physical_mm = [597, 336]"));
+        assert!(written.contains("physical_mm = [597.0, 336.0]"));
         assert_eq!(written.matches("[[monitor]]").count(), 1);
     }
 
@@ -223,7 +213,7 @@ mod tests {
         write_monitor_block(
             &path,
             &MonitorIdentifier::Name("HDMI-A-1".to_owned()),
-            [527, 296],
+            [527.0, 296.0],
         )
         .unwrap();
 
@@ -239,7 +229,7 @@ mod tests {
         let [w, h] = diagonal_to_mm(27.0, 16, 9);
 
         // Assert
-        assert!((595..=599).contains(&w), "width was {w}");
-        assert!((334..=338).contains(&h), "height was {h}");
+        assert!((595.0..=599.0).contains(&w), "width was {w}");
+        assert!((334.0..=338.0).contains(&h), "height was {h}");
     }
 }

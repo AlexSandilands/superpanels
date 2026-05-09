@@ -12,9 +12,9 @@ the next batch of polish work.
 - [x] The Fix button currently navigates to **Settings → General**.
 - [x] It should navigate to **Settings → Monitors** instead.
 
-## 2. Settings → Monitors can't set physical size
+## 2. Settings → Monitors can't set physical size ✅
 
-- [ ] The Monitors page doesn't expose a control for entering the
+- [x] The Monitors page doesn't expose a control for entering the
       physical width/height (mm). Add it. This is the canonical place
       a user would expect to fix the warning from item 1.
 

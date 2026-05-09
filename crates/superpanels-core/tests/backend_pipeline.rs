@@ -27,7 +27,7 @@ fn monitor(id: u32, name: &str, x: i32) -> Monitor {
         stable_id: Some(format!("{name}-uuid")),
         position: (x, 0),
         resolution: (1920, 1080),
-        physical_size_mm: Some((480, 270)),
+        physical_size_mm: Some((480.0, 270.0)),
         scale: 1.0,
         rotation: Rotation::None,
         refresh_hz: None,

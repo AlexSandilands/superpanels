@@ -39,6 +39,17 @@
           </div>
         {/if}
       </div>
+      {#if t.action}
+        <button
+          class="btn sm"
+          onclick={() => {
+            t.action?.onClick();
+            toast.dismiss(t.id);
+          }}
+        >
+          {t.action.label}
+        </button>
+      {/if}
       <button
         class="btn ghost icon sm"
         aria-label="Dismiss"

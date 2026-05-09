@@ -30,7 +30,7 @@ fn monitor(id: u32, name: &str, x: i32, w_px: u32, h_px: u32, w_mm: u32, h_mm: u
         stable_id: None,
         position: (x, 0),
         resolution: (w_px, h_px),
-        physical_size_mm: Some((w_mm, h_mm)),
+        physical_size_mm: Some((f64::from(w_mm), f64::from(h_mm))),
         scale: 1.0,
         rotation: Rotation::None,
         refresh_hz: None,

@@ -136,8 +136,10 @@ pub struct MonitorConfig {
     pub stable_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    /// `[w, h]` in millimetres.
-    pub physical_mm: [u32; 2],
+    /// `[w, h]` in millimetres. Fractional values are accepted so 1dp UI
+    /// inputs round-trip; legacy integer literals (`physical_mm = [597, 336]`)
+    /// in existing configs continue to parse via serde's int→float coercion.
+    pub physical_mm: [f64; 2],
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -266,7 +268,7 @@ mod tests {
             monitors: vec![MonitorConfig {
                 stable_id: Some("uuid-1".to_owned()),
                 name: Some("DP-1".to_owned()),
-                physical_mm: [597, 336],
+                physical_mm: [597.0, 336.0],
             }],
             profiles: vec![sample_profile("home")],
         }
@@ -288,7 +290,8 @@ mod tests {
 
         // Assert
         assert_eq!(final_load.profiles[0].name, "renamed");
-        assert_eq!(final_load.monitors[0].physical_mm, [597, 336]);
+        let mm = final_load.monitors[0].physical_mm;
+        assert!((mm[0] - 597.0).abs() < 1e-9 && (mm[1] - 336.0).abs() < 1e-9);
         assert_eq!(final_load.general.theme, "auto");
     }
 
@@ -384,7 +387,7 @@ mod tests {
         cfg.merge_into_monitors(&mut monitors);
 
         // Assert
-        assert_eq!(monitors[0].physical_size_mm, Some((597, 336)));
+        assert_eq!(monitors[0].physical_size_mm, Some((597.0, 336.0)));
         assert!(monitors[0].ppi.is_some());
     }
 
@@ -410,6 +413,6 @@ mod tests {
         cfg.merge_into_monitors(&mut monitors);
 
         // Assert
-        assert_eq!(monitors[0].physical_size_mm, Some((597, 336)));
+        assert_eq!(monitors[0].physical_size_mm, Some((597.0, 336.0)));
     }
 }
