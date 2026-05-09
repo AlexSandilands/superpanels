@@ -45,9 +45,6 @@ blocked; all are small enough to defer.
 
 **Test gaps**
 
-- `tray::handle_menu_event`'s profile-prefix parsing (`name != "empty"`
-  guard) has no unit coverage. Tauri-bound code is hard to drive in unit
-  tests; consider extracting the pure-string parsing into a helper.
 - `cmd_set_monitor_physical_size` validation tests now cover oversize
   values, oversize identifiers, and control-character rejection on the
   daemon side. The in-process mirror (`commands/in_process.rs`) goes

@@ -306,8 +306,7 @@ fn handle_menu_event(app: &AppHandle, id: &str, _handle: &AppHandle, state: &Arc
             );
         }
         other if other.starts_with(PROFILE_PREFIX) => {
-            let name = other.trim_start_matches(PROFILE_PREFIX).to_owned();
-            if !name.is_empty() && name != "empty" {
+            if let Some(name) = parse_profile_menu_id(other) {
                 let _ = bridge::call(
                     "apply_profile",
                     json!({ "name": name }),
@@ -317,6 +316,22 @@ fn handle_menu_event(app: &AppHandle, id: &str, _handle: &AppHandle, state: &Arc
         }
         _ => {}
     }
+}
+
+/// Pure parser for `tray.profile.<name>` menu IDs.
+///
+/// Returns the trimmed profile name when `id` starts with [`PROFILE_PREFIX`],
+/// the suffix is non-empty, and is not the literal `"empty"` placeholder used
+/// for the disabled "(no profiles)" menu item. Other inputs return `None`.
+///
+/// Extracted from `handle_menu_event` so the prefix logic can be unit-tested
+/// without standing up a Tauri `AppHandle`.
+fn parse_profile_menu_id(id: &str) -> Option<String> {
+    let suffix = id.strip_prefix(PROFILE_PREFIX)?;
+    if suffix.is_empty() || suffix == "empty" {
+        return None;
+    }
+    Some(suffix.to_owned())
 }
 
 fn toggle_main_window(handle: &AppHandle) {
@@ -380,6 +395,51 @@ mod tests {
 
         let added = vec!["home".to_owned(), "work".to_owned(), "travel".to_owned()];
         assert_ne!(menu_signature(&base, &added), baseline);
+    }
+
+    #[test]
+    fn parse_profile_menu_id_extracts_name_after_prefix() {
+        assert_eq!(
+            parse_profile_menu_id("tray.profile.home").as_deref(),
+            Some("home")
+        );
+        // Profile names with dots / unicode survive — trim_start_matches would
+        // have eaten matching chars, but `strip_prefix` only matches once.
+        assert_eq!(
+            parse_profile_menu_id("tray.profile.家.work").as_deref(),
+            Some("家.work")
+        );
+    }
+
+    #[test]
+    fn parse_profile_menu_id_rejects_empty_and_placeholder() {
+        // Empty suffix happens if the prefix is the whole id; `"empty"` is the
+        // disabled "(no profiles)" placeholder we install when the profile
+        // list is empty (see `build_menu`).
+        assert!(parse_profile_menu_id("tray.profile.").is_none());
+        assert!(parse_profile_menu_id("tray.profile.empty").is_none());
+    }
+
+    #[test]
+    fn parse_profile_menu_id_rejects_unrelated_ids() {
+        // Other tray menu IDs must not accidentally route through the
+        // profile-apply branch — `apply_profile` with `name="quit"` would be a
+        // very surprising consequence of clicking Quit.
+        for id in [
+            ID_NEXT,
+            ID_PREV,
+            ID_PAUSE,
+            ID_OPEN,
+            ID_SETTINGS,
+            ID_QUIT,
+            "tray.profileXhome",
+            "",
+        ] {
+            assert!(
+                parse_profile_menu_id(id).is_none(),
+                "unexpected match for {id}"
+            );
+        }
     }
 
     #[test]
