@@ -27,6 +27,12 @@ gui: build
     -pkill -x superpanels-gui
     WEBKIT_DISABLE_DMABUF_RENDERER=1 ./target/release/superpanels-gui
 
+# Run the GUI with Tauri devtools enabled (Ctrl+Shift+I / right-click →
+# Inspect). Debug build via `cargo run` so the [env] block applies.
+gui-dev: ui-build
+    -pkill -x superpanels-gui
+    cargo run -p superpanels-gui --features dev-tools
+
 # Pass arguments through to the CLI: `just cli set --bezel-h 20 path/to.jpg`.
 cli *ARGS: build
     ./target/release/superpanels {{ARGS}}
