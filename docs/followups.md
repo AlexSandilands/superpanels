@@ -67,15 +67,6 @@ blocked; all are small enough to defer.
   200 ms / 4K thumbnail target become tracked baselines. Phase 6
   stabilisation is the natural home.
 
-**GUI hygiene**
-
-- `crates/superpanels-gui/src/commands.rs` is at 453 LoC — well past the
-  400 soft limit (and approaching the 600 hard limit) after the
-  `set_monitor_physical_size` addition. Peel by responsibility — the
-  `commands/in_process.rs` precedent establishes the directory form;
-  `commands/autostart.rs` and `commands/monitors.rs` are obvious next
-  splits.
-
 **Test gaps**
 
 - `apply_tag` no-op match arms (`(true, Some(_))`, `(false, None)`, and
