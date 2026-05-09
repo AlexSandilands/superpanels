@@ -33,10 +33,6 @@ blocked; all are small enough to defer.
   `crates/superpanels-gui/src/ipc_client.rs` are near-duplicates (frame format,
   timeouts, `MAX_FRAME_BYTES`, error enum). When either is next touched, hoist
   into `superpanels-core::ipc::client` (sync, no tokio).
-- `bezel_mm_to_f32` / `bezel_h_to_f32` are duplicated between
-  `crates/superpanels-daemon/src/server/handlers.rs` and
-  `crates/superpanels-gui/src/commands/in_process.rs`. Move to a shared
-  helper in `superpanels-core` next time bezel parsing changes.
 - `parse_monitor_identifier` and `parse_physical_mm` (added with the
   `set_monitor_physical_size` IPC) are now duplicated near-verbatim between
   the same two sites — one returns `String`, the other `IpcError`. Same

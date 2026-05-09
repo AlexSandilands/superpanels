@@ -239,12 +239,12 @@ pub(super) async fn cmd_preview_crop(
         Ok(s) => s,
         Err(e) => return IpcResponse::failure(e.0),
     };
-    let bezels = match (bezel_mm_to_f32(bezel_h), bezel_mm_to_f32(bezel_v)) {
-        (Some(h), Some(v)) => BezelConfig {
+    let bezels = match (v::validate_bezel_mm(bezel_h), v::validate_bezel_mm(bezel_v)) {
+        (Ok(h), Ok(v)) => BezelConfig {
             horizontal_mm: h,
             vertical_mm: v,
         },
-        _ => return IpcResponse::failure("bezel_*_mm out of range"),
+        (Err(e), _) | (_, Err(e)) => return IpcResponse::failure(e.0),
     };
 
     let roots = {
@@ -271,17 +271,6 @@ pub(super) async fn cmd_preview_crop(
     match compute_crop_specs_with_offset(&monitors, &bezels, fit, dims, offset_px, image_size_px) {
         Ok(specs) => IpcResponse::success(&specs),
         Err(e) => IpcResponse::failure(e.to_string()),
-    }
-}
-
-fn bezel_mm_to_f32(v: f64) -> Option<f32> {
-    // reason: f64→f32 narrowing is intentional for bezel mm; bound-check first
-    // so the cast cannot produce ±inf/NaN.
-    #[allow(clippy::cast_possible_truncation)]
-    if v.is_finite() && (-1e6..=1e6).contains(&v) {
-        Some(v as f32)
-    } else {
-        None
     }
 }
 
@@ -506,7 +495,11 @@ mod tests {
         )
         .await;
         assert!(!resp.is_ok());
-        assert!(resp.error.unwrap().contains("out of range"));
+        let err = resp.error.unwrap();
+        assert!(
+            err.contains("bezel_*_mm") && err.contains("exceeds"),
+            "unexpected bezel error: {err}"
+        );
     }
 
     #[tokio::test]

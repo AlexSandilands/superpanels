@@ -25,6 +25,10 @@ pub const MAX_PHYSICAL_MM: f64 = 10_000.0;
 pub const MAX_PREVIEW_OFFSET_PX: i32 = 1_000_000;
 /// Maximum `image_size_px` per axis for `preview_crop`.
 pub const MAX_PREVIEW_SIZE_PX: u32 = 1_000_000;
+/// Maximum `|bezel_*_mm|` accepted for `preview_crop`. 1 km of bezel is well
+/// past any real panel; the bound exists so the f64→f32 narrowing can't
+/// produce ±inf or NaN.
+pub const MAX_BEZEL_MM: f64 = 1_000_000.0;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 #[error("{0}")]
@@ -124,6 +128,25 @@ pub fn validate_preview_image_size(raw: [u32; 2]) -> Result<[u32; 2], Validation
         }
     }
     Ok(raw)
+}
+
+/// Bound-check a bezel measurement and narrow `f64 → f32`.
+///
+/// `BezelConfig::{horizontal_mm,vertical_mm}` are `f32`, but the wire format
+/// is `f64`. The bounds check rejects ±inf, NaN, and absurd magnitudes so the
+/// `as f32` cast can't silently produce ±inf.
+pub fn validate_bezel_mm(v: f64) -> Result<f32, ValidationError> {
+    if !v.is_finite() {
+        return Err(ValidationError::new("bezel_*_mm must be finite"));
+    }
+    if !(-MAX_BEZEL_MM..=MAX_BEZEL_MM).contains(&v) {
+        return Err(ValidationError::new(format!(
+            "bezel_*_mm = {v} exceeds ±{MAX_BEZEL_MM}"
+        )));
+    }
+    // reason: bound-checked above so the narrowing cast is well-defined.
+    #[allow(clippy::cast_possible_truncation)]
+    Ok(v as f32)
 }
 
 #[cfg(test)]
@@ -242,5 +265,34 @@ mod tests {
     #[test]
     fn preview_image_size_rejects_above_cap() {
         assert!(validate_preview_image_size([MAX_PREVIEW_SIZE_PX + 1, 0]).is_err());
+    }
+
+    #[test]
+    fn bezel_mm_accepts_typical_panel_bezel() {
+        // 5 mm is a fairly typical thin-bezel monitor; round-trips through
+        // f32 cleanly so the comparison is straightforward.
+        assert!((validate_bezel_mm(5.0).unwrap() - 5.0_f32).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn bezel_mm_accepts_zero_and_signed_values() {
+        // Negative bezels are nonsensical physically but the geometry code
+        // accepts them; the validator's job is just bounds + finiteness.
+        assert!(validate_bezel_mm(0.0).unwrap().abs() < f32::EPSILON);
+        assert!((validate_bezel_mm(-3.0).unwrap() + 3.0_f32).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn bezel_mm_rejects_non_finite() {
+        assert!(validate_bezel_mm(f64::NAN).is_err());
+        assert!(validate_bezel_mm(f64::INFINITY).is_err());
+        assert!(validate_bezel_mm(f64::NEG_INFINITY).is_err());
+    }
+
+    #[test]
+    fn bezel_mm_rejects_above_cap() {
+        assert!(validate_bezel_mm(MAX_BEZEL_MM + 1.0).is_err());
+        assert!(validate_bezel_mm(-MAX_BEZEL_MM - 1.0).is_err());
+        assert!(validate_bezel_mm(1e30).is_err());
     }
 }

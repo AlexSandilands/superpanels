@@ -154,8 +154,8 @@ fn preview_crop(params: &Value, config_path: Option<&Path>) -> CallResult {
         .map_err(|e| IpcError::Image(e.to_string()))?;
     let monitors = detect(None)?;
     let bezels = BezelConfig {
-        horizontal_mm: bezel_h_to_f32(bezel_h)?,
-        vertical_mm: bezel_h_to_f32(bezel_v)?,
+        horizontal_mm: v::validate_bezel_mm(bezel_h).map_err(|e| IpcError::invalid(e.0))?,
+        vertical_mm: v::validate_bezel_mm(bezel_v).map_err(|e| IpcError::invalid(e.0))?,
     };
     let specs =
         compute_crop_specs_with_offset(&monitors, &bezels, fit, dims, offset_px, image_size_px)?;
@@ -183,18 +183,6 @@ fn canonicalise_inside_roots(requested: &Path, roots: &[PathBuf]) -> Result<Path
         )));
     }
     Ok(canonical)
-}
-
-fn bezel_h_to_f32(v: f64) -> Result<f32, IpcError> {
-    // reason: f64→f32 is intentional for bezel mm — reproduces the same
-    // truncation the daemon does internally. Bounds-check first so the cast
-    // can't produce ±inf/NaN.
-    #[allow(clippy::cast_possible_truncation)]
-    if v.is_finite() && (-1e6..=1e6).contains(&v) {
-        Ok(v as f32)
-    } else {
-        Err(IpcError::invalid("bezel_*_mm out of range"))
-    }
 }
 
 fn library_list(params: &Value, config_path: Option<&Path>) -> CallResult {
