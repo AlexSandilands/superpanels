@@ -42,15 +42,6 @@ blocked; all are small enough to defer.
   the same two sites — one returns `String`, the other `IpcError`. Same
   follow-up scope.
 
-**Tray polling**
-
-- `crates/superpanels-gui/src/tray.rs::spawn_poller` is an unbounded
-  `loop { sleep; … }` thread with no shutdown signal — teardown leaks the
-  thread. Wire a `tokio::sync::Notify` or an `AtomicBool` shutdown flag.
-- The poller refetches `list_profiles` every tick regardless of whether
-  anything changed; cache the response signature and skip the call when
-  unchanged to keep daemon-idle CPU under SPEC §19's 0.1 % budget.
-
 **Library thumbnail cache**
 
 - `cmd_library_thumbnail` decodes + resizes on every call. Add an LRU keyed

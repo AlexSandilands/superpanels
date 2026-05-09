@@ -59,9 +59,15 @@ pub(crate) fn install(app: &App, state: Arc<AppState>) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Background poller that re-fetches `current_state` and rebuilds the tray
-/// menu when the active profile or pause flag changes. Keeps the tick mark
-/// and "Pause / Resume" label in sync without the user re-opening the menu.
+/// Background poller that re-fetches `current_state` and updates the tray's
+/// menu and tooltip when their respective inputs change. Keeps the active-
+/// profile tick mark and "Pause / Resume" label in sync without the user
+/// re-opening the menu.
+///
+/// Menu and tooltip have **separate cache keys** so that a slideshow advance
+/// (which changes only `current_filename`) updates the tooltip but does not
+/// trigger an `org.kde.StatusNotifierItem` `set_menu` round-trip — the
+/// dominant per-tick cost on KDE Plasma.
 ///
 /// Exits within one `POLL_INTERVAL` after [`AppState::request_shutdown`] is
 /// called, so it doesn't outlive the Tauri runtime on `ExitRequested`.
@@ -69,7 +75,8 @@ pub(crate) fn spawn_poller(handle: AppHandle, state: Arc<AppState>) {
     std::thread::Builder::new()
         .name("tray-poller".into())
         .spawn(move || {
-            let mut last_signature: Option<String> = None;
+            let mut last_menu_sig: Option<String> = None;
+            let mut last_tooltip_sig: Option<String> = None;
             while !state.shutting_down() {
                 std::thread::sleep(POLL_INTERVAL);
                 if state.shutting_down() {
@@ -77,23 +84,39 @@ pub(crate) fn spawn_poller(handle: AppHandle, state: Arc<AppState>) {
                 }
                 refresh_snapshot(&state);
                 let snap = state.snapshot();
-                let sig = format!(
-                    "{}|{}|{}",
-                    snap.active_profile.clone().unwrap_or_default(),
-                    snap.current_filename.clone().unwrap_or_default(),
-                    snap.paused
-                );
-                if last_signature.as_deref() == Some(sig.as_str()) {
-                    continue;
+                let profiles = list_profile_names(&state);
+
+                let menu_sig = menu_signature(&snap, &profiles);
+                if last_menu_sig.as_deref() != Some(menu_sig.as_str()) {
+                    if let Err(e) = apply_menu(&handle, &profiles, &snap) {
+                        tracing::warn!(error = %e, "tray menu rebuild failed");
+                    } else {
+                        last_menu_sig = Some(menu_sig);
+                    }
                 }
-                if let Err(e) = rebuild_menu(&handle, &state) {
-                    tracing::warn!(error = %e, "tray menu rebuild failed");
-                } else {
-                    last_signature = Some(sig);
+
+                let tooltip = tooltip_for(&snap);
+                if last_tooltip_sig.as_deref() != Some(tooltip.as_str()) {
+                    if let Err(e) = apply_tooltip(&handle, &tooltip) {
+                        tracing::warn!(error = %e, "tray tooltip update failed");
+                    } else {
+                        last_tooltip_sig = Some(tooltip);
+                    }
                 }
             }
         })
         .ok();
+}
+
+fn menu_signature(snap: &RuntimeSnapshot, profiles: &[String]) -> String {
+    // Newline separator can't appear inside profile names — `validate_profiles`
+    // rejects control chars (`SPEC §17`), so it's safe as a delimiter.
+    format!(
+        "{}|{}|{}",
+        snap.active_profile.as_deref().unwrap_or(""),
+        snap.paused,
+        profiles.join("\n"),
+    )
 }
 
 fn tray_icon_image() -> tauri::image::Image<'static> {
@@ -146,13 +169,21 @@ fn build_initial_menu(handle: &AppHandle, state: &Arc<AppState>) -> tauri::Resul
     build_menu(handle, &profiles, &snap)
 }
 
-fn rebuild_menu(handle: &AppHandle, state: &Arc<AppState>) -> tauri::Result<()> {
-    let snap = state.snapshot();
-    let profiles = list_profile_names(state);
-    let menu = build_menu(handle, &profiles, &snap)?;
+fn apply_menu(
+    handle: &AppHandle,
+    profiles: &[String],
+    snap: &RuntimeSnapshot,
+) -> tauri::Result<()> {
+    let menu = build_menu(handle, profiles, snap)?;
     if let Some(tray) = handle.tray_by_id("main-tray") {
         tray.set_menu(Some(menu))?;
-        tray.set_tooltip(Some(tooltip_for(&snap)))?;
+    }
+    Ok(())
+}
+
+fn apply_tooltip(handle: &AppHandle, tooltip: &str) -> tauri::Result<()> {
+    if let Some(tray) = handle.tray_by_id("main-tray") {
+        tray.set_tooltip(Some(tooltip))?;
     }
     Ok(())
 }
@@ -318,6 +349,37 @@ mod tests {
             current_filename: file.map(str::to_owned),
             paused,
         }
+    }
+
+    #[test]
+    fn menu_signature_ignores_filename_changes() {
+        // Slideshow advance is the hot case — filename changes every tick but
+        // the menu structure (profiles, active tick mark, pause label) stays
+        // identical. Locking this invariant keeps the per-tick `set_menu`
+        // DBus call from firing during normal slideshow playback.
+        let profiles = vec!["home".to_owned(), "work".to_owned()];
+        let a = snap(Some("home"), Some("a.png"), false);
+        let b = snap(Some("home"), Some("b.png"), false);
+        assert_eq!(menu_signature(&a, &profiles), menu_signature(&b, &profiles));
+    }
+
+    #[test]
+    fn menu_signature_changes_when_active_profile_or_pause_or_list_changes() {
+        let base = snap(Some("home"), Some("a.png"), false);
+        let profiles = vec!["home".to_owned(), "work".to_owned()];
+        let baseline = menu_signature(&base, &profiles);
+
+        let switched = snap(Some("work"), Some("a.png"), false);
+        assert_ne!(menu_signature(&switched, &profiles), baseline);
+
+        let paused = snap(Some("home"), Some("a.png"), true);
+        assert_ne!(menu_signature(&paused, &profiles), baseline);
+
+        let renamed = vec!["house".to_owned(), "work".to_owned()];
+        assert_ne!(menu_signature(&base, &renamed), baseline);
+
+        let added = vec!["home".to_owned(), "work".to_owned(), "travel".to_owned()];
+        assert_ne!(menu_signature(&base, &added), baseline);
     }
 
     #[test]
