@@ -16,6 +16,11 @@ path = "src/main.rs"
 [lints]
 workspace = true
 
+[features]
+# Enables Tauri's devtools (Ctrl+Shift+I, right-click → Inspect). Off in
+# release builds; opt in locally with `cargo run --features dev-tools`.
+dev-tools = ["tauri/devtools"]
+
 [build-dependencies]
 tauri-build = { workspace = true }
 

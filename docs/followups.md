@@ -22,23 +22,6 @@ affected stacks (track upstream WebKit / `webkit2gtk` Arch package).
 `desktop_body_includes_webkit_dmabuf_workaround` test assertions in
 `autostart.rs`.
 
-## Strip Tauri devtools from release builds
-
-`Cargo.toml` enables `"devtools"` in the workspace `tauri` features array
-(around line 79). The runtime auto-open call has been removed from
-`crates/superpanels-gui/src/lib.rs`, but with the feature flag still on,
-Ctrl+Shift+I and right-click → Inspect remain functional in a release
-build.
-
-**Revisit when:** preparing the first user-facing release, or sooner if
-shipping signed builds.
-
-**Action:** drop `"devtools"` from the `tauri` features list in
-`Cargo.toml`. If devtools-during-development is still wanted, gate it via
-a Cargo feature on `superpanels-gui` (e.g. `[features] dev-tools =
-["tauri/devtools"]`) and only build with it locally. Verify by running a
-release build and confirming Ctrl+Shift+I no longer opens anything.
-
 ## MonitorSizeEditor — clamp physical-mm upper bound (defence-in-depth)
 
 Logged 2026-05-09 from the UI-overhaul agent-team review (Security
