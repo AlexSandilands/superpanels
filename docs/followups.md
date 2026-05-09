@@ -22,33 +22,6 @@ affected stacks (track upstream WebKit / `webkit2gtk` Arch package).
 `desktop_body_includes_webkit_dmabuf_workaround` test assertions in
 `autostart.rs`.
 
-## Switch TS module file names to kebab-case
-
-`docs/style-frontend.md` §Naming currently prescribes **camelCase** for
-TS module files (matching the post-overhaul code: `previewLayout.ts`,
-`sourceImage.ts`, etc.) — but kebab-case is more conventional in the TS
-ecosystem broadly. Settling on kebab-case fixes the `thumb_cache.ts`
-snake-case outlier in the same pass.
-
-**Revisit when:** convenient (it's a mechanical rename); ideally before
-much more new TS lands so the diff stays narrow.
-
-**Action:**
-- Rewrite `docs/style-frontend.md` §Naming: TS modules use
-  `kebab-case.ts`. Update the inline examples that reference
-  `previewLayout.ts` / `sourceImage.ts` / `profileSwatch.ts` paths.
-- `git mv` every multi-word TS module to kebab-case. Known offenders
-  (camelCase): `previewLayout.ts`, `sourceImage.ts`, `profileSwatch.ts`,
-  `imageTransform.svelte.ts`, `canvasView.svelte.ts`,
-  `transformActions.ts`, `slideshowController.svelte.ts` (audit
-  `ui/src/lib/` for any I missed). Snake-case: `thumb_cache.ts`.
-- Co-located test files follow (`*.test.ts`).
-- Update all imports. Run `cd ui && npm run check && npm test` to
-  confirm.
-- Single-word modules (`api.ts`, `keymap.ts`, `runtime.svelte.ts`,
-  `library.svelte.ts`, `profile.svelte.ts`, `toast.svelte.ts`,
-  `ui.svelte.ts`, `actions.ts`, etc.) are unaffected.
-
 ## Phase 3 review nitpicks (advisory)
 
 Logged by the agent-team review on 2026-04-30 after Phase 3 landed. None

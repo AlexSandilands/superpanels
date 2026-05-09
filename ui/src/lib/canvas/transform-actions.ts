@@ -10,9 +10,9 @@ import {
   normaliseVGaps,
   vNeighbourPairs,
   type PreviewMonitor,
-} from '$lib/canvas/previewLayout';
-import { canvasView } from '$lib/stores/canvasView.svelte';
-import { imageTransform } from '$lib/stores/imageTransform.svelte';
+} from '$lib/canvas/preview-layout';
+import { canvasView } from '$lib/stores/canvas-view.svelte';
+import { imageTransform } from '$lib/stores/image-transform.svelte';
 import { monitorStore } from '$lib/stores/monitors.svelte';
 import { profileStore } from '$lib/stores/profile.svelte';
 import { toast } from '$lib/stores/toast.svelte';

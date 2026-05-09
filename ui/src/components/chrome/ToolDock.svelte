@@ -1,6 +1,6 @@
 <script lang="ts">
   import Icon from '../widgets/Icon.svelte';
-  import { canvasView } from '$lib/stores/canvasView.svelte';
+  import { canvasView } from '$lib/stores/canvas-view.svelte';
 
   type Props = {
     onResetTransform: () => void;

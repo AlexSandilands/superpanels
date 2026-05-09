@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getLibraryThumbUrl } from '$lib/library/thumb_cache';
+  import { getLibraryThumbUrl } from '$lib/library/thumb-cache';
 
   type Props = { path: string; alt: string };
   let { path, alt }: Props = $props();

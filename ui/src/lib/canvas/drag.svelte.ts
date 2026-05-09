@@ -2,9 +2,9 @@
 // rendering; this module owns the per-pointer-down→move→up state transitions
 // and emits committed deltas via the supplied callbacks.
 
-import { canvasView } from '$lib/stores/canvasView.svelte';
-import { monitorRect, type PreviewMonitor, type Rect } from '$lib/canvas/previewLayout';
-import type { ImageTransform } from '$lib/stores/imageTransform.svelte';
+import { canvasView } from '$lib/stores/canvas-view.svelte';
+import { monitorRect, type PreviewMonitor, type Rect } from '$lib/canvas/preview-layout';
+import type { ImageTransform } from '$lib/stores/image-transform.svelte';
 
 export type Drag =
   | { kind: 'image'; startX: number; startY: number; startMmX: number; startMmY: number }

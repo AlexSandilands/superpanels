@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { PreviewMonitor } from '$lib/canvas/previewLayout';
-  import { canvasView } from '$lib/stores/canvasView.svelte';
+  import type { PreviewMonitor } from '$lib/canvas/preview-layout';
+  import { canvasView } from '$lib/stores/canvas-view.svelte';
   import StepperInput from '../widgets/StepperInput.svelte';
 
   type ImageTransform = {

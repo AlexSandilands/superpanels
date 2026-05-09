@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { profileSwatch } from './profileSwatch';
+import { profileSwatch } from './profile-swatch';
 
 describe('profileSwatch', () => {
   it('returns_same_swatch_for_same_name', () => {

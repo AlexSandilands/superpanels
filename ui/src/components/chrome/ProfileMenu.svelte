@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Profile } from '$lib/api';
-  import { profileSwatch } from '$lib/profileSwatch';
+  import { profileSwatch } from '$lib/profile-swatch';
   import Icon from '../widgets/Icon.svelte';
 
   import { toast } from '$lib/stores/toast.svelte';

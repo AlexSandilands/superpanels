@@ -1,6 +1,6 @@
 <script lang="ts">
   import { monitorStore } from '$lib/stores/monitors.svelte';
-  import { stableId } from '$lib/canvas/previewLayout';
+  import { stableId } from '$lib/canvas/preview-layout';
 
   type Props = {
     onPin: (monitorId: string) => void;

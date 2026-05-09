@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import type { Profile } from '$lib/api';
-  import { canvasView } from '$lib/stores/canvasView.svelte';
+  import { canvasView } from '$lib/stores/canvas-view.svelte';
   import { libraryStore } from '$lib/stores/library.svelte';
   import { monitorStore } from '$lib/stores/monitors.svelte';
   import { profileStore } from '$lib/stores/profile.svelte';
@@ -13,7 +13,7 @@
     seedOverridesFromMonitors,
     sourceImageState,
     useSourceImage,
-  } from '$lib/stores/imageTransform.svelte';
+  } from '$lib/stores/image-transform.svelte';
   import {
     applyDraftProfile,
     openMainWindow,
@@ -29,7 +29,7 @@
     totalPixels,
     uniformGap,
     vNeighbourPairs,
-  } from '$lib/canvas/previewLayout';
+  } from '$lib/canvas/preview-layout';
   import { rotateSelected } from '$lib/canvas/select';
   import {
     resetLayout as runResetLayout,
@@ -37,8 +37,8 @@
     setHGap as runSetHGap,
     setVGap as runSetVGap,
     snapCover as runSnapCover,
-  } from '$lib/canvas/transformActions';
-  import { slideshowController } from '$lib/slideshowController.svelte';
+  } from '$lib/canvas/transform-actions';
+  import { slideshowController } from '$lib/slideshow-controller.svelte';
   import { attachWindowEvents } from '$lib/events/window';
   import { dispatchKey } from '$lib/keymap';
   import { defaultBezels, isSpanBody } from '$lib/types/profile';

@@ -47,7 +47,7 @@ afterEach(() => {
 
 describe('loadSourceImage', () => {
   it('dedupes_concurrent_loads_for_same_path', async () => {
-    const mod = await import('./sourceImage');
+    const mod = await import('./source-image');
     // Two concurrent calls should issue exactly one IPC and resolve to the
     // same value. (Async functions wrap their return in a new Promise on
     // each call, so identity-equality on the returned Promise wouldn't
@@ -61,7 +61,7 @@ describe('loadSourceImage', () => {
   });
 
   it('returns_decoded_image_with_natural_dims', async () => {
-    const mod = await import('./sourceImage');
+    const mod = await import('./source-image');
     const img = await mod.loadSourceImage('/img/a.png');
     expect(img.naturalW).toBe(100);
     expect(img.naturalH).toBe(50);
@@ -69,7 +69,7 @@ describe('loadSourceImage', () => {
   });
 
   it('peekSourceImage_returns_loaded_after_resolution', async () => {
-    const mod = await import('./sourceImage');
+    const mod = await import('./source-image');
     expect(mod.peekSourceImage('/img/a.png')).toBeNull();
     await mod.loadSourceImage('/img/a.png');
     const peeked = mod.peekSourceImage('/img/a.png');
@@ -77,7 +77,7 @@ describe('loadSourceImage', () => {
   });
 
   it('lru_evicts_oldest_when_over_capacity', async () => {
-    const mod = await import('./sourceImage');
+    const mod = await import('./source-image');
     // MAX_ENTRIES is 16; load 17 distinct paths and the first should evict.
     for (let i = 0; i < 17; i += 1) {
       await mod.loadSourceImage(`/img/${i}.png`);
@@ -87,7 +87,7 @@ describe('loadSourceImage', () => {
   });
 
   it('on_error_evicts_failed_entry_so_retry_refetches', async () => {
-    const mod = await import('./sourceImage');
+    const mod = await import('./source-image');
     // First call rejects.
     ctx.invokeImpl = () => Promise.reject(new Error('boom'));
     await expect(mod.loadSourceImage('/img/x.png')).rejects.toThrow('boom');

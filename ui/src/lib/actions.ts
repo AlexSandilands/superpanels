@@ -4,7 +4,7 @@
 
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { api, errorMessage, type Profile } from '$lib/api';
-import { stableId } from '$lib/canvas/previewLayout';
+import { stableId } from '$lib/canvas/preview-layout';
 import { monitorStore } from '$lib/stores/monitors.svelte';
 import { profileStore } from '$lib/stores/profile.svelte';
 import { runtime } from '$lib/stores/runtime.svelte';

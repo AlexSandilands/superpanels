@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Profile } from '$lib/api';
-  import { profileSwatch } from '$lib/profileSwatch';
+  import { profileSwatch } from '$lib/profile-swatch';
 
   type Props = {
     profiles: Profile[];

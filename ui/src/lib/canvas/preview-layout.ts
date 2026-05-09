@@ -5,7 +5,7 @@
 export type {
   PreviewMonitor,
   // re-exported types
-} from './previewLayout/projection';
+} from './preview-layout/projection';
 export {
   buildPreviewMonitors,
   coverImageRect,
@@ -13,8 +13,8 @@ export {
   nativeMm,
   rotationDeg,
   stableId,
-} from './previewLayout/projection';
-export type { GapPair } from './previewLayout/gaps';
+} from './preview-layout/projection';
+export type { GapPair } from './preview-layout/gaps';
 export {
   hNeighbourPairs,
   normaliseAxis,
@@ -24,9 +24,9 @@ export {
   vNeighbourPairs,
   xOverlap,
   yOverlap,
-} from './previewLayout/gaps';
+} from './preview-layout/gaps';
 
-import type { PreviewMonitor } from './previewLayout/projection';
+import type { PreviewMonitor } from './preview-layout/projection';
 
 export type Rect = { x: number; y: number; w: number; h: number };
 

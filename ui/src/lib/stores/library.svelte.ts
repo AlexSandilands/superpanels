@@ -6,7 +6,7 @@
 // IPC roundtrip per keystroke.
 
 import { api, errorMessage, type LibraryEntry } from '$lib/api';
-import { getLibraryThumbUrl } from '$lib/library/thumb_cache';
+import { getLibraryThumbUrl } from '$lib/library/thumb-cache';
 import type { LibraryFilter } from '$lib/types/LibraryFilter';
 import { toast } from './toast.svelte';
 
@@ -116,7 +116,7 @@ function allTags(): string[] {
   return [...set].sort();
 }
 
-// Number of thumbnails to prewarm into `thumb_cache` after a refresh. Sized to
+// Number of thumbnails to prewarm into `thumb-cache` after a refresh. Sized to
 // cover the initial viewport of `LibraryModal` (~4 cols × ~4 rows at the
 // default 1100×720 modal size) plus headroom for taller windows. Without this,
 // the first time the modal opens the visible thumbs each fire their own

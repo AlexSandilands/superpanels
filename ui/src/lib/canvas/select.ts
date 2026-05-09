@@ -1,7 +1,7 @@
 // Selection-scoped canvas mutations: rotate / nudge the currently-selected
 // monitor by deltas. No-op when nothing is selected.
 
-import { canvasView } from '$lib/stores/canvasView.svelte';
+import { canvasView } from '$lib/stores/canvas-view.svelte';
 
 export function rotateSelected(deltaDeg: number): void {
   const id = canvasView.selectId;

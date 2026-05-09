@@ -7,7 +7,7 @@
 
   import { onMount } from 'svelte';
   import type { Monitor } from '$lib/api';
-  import { canvasView } from '$lib/stores/canvasView.svelte';
+  import { canvasView } from '$lib/stores/canvas-view.svelte';
   import { runtime } from '$lib/stores/runtime.svelte';
   import { ui } from '$lib/stores/ui.svelte';
   import {
@@ -16,7 +16,7 @@
     hNeighbourPairs,
     vNeighbourPairs,
     type PreviewMonitor,
-  } from '$lib/canvas/previewLayout';
+  } from '$lib/canvas/preview-layout';
   import { createDragController } from '$lib/canvas/drag.svelte';
   import CanvasGrid from './CanvasGrid.svelte';
   import DimensionLines from './DimensionLines.svelte';

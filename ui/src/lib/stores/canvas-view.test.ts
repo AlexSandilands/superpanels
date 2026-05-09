@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { canvasView, type MonitorOverride } from './canvasView.svelte';
+import { canvasView, type MonitorOverride } from './canvas-view.svelte';
 
 function ovr(xMm: number, yMm: number, rotation: 0 | 90 | 180 | 270 = 0): MonitorOverride {
   return { xMm, yMm, rotation };

@@ -3,7 +3,7 @@
 // overrides, and the cover-fit image rect. SPEC §4 (bezel math).
 
 import type { Monitor } from '$lib/api';
-import type { MonitorOverride } from '$lib/stores/canvasView.svelte';
+import type { MonitorOverride } from '$lib/stores/canvas-view.svelte';
 
 const FALLBACK_DPI = 96;
 

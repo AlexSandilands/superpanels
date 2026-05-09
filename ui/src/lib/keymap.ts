@@ -3,11 +3,11 @@
 // the small `Overlays` object so the component remains the source of truth
 // for its modal flags.
 
-import { canvasView } from '$lib/stores/canvasView.svelte';
+import { canvasView } from '$lib/stores/canvas-view.svelte';
 import { profileStore } from '$lib/stores/profile.svelte';
 import { nudgeSelected, rotateSelected } from '$lib/canvas/select';
 import { applyDraftProfile, redetectMonitorsWithToast, switchAndApply } from '$lib/actions';
-import { slideshowController } from '$lib/slideshowController.svelte';
+import { slideshowController } from '$lib/slideshow-controller.svelte';
 
 export type Overlays = {
   libraryOpen: boolean;

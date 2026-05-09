@@ -4,9 +4,9 @@
 
 import { untrack } from 'svelte';
 import { errorMessage, type Monitor } from '$lib/api';
-import { canvasView, type MonitorOverride } from '$lib/stores/canvasView.svelte';
-import { coverImageRect, defaultOverrides, type PreviewMonitor } from '$lib/canvas/previewLayout';
-import { loadSourceImage, peekSourceImage } from '$lib/library/sourceImage';
+import { canvasView, type MonitorOverride } from '$lib/stores/canvas-view.svelte';
+import { coverImageRect, defaultOverrides, type PreviewMonitor } from '$lib/canvas/preview-layout';
+import { loadSourceImage, peekSourceImage } from '$lib/library/source-image';
 import { toast } from '$lib/stores/toast.svelte';
 
 export type ImageTransform = {
