@@ -264,6 +264,7 @@ fn current_state() -> Value {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)] // reason: tests fail loudly on harness errors
 #[allow(clippy::expect_used)] // reason: same
+#[allow(clippy::panic)] // reason: same — explicit panic on unexpected enum branch
 mod tests {
     use super::*;
     use tempfile::tempdir;
@@ -352,6 +353,90 @@ mod tests {
         cfg.save_to(&path).unwrap();
         let err = library_thumbnail(&json!({"path": "/etc/passwd"}), Some(&path)).unwrap_err();
         assert!(matches!(err, IpcError::InvalidArgument(_)));
+    }
+
+    #[test]
+    fn set_monitor_physical_size_rejects_above_cap() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        Config::default().save_to(&path).unwrap();
+        let err = set_monitor_physical_size(
+            &json!({
+                "stable_id": "abc",
+                "physical_mm": [1.0e30, 100.0],
+            }),
+            Some(&path),
+        )
+        .unwrap_err();
+        let msg = match err {
+            IpcError::InvalidArgument(m) => m,
+            other => panic!("expected InvalidArgument, got {other:?}"),
+        };
+        assert!(msg.contains("must be in (0,"), "unexpected message: {msg}");
+    }
+
+    #[test]
+    fn set_monitor_physical_size_rejects_oversize_stable_id() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        Config::default().save_to(&path).unwrap();
+        let big_id = "x".repeat(v::MAX_MONITOR_ID_CHARS + 1);
+        let err = set_monitor_physical_size(
+            &json!({
+                "stable_id": big_id,
+                "physical_mm": [100.0, 100.0],
+            }),
+            Some(&path),
+        )
+        .unwrap_err();
+        let msg = match err {
+            IpcError::InvalidArgument(m) => m,
+            other => panic!("expected InvalidArgument, got {other:?}"),
+        };
+        assert!(msg.contains("exceeds"), "unexpected message: {msg}");
+    }
+
+    #[test]
+    fn set_monitor_physical_size_rejects_control_chars_in_name() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        Config::default().save_to(&path).unwrap();
+        let err = set_monitor_physical_size(
+            &json!({
+                "name": "DP-1\nname=injected",
+                "physical_mm": [100.0, 100.0],
+            }),
+            Some(&path),
+        )
+        .unwrap_err();
+        let msg = match err {
+            IpcError::InvalidArgument(m) => m,
+            other => panic!("expected InvalidArgument, got {other:?}"),
+        };
+        assert!(msg.contains("control"), "unexpected message: {msg}");
+    }
+
+    #[test]
+    fn set_monitor_physical_size_rejects_missing_identifier() {
+        // Daemon-side coverage doesn't pin this branch; the in-process
+        // mirror should reject when both `stable_id` and `name` are absent
+        // (or empty) so the regression "wrote a [[monitor]] block keyed on
+        // empty string" can't slip in.
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        Config::default().save_to(&path).unwrap();
+
+        for params in [
+            json!({"physical_mm": [100.0, 100.0]}),
+            json!({"stable_id": "", "physical_mm": [100.0, 100.0]}),
+            json!({"stable_id": "", "name": "", "physical_mm": [100.0, 100.0]}),
+        ] {
+            let err = set_monitor_physical_size(&params, Some(&path)).unwrap_err();
+            assert!(
+                matches!(&err, IpcError::InvalidArgument(m) if m.contains("stable_id") || m.contains("name")),
+                "params {params}: expected identifier-required InvalidArgument, got {err:?}"
+            );
+        }
     }
 
     #[test]

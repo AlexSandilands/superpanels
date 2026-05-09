@@ -43,16 +43,6 @@ blocked; all are small enough to defer.
   200 ms / 4K thumbnail target become tracked baselines. Phase 6
   stabilisation is the natural home.
 
-**Test gaps**
-
-- `cmd_set_monitor_physical_size` validation tests now cover oversize
-  values, oversize identifiers, and control-character rejection on the
-  daemon side. The in-process mirror (`commands/in_process.rs`) goes
-  through the same `superpanels_core::ipc::validate` helpers but lacks
-  handler-integration coverage; add a parallel test for the empty
-  `stable_id` / missing-identifier paths whenever the in-process file is
-  next touched.
-
 **Supply chain**
 
 - `cargo deny check` flags advisories on Tauri's transitive deps —
