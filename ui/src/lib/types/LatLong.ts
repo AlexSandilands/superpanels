@@ -4,4 +4,4 @@
  * Decimal degrees lat/long for sunset/sunrise scheduling
  * (`docs/spec/09-profiles-schedules.md` §9.3).
  */
-export type LatLong = { lat: number; lon: number };
+export type LatLong = { lat: number, lon: number, };

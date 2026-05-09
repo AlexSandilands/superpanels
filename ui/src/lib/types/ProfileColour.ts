@@ -4,16 +4,4 @@
  * Curated 12-swatch palette used for tray pills, manager rows, and dialog
  * pickers. Values map 1:1 to the mockup's `SWATCHES` list.
  */
-export type ProfileColour =
-  | 'slate'
-  | 'stone'
-  | 'red'
-  | 'orange'
-  | 'amber'
-  | 'yellow'
-  | 'lime'
-  | 'emerald'
-  | 'teal'
-  | 'sky'
-  | 'indigo'
-  | 'violet';
+export type ProfileColour = "slate" | "stone" | "red" | "orange" | "amber" | "yellow" | "lime" | "emerald" | "teal" | "sky" | "indigo" | "violet";

@@ -4,11 +4,8 @@
  * One `[[monitor]]` block. At least one of `stable_id` / `name` must be set;
  * matching tries `stable_id` first, then falls back to `name`.
  */
-export type MonitorConfig = {
-  stable_id?: string | null;
-  name?: string | null;
-  /**
-   * `[w, h]` in millimetres. Fractional values accepted.
-   */
-  physical_mm: [number, number];
-};
+export type MonitorConfig = { stable_id?: string | null, name?: string | null, 
+/**
+ * `[w, h]` in millimetres. Fractional values accepted.
+ */
+physical_mm: [number, number], };

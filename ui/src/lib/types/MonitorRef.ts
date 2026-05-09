@@ -6,4 +6,4 @@
  * runtime [`MonitorId`]. `name` is the fallback when the detector can't
  * supply a `stable_id`.
  */
-export type MonitorRef = { stable_id: string; name: string };
+export type MonitorRef = { stable_id: string, name: string, };
