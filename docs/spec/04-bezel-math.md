@@ -2,6 +2,8 @@
 
 The principle: **the image maps to the *physical* screen plane, including the space occupied by bezels.** The crops handed to each monitor are non-overlapping; the content that "falls" in the bezel gap simply isn't drawn, but it is *accounted for* in the layout, so visual continuity is preserved across the bezel.
 
+**Gaps are derived from authored placements.** As of v0.8 there is no separate `BezelConfig` — each profile's `monitor_state: HashMap<StableId, MonitorPlacement>` carries the per-monitor `(x_mm, y_mm)` directly, and the bezel/air-gap between any two monitors falls out of the difference between their authored placements. This eliminates the double-bookkeeping where the same physical gap was authored both as a bezel value and as a position difference.
+
 ## 4.1 Worked example — two identical monitors, uniform gap
 
 ```

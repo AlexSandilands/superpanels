@@ -113,20 +113,14 @@ fn delete_profile(params: &Value, config_path: Option<&Path>) -> CallResult {
 }
 
 fn preview_crop(params: &Value, config_path: Option<&Path>) -> CallResult {
-    use superpanels_core::layout::{BezelConfig, FitMode, compute_crop_specs_with_offset};
+    use superpanels_core::layout::{
+        FitMode, compute_crop_specs_with_offset, synthesise_placements,
+    };
 
     let image = params
         .get("image")
         .and_then(Value::as_str)
         .ok_or_else(|| IpcError::invalid("params.image required"))?;
-    let bezel_h = params
-        .get("bezel_h_mm")
-        .and_then(Value::as_f64)
-        .unwrap_or(0.0);
-    let bezel_v = params
-        .get("bezel_v_mm")
-        .and_then(Value::as_f64)
-        .unwrap_or(0.0);
     let fit_str = params.get("fit").and_then(Value::as_str).unwrap_or("fill");
     let fit = match fit_str {
         "fill" => FitMode::Fill,
@@ -152,13 +146,17 @@ fn preview_crop(params: &Value, config_path: Option<&Path>) -> CallResult {
     let canonical = canonicalise_inside_roots(Path::new(image), &cfg.library.roots)?;
     let dims = superpanels_core::image::read_dimensions(&canonical)
         .map_err(|e| IpcError::Image(e.to_string()))?;
-    let monitors = detect(None)?;
-    let bezels = BezelConfig {
-        horizontal_mm: v::validate_bezel_mm(bezel_h).map_err(|e| IpcError::invalid(e.0))?,
-        vertical_mm: v::validate_bezel_mm(bezel_v).map_err(|e| IpcError::invalid(e.0))?,
-    };
-    let specs =
-        compute_crop_specs_with_offset(&monitors, &bezels, fit, dims, offset_px, image_size_px)?;
+    let mut monitors = detect(None)?;
+    cfg.merge_into_monitors(&mut monitors);
+    let placements = synthesise_placements(&monitors);
+    let specs = compute_crop_specs_with_offset(
+        &monitors,
+        &placements,
+        fit,
+        dims,
+        offset_px,
+        image_size_px,
+    )?;
     Ok(ok_payload(specs))
 }
 

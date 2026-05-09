@@ -5,7 +5,12 @@ import { invoke } from '@tauri-apps/api/core';
 import type { IpcError } from './types/IpcError';
 import type { LibraryFilter } from './types/LibraryFilter';
 import type { PreviewArgs } from './types/PreviewArgs';
-import type { Profile } from './types/profile';
+import type { Profile } from './types/profile-helpers';
+import type { MonitorPlacement } from './types/MonitorPlacement';
+import type { ProfileValidity } from './types/ProfileValidity';
+import type { Schedule } from './types/Schedule';
+import type { LatLong } from './types/LatLong';
+import type { SpanSource } from './types/SpanSource';
 
 export type { Profile };
 
@@ -67,10 +72,34 @@ export const api = {
       name: identifier.name ?? null,
       physicalMm,
     }),
-  listProfiles: () => call<Profile[]>('list_profiles'),
+  listProfiles: () =>
+    call<{
+      profiles: Profile[];
+      validity: { profile: string; validity: ProfileValidity }[];
+    }>('list_profiles'),
   applyProfile: (name: string) => call<AppliedReport>('apply_profile', { name }),
   saveProfile: (profile: Profile) => call<void>('save_profile', { profile }),
   deleteProfile: (name: string) => call<void>('delete_profile', { name }),
+  duplicateProfile: (name: string, newName: string) =>
+    call<void>('duplicate_profile', { name, newName }),
+  renameProfile: (name: string, newName: string) => call<void>('rename_profile', { name, newName }),
+  updateProfileMonitorState: (profile: string, stableId: string, placement: MonitorPlacement) =>
+    call<void>('update_profile_monitor_state', { profile, stableId, placement }),
+  updateProfileImageTransform: (
+    profile: string,
+    payload: { offset?: [number, number]; image_size_px?: [number, number] | null },
+  ) => call<void>('update_profile_image_transform', { profile, ...payload }),
+  updateProfileSource: (profile: string, source: SpanSource) =>
+    call<void>('update_profile_source', { profile, source }),
+  listSchedules: () =>
+    call<{
+      schedules: Schedule[];
+      paused: boolean;
+      location: LatLong | null;
+    }>('list_schedules'),
+  saveSchedules: (schedules: Schedule[]) => call<void>('save_schedules', { schedules }),
+  setSchedulesPaused: (paused: boolean) =>
+    call<{ paused: boolean }>('set_schedules_paused', { paused }),
   previewCrop: (args: PreviewArgs) => call<unknown>('preview_crop', { args }),
   libraryList: (filter: LibraryFilter) => call<LibraryEntry[]>('library_list', { filter }),
   libraryThumbnail: (path: string) =>

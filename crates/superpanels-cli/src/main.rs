@@ -27,6 +27,7 @@ use tracing_subscriber::EnvFilter;
 
 mod monitor_cmd;
 mod profile_cmd;
+mod schedule_cmd;
 mod set_cmd;
 
 use monitor_cmd::monitor_configure_cmd;
@@ -62,12 +63,6 @@ enum Command {
         /// One or more source image paths. Phase 1 takes a single image.
         #[arg(value_name = "IMAGE", required = true, num_args = 1..)]
         images: Vec<PathBuf>,
-        /// Horizontal gap between monitors (mm).
-        #[arg(long, value_name = "MM")]
-        bezel_h: Option<f32>,
-        /// Vertical gap between monitors (mm).
-        #[arg(long, value_name = "MM")]
-        bezel_v: Option<f32>,
         #[arg(long, value_enum, default_value_t = FitArg::Fill)]
         fit: FitArg,
         /// Accepted but not yet honoured.
@@ -116,6 +111,11 @@ enum Command {
         #[command(subcommand)]
         action: MonitorAction,
     },
+    /// Manage schedule rules.
+    Schedule {
+        #[command(subcommand)]
+        action: ScheduleAction,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -140,6 +140,35 @@ enum ProfileAction {
     },
     /// Import profiles from a bundle file.
     Import { file: PathBuf },
+    /// Show a profile in detail (TOML).
+    Show { name: String },
+    /// Duplicate a profile under a new name.
+    Duplicate { name: String, new_name: String },
+}
+
+#[derive(Subcommand, Debug)]
+enum ScheduleAction {
+    /// List schedule rules.
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Add a daily rule. Time is `HH:MM` 24-hour.
+    Add {
+        profile: String,
+        #[arg(long, value_name = "HH:MM")]
+        daily: Option<String>,
+    },
+    /// Remove a rule by 1-based index.
+    Remove { index: usize },
+    /// Enable a rule by index.
+    Enable { index: usize },
+    /// Disable a rule by index.
+    Disable { index: usize },
+    /// Pause all schedules.
+    Pause,
+    /// Resume schedules.
+    Resume,
 }
 
 #[derive(Subcommand, Debug)]
@@ -290,8 +319,6 @@ fn run(cli: &Cli) -> Result<()> {
     match &cli.command {
         Command::Set {
             images,
-            bezel_h,
-            bezel_v,
             fit,
             offset,
             backend,
@@ -305,8 +332,6 @@ fn run(cli: &Cli) -> Result<()> {
             let args = SetArgs {
                 image: first,
                 extra_images: images,
-                bezel_h: *bezel_h,
-                bezel_v: *bezel_v,
                 fit: (*fit).into(),
                 offset: *offset,
                 backend: backend.clone(),
@@ -361,6 +386,7 @@ fn run(cli: &Cli) -> Result<()> {
                 aspect.as_deref(),
             ),
         },
+        Command::Schedule { action } => schedule_action(action, cli),
     }
 }
 
@@ -387,6 +413,25 @@ fn profile_action(action: &ProfileAction, cli: &Cli) -> Result<()> {
             profile_cmd::export_cmd(name, output.as_deref(), cfg)
         }
         ProfileAction::Import { file } => profile_cmd::import_cmd(file, cfg),
+        ProfileAction::Show { name } => profile_cmd::show_cmd(name, cfg),
+        ProfileAction::Duplicate { name, new_name } => {
+            profile_cmd::duplicate_cmd(name, new_name, cfg)
+        }
+    }
+}
+
+fn schedule_action(action: &ScheduleAction, cli: &Cli) -> Result<()> {
+    let cfg_path = cli.config.as_deref();
+    match action {
+        ScheduleAction::List { json } => schedule_cmd::list(*json, cfg_path),
+        ScheduleAction::Add { profile, daily } => {
+            schedule_cmd::add(profile, daily.as_deref(), cfg_path)
+        }
+        ScheduleAction::Remove { index } => schedule_cmd::remove(*index, cfg_path),
+        ScheduleAction::Enable { index } => schedule_cmd::set_enabled(*index, true, cfg_path),
+        ScheduleAction::Disable { index } => schedule_cmd::set_enabled(*index, false, cfg_path),
+        ScheduleAction::Pause => schedule_cmd::set_paused(true, cfg_path),
+        ScheduleAction::Resume => schedule_cmd::set_paused(false, cfg_path),
     }
 }
 

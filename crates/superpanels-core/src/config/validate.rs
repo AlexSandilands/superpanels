@@ -80,12 +80,14 @@ fn validate_profiles(cfg: &Config, path: &Path) -> Result<(), ConfigError> {
                 format!("duplicate profile name `{}`", p.name),
             ));
         }
-        if p.bezels.horizontal_mm < 0.0 || p.bezels.vertical_mm < 0.0 {
-            return Err(invalid(
-                path,
-                format!("profile[{i}].bezels"),
-                "bezel values must be non-negative",
-            ));
+        for (key, placement) in &p.monitor_state {
+            if !placement.x_mm.is_finite() || !placement.y_mm.is_finite() {
+                return Err(invalid(
+                    path,
+                    format!("profile[{i}].monitor_state.{key}"),
+                    "x_mm and y_mm must be finite",
+                ));
+            }
         }
         validate_profile_body(path, i, &p.body)?;
     }

@@ -1,12 +1,12 @@
 //! Internal helpers for [`super::compute_crop_specs`].
 
 use crate::display::{Monitor, MonitorRef, Rotation};
+use crate::schedule::MonitorPlacement;
 
-use super::{BezelConfig, CropSliceSpec, FitMode, LayoutError, Rect};
+use super::{CropSliceSpec, FitMode, LayoutError, Rect};
 
 pub(super) const MM_PER_INCH: f64 = 25.4;
 
-/// One millionth of a pixel — used to collapse self-cancelling products to zero.
 const FLOAT_PIXEL_EPSILON: f64 = 1e-6;
 
 fn is_valid_mm(v: f64) -> bool {
@@ -35,7 +35,6 @@ pub(super) fn validate_inputs(
     }
 
     for m in monitors {
-        // Safe: presence checked above.
         let (w_mm, h_mm) = m.physical_size_mm.unwrap_or((0.0, 0.0));
         if !is_valid_mm(w_mm) || !is_valid_mm(h_mm) {
             return Err(LayoutError::InvalidPhysicalSize {
@@ -70,15 +69,11 @@ pub(super) struct EffectiveMonitor {
     pub(super) height_mm: f64,
     pub(super) pixel_w: u32,
     pub(super) pixel_h: u32,
-    /// Logical-pixel y-extent on the desktop, used for row grouping.
-    pos_y: i64,
-    pos_y_end: i64,
-    pos_x: i64,
+    pub(super) placement: MonitorPlacement,
 }
 
 impl EffectiveMonitor {
-    pub(super) fn from_monitor(m: &Monitor) -> Self {
-        // Presence validated by `validate_inputs`; (1.0, 1.0) keeps us out of div-by-zero.
+    pub(super) fn from_monitor(m: &Monitor, placement: MonitorPlacement) -> Self {
         let phys_mm = m.physical_size_mm.unwrap_or((1.0, 1.0));
         let res_px = m.resolution;
 
@@ -87,167 +82,47 @@ impl EffectiveMonitor {
             Rotation::Left | Rotation::Right => (phys_mm.1, phys_mm.0, res_px.1, res_px.0),
         };
 
-        let pos_x = i64::from(m.position.0);
-        let pos_y = i64::from(m.position.1);
-        let scale = if m.scale > 0.0 { m.scale } else { 1.0 };
-        let logical_h_f = (f64::from(h_px) / scale).round_ties_even();
-        let logical_h =
-            if logical_h_f.is_finite() && (0.0..=f64::from(u32::MAX)).contains(&logical_h_f) {
-                #[allow(clippy::cast_possible_truncation)] // reason: range checked above
-                let value = logical_h_f as i64;
-                value
-            } else {
-                i64::from(h_px)
-            };
-        let pos_y_end = pos_y.saturating_add(logical_h.max(1));
-
         Self {
             width_mm: w_mm,
             height_mm: h_mm,
             pixel_w: w_px,
             pixel_h: h_px,
-            pos_y,
-            pos_y_end,
-            pos_x,
+            placement,
         }
     }
 
     pub(super) fn ppi(&self) -> f64 {
-        // Width-axis density. Per-axis rounding noise would inflate canvas dims.
         f64::from(self.pixel_w) / (self.width_mm / MM_PER_INCH)
     }
 }
 
-/// Group monitors into rows by y-overlap. Rows top-to-bottom, monitors left-to-right.
-pub(super) fn group_into_rows(effs: &[EffectiveMonitor]) -> Vec<Vec<usize>> {
-    let mut order: Vec<usize> = (0..effs.len()).collect();
-    order.sort_by_key(|&i| effs[i].pos_y);
-
-    let mut rows: Vec<Vec<usize>> = Vec::new();
-    let mut row_extents: Vec<(i64, i64)> = Vec::new();
-    'outer: for i in order {
-        let (a, b) = (effs[i].pos_y, effs[i].pos_y_end);
-        for (row_idx, ext) in row_extents.iter_mut().enumerate() {
-            // Half-open interval overlap.
-            if a < ext.1 && ext.0 < b {
-                rows[row_idx].push(i);
-                ext.0 = ext.0.min(a);
-                ext.1 = ext.1.max(b);
-                continue 'outer;
-            }
-        }
-        rows.push(vec![i]);
-        row_extents.push((a, b));
-    }
-
-    let mut row_order: Vec<usize> = (0..rows.len()).collect();
-    row_order.sort_by_key(|&r| row_extents[r].0);
-
-    let mut sorted_rows: Vec<Vec<usize>> = row_order.into_iter().map(|r| rows[r].clone()).collect();
-
-    for row in &mut sorted_rows {
-        row.sort_by_key(|&i| effs[i].pos_x);
-    }
-
-    sorted_rows
-}
-
-pub(super) fn build_row_index(rows: &[Vec<usize>], n: usize) -> Vec<usize> {
-    let mut idx = vec![0usize; n];
-    for (r, row) in rows.iter().enumerate() {
-        for &i in row {
-            idx[i] = r;
-        }
-    }
-    idx
-}
-
-/// Mm-space layout (all fields in millimetres).
-#[allow(clippy::struct_field_names)] // reason: `_mm` makes units unambiguous in arithmetic
-pub(super) struct CanvasLayout {
-    pub(super) x_origin_mm: Vec<f64>,
-    pub(super) row_y_mm: Vec<f64>,
-    pub(super) canvas_w_mm: f64,
-    pub(super) canvas_h_mm: f64,
-}
-
-pub(super) fn compute_canvas_layout(
-    effs: &[EffectiveMonitor],
-    rows: &[Vec<usize>],
-    bezels: BezelConfig,
-) -> CanvasLayout {
-    let mut x_origin_mm = vec![0.0_f64; effs.len()];
-    let mut row_widths_mm = Vec::with_capacity(rows.len());
-    let mut row_heights_mm = Vec::with_capacity(rows.len());
-    for row in rows {
-        let mut cursor = 0.0_f64;
-        let mut max_h = 0.0_f64;
-        for (within_idx, &i) in row.iter().enumerate() {
-            x_origin_mm[i] = cursor;
-            cursor += effs[i].width_mm;
-            if within_idx + 1 < row.len() {
-                cursor += f64::from(bezels.horizontal_mm);
-            }
-            if effs[i].height_mm > max_h {
-                max_h = effs[i].height_mm;
-            }
-        }
-        row_widths_mm.push(cursor);
-        row_heights_mm.push(max_h);
-    }
-
-    let mut row_y_mm = Vec::with_capacity(rows.len());
-    let mut cursor_y = 0.0_f64;
-    for (i, &h) in row_heights_mm.iter().enumerate() {
-        row_y_mm.push(cursor_y);
-        cursor_y += h;
-        if i + 1 < rows.len() {
-            cursor_y += f64::from(bezels.vertical_mm);
-        }
-    }
-
-    let canvas_w_mm = row_widths_mm.iter().copied().fold(0.0_f64, f64::max);
-    CanvasLayout {
-        x_origin_mm,
-        row_y_mm,
-        canvas_w_mm,
-        canvas_h_mm: cursor_y,
-    }
-}
-
-/// Reference-PPI pixel dimensions of the canvas, as floats for downstream
-/// src-mapping. The `mm_to_px_dim` validation in `compute_canvas_pixels`
-/// surfaces `ImageTooSmall` when the canvas-px dimension overflows `u32`.
 #[allow(clippy::struct_field_names)] // reason: per-axis fields share width/height suffixes by design
 pub(super) struct CanvasPixels {
     pub(super) width_f: f64,
     pub(super) height_f: f64,
 }
 
+#[allow(clippy::similar_names)] // reason: width_mm / height_mm parallel arguments by design
 pub(super) fn compute_canvas_pixels(
-    layout: &CanvasLayout,
+    canvas_width_mm: f64,
+    canvas_height_mm: f64,
     reference_ppi: f64,
     image_size: (u32, u32),
 ) -> Result<CanvasPixels, LayoutError> {
-    let width_f = layout.canvas_w_mm * reference_ppi / MM_PER_INCH;
-    let height_f = layout.canvas_h_mm * reference_ppi / MM_PER_INCH;
+    let width_f = canvas_width_mm * reference_ppi / MM_PER_INCH;
+    let height_f = canvas_height_mm * reference_ppi / MM_PER_INCH;
     let (img_w, img_h) = image_size;
     let _ = mm_to_px_dim(width_f, img_w, img_h)?;
     let _ = mm_to_px_dim(height_f, img_w, img_h)?;
     Ok(CanvasPixels { width_f, height_f })
 }
 
-/// Canvas-pixel → source-pixel mapping. Per-axis so Stretch (axis-independent)
-/// and Fill (uniform cover, centred) are both expressible.
 pub(super) struct SrcMapping {
     src_per_canvas: (f64, f64),
     src_origin: (f64, f64),
 }
 
 impl SrcMapping {
-    /// Build the canvas-px → source-px mapping for either the FitMode-driven
-    /// legacy path (`image_size_px = None`) or the GUI's free-transform path
-    /// (`image_size_px = Some([w, h])`, see Phase 4c §4c.2).
     pub(super) fn for_layout(
         fit: FitMode,
         canvas: &CanvasPixels,
@@ -255,11 +130,6 @@ impl SrcMapping {
         image_size_px: Option<[u32; 2]>,
     ) -> Result<Self, LayoutError> {
         if let Some([w_px, h_px]) = image_size_px {
-            // Free transform: the image rect is `(offset, image_size_px)` in
-            // canvas px and maps to the full source image. Zero dimensions mean
-            // nothing covers anywhere; treat them as a degenerate-but-valid
-            // mapping with infinite src-per-canvas so clamping yields empty
-            // src_rects on every monitor.
             let (img_w, img_h) = image_size;
             let sx = if w_px == 0 {
                 f64::INFINITY
@@ -302,9 +172,6 @@ impl SrcMapping {
         }
     }
 
-    /// Map a single monitor onto the source image, clamping the resulting
-    /// rectangle to the image bounds. Out-of-image regions become non-zero
-    /// `dst_offset`/reduced `dst_size` so the apply layer can letterbox.
     pub(super) fn monitor_to_slice(
         &self,
         origin_mm: (f64, f64),
@@ -330,7 +197,6 @@ impl SrcMapping {
     }
 }
 
-/// Pre-clamp source rectangle in float pixels, before bounding to the image.
 struct UnclampedSrc {
     left: f64,
     top: f64,
@@ -338,9 +204,6 @@ struct UnclampedSrc {
     height: f64,
 }
 
-/// Clamp the un-clamped source rectangle to the image, deriving the matching
-/// destination region. Anything outside the image becomes letterbox padding —
-/// `dst_offset` for clipping at the start, reduced `dst_size` at the end.
 fn clamp_to_slice(
     src: &UnclampedSrc,
     image_size: (u32, u32),
@@ -376,8 +239,6 @@ fn clamp_to_slice(
     }
 }
 
-/// Clamp a single axis. Returns `(clamped_src_start, dst_offset, dst_size)`.
-/// `src_per_dst` is positive; tiny epsilon-noise around 0 is collapsed.
 fn clamp_axis(
     src_start: f64,
     src_extent: f64,
@@ -417,7 +278,6 @@ fn round_to_u32(v: f64) -> u32 {
     if r > f64::from(u32::MAX) {
         u32::MAX
     } else {
-        // reason: range checked above
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let n = r as u32;
         n
@@ -428,8 +288,6 @@ fn round_to_u32_clamped(v: f64, max_value: u32) -> u32 {
     round_to_u32(v).min(max_value)
 }
 
-/// Tiny negatives within `FLOAT_PIXEL_EPSILON` clamp to zero — they come from
-/// self-cancelling products like `(image_w - image_w * scale * inv_scale) / 2`.
 fn float_to_u32(
     v: f64,
     image_w: u32,
@@ -477,7 +335,6 @@ fn float_to_u32(
     })
 }
 
-/// `float_to_u32` for canvas dimensions; the report prints `0` for canvas-px.
 fn mm_to_px_dim(v: f64, image_w: u32, image_h: u32) -> Result<u32, LayoutError> {
     float_to_u32(v, image_w, image_h, 0, 0)
 }

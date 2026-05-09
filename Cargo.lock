@@ -4259,7 +4259,9 @@ dependencies = [
 name = "superpanels-core"
 version = "0.0.0"
 dependencies = [
+ "chrono",
  "criterion",
+ "cron",
  "image",
  "insta",
  "notify",
@@ -4275,6 +4277,7 @@ dependencies = [
  "toml 1.1.2+spec-1.1.0",
  "toml_edit 0.25.11+spec-1.1.0",
  "tracing",
+ "ts-rs",
  "zbus",
 ]
 
@@ -5190,6 +5193,7 @@ version = "12.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "756050066659291d47a554a9f558125db17428b073c5ffce1daf5dcb0f7231d8"
 dependencies = [
+ "chrono",
  "serde_json",
  "thiserror 2.0.18",
  "ts-rs-macros",

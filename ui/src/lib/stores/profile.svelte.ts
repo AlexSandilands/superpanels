@@ -3,7 +3,7 @@
 // Saving commits the draft via `save_profile`; refresh discards it.
 
 import { api, errorMessage, type Profile } from '$lib/api';
-import { defaultBezels, defaultSlideshowConfig } from '$lib/types/profile';
+import { defaultSlideshowConfig } from '$lib/types/profile-helpers';
 import { toast } from './toast.svelte';
 
 let profiles = $state<Profile[]>([]);
@@ -40,7 +40,8 @@ export const profileStore = {
   async refresh() {
     loading = true;
     try {
-      const [list, runtime] = await Promise.all([api.listProfiles(), api.currentState()]);
+      const [resp, runtime] = await Promise.all([api.listProfiles(), api.currentState()]);
+      const list = resp.profiles;
       profiles = list;
       activeName = runtime.active_profile;
       // Don't clobber an in-progress edit. If the user has unsaved changes
@@ -86,6 +87,7 @@ export const profileStore = {
   },
 
   newProfile() {
+    const now = new Date().toISOString();
     const base: Profile = {
       name: uniqueName('untitled', profiles),
       body: {
@@ -95,7 +97,14 @@ export const profileStore = {
         offset: [0, 0],
         image_size_px: null,
       },
-      bezels: defaultBezels(),
+      monitor_state: {},
+      topology: '',
+      colour: 'slate',
+      description: null,
+      created_at: now,
+      updated_at: now,
+      last_applied_at: null,
+      backend_override: null,
     };
     draft = base;
     selectedName = null;

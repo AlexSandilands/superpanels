@@ -4,12 +4,79 @@
 
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { api, errorMessage, type Profile } from '$lib/api';
-import { stableId } from '$lib/canvas/preview-layout';
+import { buildPreviewMonitors, stableId } from '$lib/canvas/preview-layout';
+import { canvasView, type MonitorOverride } from '$lib/stores/canvas-view.svelte';
 import { monitorStore } from '$lib/stores/monitors.svelte';
 import { profileStore } from '$lib/stores/profile.svelte';
 import { runtime } from '$lib/stores/runtime.svelte';
 import { toast } from '$lib/stores/toast.svelte';
-import { isPerMonitorBody, isSpanBody, type PerMonitorAssignment } from '$lib/types/profile';
+import { TopologyFingerprintFor } from '$lib/topology';
+import type { MonitorPlacement } from '$lib/types/MonitorPlacement';
+import type { Rotation } from '$lib/types/Rotation';
+import {
+  isPerMonitorBody,
+  isSpanBody,
+  type PerMonitorAssignment,
+} from '$lib/types/profile-helpers';
+
+function rotationFromDeg(d: 0 | 90 | 180 | 270): Rotation {
+  switch (d) {
+    case 90:
+      return 'right';
+    case 180:
+      return 'inverted';
+    case 270:
+      return 'left';
+    default:
+      return 'none';
+  }
+}
+
+function rotationToDeg(r: Rotation): 0 | 90 | 180 | 270 {
+  switch (r) {
+    case 'right':
+      return 90;
+    case 'inverted':
+      return 180;
+    case 'left':
+      return 270;
+    default:
+      return 0;
+  }
+}
+
+// Fold the current canvas (detected monitors + canvasView overrides) into the
+// active draft so a fresh untitled profile actually carries placements when it
+// gets persisted on Apply.
+function syncDraftMonitorStateFromCanvas(): void {
+  if (!profileStore.draft) return;
+  const previews = buildPreviewMonitors(monitorStore.monitors, canvasView.overrides);
+  if (previews.length === 0) return;
+  const next: Record<string, MonitorPlacement> = {};
+  for (const m of previews) {
+    next[m.id] = { x_mm: m.xMm, y_mm: m.yMm, rotation: rotationFromDeg(m.rotation) };
+  }
+  const topology = TopologyFingerprintFor(monitorStore.monitors);
+  profileStore.patchDraft((d) => {
+    d.monitor_state = next;
+    d.topology = topology;
+  });
+}
+
+// Push a profile's authored placements into `canvasView.overrides` so the
+// canvas reflects what was just applied. Existing entries for monitors not in
+// the profile are preserved.
+export function applyMonitorStateToCanvas(p: Profile): void {
+  const next: Record<string, MonitorOverride> = { ...canvasView.overrides };
+  for (const [id, placement] of Object.entries(p.monitor_state)) {
+    next[id] = {
+      xMm: placement.x_mm,
+      yMm: placement.y_mm,
+      rotation: rotationToDeg(placement.rotation),
+    };
+  }
+  canvasView.setOverrides(next);
+}
 
 function recordAndToast(r: Awaited<ReturnType<typeof api.applyProfile>>, t0: number): number {
   const elapsed = r.elapsed_ms ?? Math.round(performance.now() - t0);
@@ -25,6 +92,7 @@ function recordAndToast(r: Awaited<ReturnType<typeof api.applyProfile>>, t0: num
 export async function applyDraftProfile(): Promise<void> {
   const draft = profileStore.draft;
   if (!draft) return;
+  syncDraftMonitorStateFromCanvas();
   if (profileStore.dirty) {
     const saved = await profileStore.save();
     if (!saved) return;
@@ -42,6 +110,7 @@ export async function applyDraftProfile(): Promise<void> {
 
 export async function switchAndApply(p: Profile): Promise<void> {
   profileStore.select(p.name);
+  applyMonitorStateToCanvas(p);
   try {
     const t0 = performance.now();
     const r = await api.applyProfile(p.name);

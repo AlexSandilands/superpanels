@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { Profile } from '$lib/api';
-  import { profileSwatch } from '$lib/profile-swatch';
+  import { api, type Profile } from '$lib/api';
+  import { profileColourCss } from '$lib/profile-colours';
 
   type Props = {
     profiles: Profile[];
@@ -30,6 +30,32 @@
   }: Props = $props();
 
   const active = $derived(profiles.find((p) => p.name === activeName) ?? null);
+  let thumbnails = $state<Record<string, string>>({});
+
+  function profileImagePath(p: Profile): string | null {
+    if (p.body.type !== 'span') return null;
+    const src = p.body.source;
+    if (src.type !== 'single') return null;
+    const path = src.path.trim();
+    if (!path || !path.startsWith('/')) return null;
+    return path;
+  }
+
+  $effect(() => {
+    for (const p of profiles) {
+      if (thumbnails[p.name]) continue;
+      const path = profileImagePath(p);
+      if (!path) continue;
+      void api
+        .sourceThumbnail(path)
+        .then((r) => {
+          thumbnails[p.name] = `data:${r.mime};base64,${r.data}`;
+        })
+        .catch(() => {
+          // ignore — fall back to swatch
+        });
+    }
+  });
 
   function sourceLabel(p: Profile): string {
     if (p.body.type === 'span') {
@@ -85,6 +111,7 @@
     </div>
     {#each profiles as p (p.name)}
       {@const isActive = p.name === activeName}
+      {@const thumb = thumbnails[p.name]}
       <button class="row" onclick={() => onSwitch(p)}>
         <span style:width="14px" style:color="var(--accent)" style:font-size="12px">
           {isActive ? '✓' : ''}
@@ -92,7 +119,12 @@
         <span style:font-size="12px" style:flex="1" style:font-weight={isActive ? '600' : '400'}>
           {p.name}
         </span>
-        <span class="swatch" style:background={profileSwatch(p.name)}></span>
+        <span
+          class="swatch"
+          style:background={thumb
+            ? `center/cover no-repeat url("${thumb}"), ${profileColourCss(p.colour)}`
+            : profileColourCss(p.colour)}
+        ></span>
       </button>
     {/each}
     {#if profiles.length === 0}

@@ -18,6 +18,8 @@
     | 'minus'
     | 'fit'
     | 'save'
+    | 'save-new'
+    | 'stack'
     | 'prev'
     | 'next'
     | 'play'
@@ -230,6 +232,45 @@
       stroke-width="1.2"
       stroke-linejoin="round"
     ></path>
+  </svg>
+{:else if name === 'save-new'}
+  <svg width={size} height={size} viewBox="0 0 14 14" aria-hidden="true">
+    <path
+      d="M2 2.5h7l1.5 1.5v6.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.2"
+      stroke-linejoin="round"
+    ></path>
+    <path d="M4 2.5v3h4v-3" stroke="currentColor" stroke-width="1.2" fill="none"></path>
+    <circle cx="10" cy="10" r="2.6" fill="var(--panel-2)" stroke="currentColor" stroke-width="1.2"
+    ></circle>
+    <path d="M10 8.7v2.6M8.7 10h2.6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"
+    ></path>
+  </svg>
+{:else if name === 'stack'}
+  <svg width={size} height={size} viewBox="0 0 14 14" aria-hidden="true">
+    <rect
+      x="2"
+      y="2.5"
+      width="10"
+      height="3"
+      rx="0.6"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.2"
+    ></rect>
+    <rect
+      x="2"
+      y="6.5"
+      width="10"
+      height="3"
+      rx="0.6"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.2"
+    ></rect>
+    <path d="M3 11.5h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"></path>
   </svg>
 {:else if name === 'prev'}
   <svg width={size} height={size} viewBox="0 0 12 12" aria-hidden="true">

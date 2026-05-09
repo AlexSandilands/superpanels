@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use superpanels_core::config::{Config, write_monitor_block};
 use superpanels_core::ipc::validate as v;
 use superpanels_core::ipc::{IpcRequest, IpcResponse};
-use superpanels_core::layout::{BezelConfig, FitMode, compute_crop_specs_with_offset};
+use superpanels_core::layout::{FitMode, compute_crop_specs_with_offset, synthesise_placements};
 use tokio::sync::Mutex;
 use tracing::info;
 
@@ -24,7 +24,262 @@ pub(crate) use library::{
 
 pub(super) async fn cmd_list_profiles(state: Arc<Mutex<DaemonState>>) -> IpcResponse {
     let guard = state.lock().await;
-    IpcResponse::success(&guard.config.profiles)
+    let validity: Vec<serde_json::Value> = guard
+        .config
+        .profiles
+        .iter()
+        .map(|p| {
+            let v = superpanels_core::ProfileValidity::evaluate(p, &guard.monitors);
+            json!({"profile": p.name, "validity": v})
+        })
+        .collect();
+    IpcResponse::success(json!({
+        "profiles": &guard.config.profiles,
+        "validity": validity,
+    }))
+}
+
+pub(super) async fn cmd_duplicate_profile(
+    req: IpcRequest,
+    state: Arc<Mutex<DaemonState>>,
+) -> IpcResponse {
+    let Some(name) = req.params.get("name").and_then(Value::as_str) else {
+        return IpcResponse::failure("params.name (string) required");
+    };
+    let Some(new_name) = req.params.get("new_name").and_then(Value::as_str) else {
+        return IpcResponse::failure("params.new_name (string) required");
+    };
+    let mut guard = state.lock().await;
+    let path = match guard.config_save_path() {
+        Ok(p) => p,
+        Err(e) => return IpcResponse::failure(e.to_string()),
+    };
+    let Some(source) = guard
+        .config
+        .profiles
+        .iter()
+        .find(|p| p.name == name)
+        .cloned()
+    else {
+        return IpcResponse::failure(format!("profile '{name}' not found"));
+    };
+    if guard.config.profiles.iter().any(|p| p.name == new_name) {
+        return IpcResponse::failure(format!("profile '{new_name}' already exists"));
+    }
+    let now = superpanels_core::config::now_timestamp();
+    let mut copy = source;
+    new_name.clone_into(&mut copy.name);
+    copy.created_at = now;
+    copy.updated_at = now;
+    copy.last_applied_at = None;
+    guard.config.profiles.push(copy);
+    if let Err(e) = guard.config.save_to(&path) {
+        return IpcResponse::failure(e.to_string());
+    }
+    info!(name = new_name, "profile duplicated");
+    IpcResponse::success(json!({}))
+}
+
+pub(super) async fn cmd_rename_profile(
+    req: IpcRequest,
+    state: Arc<Mutex<DaemonState>>,
+) -> IpcResponse {
+    let Some(old) = req.params.get("name").and_then(Value::as_str) else {
+        return IpcResponse::failure("params.name (string) required");
+    };
+    let Some(new_name) = req.params.get("new_name").and_then(Value::as_str) else {
+        return IpcResponse::failure("params.new_name (string) required");
+    };
+    let mut guard = state.lock().await;
+    let path = match guard.config_save_path() {
+        Ok(p) => p,
+        Err(e) => return IpcResponse::failure(e.to_string()),
+    };
+    if guard.config.profiles.iter().any(|p| p.name == new_name) {
+        return IpcResponse::failure(format!("profile '{new_name}' already exists"));
+    }
+    let Some(target) = guard.config.profiles.iter_mut().find(|p| p.name == old) else {
+        return IpcResponse::failure(format!("profile '{old}' not found"));
+    };
+    new_name.clone_into(&mut target.name);
+    target.touch();
+    let active_renamed = guard.active_profile.as_deref() == Some(old);
+    if active_renamed {
+        guard.active_profile = Some(new_name.to_owned());
+    }
+    if let Err(e) = guard.config.save_to(&path) {
+        return IpcResponse::failure(e.to_string());
+    }
+    IpcResponse::success(json!({}))
+}
+
+pub(super) async fn cmd_update_profile_monitor_state(
+    req: IpcRequest,
+    state: Arc<Mutex<DaemonState>>,
+) -> IpcResponse {
+    let Some(name) = req.params.get("profile").and_then(Value::as_str) else {
+        return IpcResponse::failure("params.profile (string) required");
+    };
+    let Some(stable_id) = req.params.get("stable_id").and_then(Value::as_str) else {
+        return IpcResponse::failure("params.stable_id (string) required");
+    };
+    let placement: superpanels_core::MonitorPlacement = match req
+        .params
+        .get("placement")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+    {
+        Some(p) => p,
+        None => return IpcResponse::failure("params.placement (MonitorPlacement) required"),
+    };
+    let mut guard = state.lock().await;
+    let path = match guard.config_save_path() {
+        Ok(p) => p,
+        Err(e) => return IpcResponse::failure(e.to_string()),
+    };
+    let Some(profile) = guard.config.profiles.iter_mut().find(|p| p.name == name) else {
+        return IpcResponse::failure(format!("profile '{name}' not found"));
+    };
+    profile
+        .monitor_state
+        .insert(stable_id.to_owned(), placement);
+    profile.touch();
+    if let Err(e) = guard.config.save_to(&path) {
+        return IpcResponse::failure(e.to_string());
+    }
+    IpcResponse::success(json!({}))
+}
+
+pub(super) async fn cmd_update_profile_image_transform(
+    req: IpcRequest,
+    state: Arc<Mutex<DaemonState>>,
+) -> IpcResponse {
+    let Some(name) = req.params.get("profile").and_then(Value::as_str) else {
+        return IpcResponse::failure("params.profile (string) required");
+    };
+    let offset: Option<[i32; 2]> = req
+        .params
+        .get("offset")
+        .and_then(|v| serde_json::from_value(v.clone()).ok());
+    let image_size_px: Option<[u32; 2]> = req
+        .params
+        .get("image_size_px")
+        .and_then(|v| serde_json::from_value(v.clone()).ok());
+    let mut guard = state.lock().await;
+    let path = match guard.config_save_path() {
+        Ok(p) => p,
+        Err(e) => return IpcResponse::failure(e.to_string()),
+    };
+    let Some(profile) = guard.config.profiles.iter_mut().find(|p| p.name == name) else {
+        return IpcResponse::failure(format!("profile '{name}' not found"));
+    };
+    if let superpanels_core::config::ProfileBody::Span(span) = &mut profile.body {
+        if let Some(o) = offset {
+            span.offset = o;
+        }
+        span.image_size_px = image_size_px.or(span.image_size_px);
+    }
+    profile.touch();
+    if let Err(e) = guard.config.save_to(&path) {
+        return IpcResponse::failure(e.to_string());
+    }
+    IpcResponse::success(json!({}))
+}
+
+pub(super) async fn cmd_update_profile_source(
+    req: IpcRequest,
+    state: Arc<Mutex<DaemonState>>,
+) -> IpcResponse {
+    let Some(name) = req.params.get("profile").and_then(Value::as_str) else {
+        return IpcResponse::failure("params.profile (string) required");
+    };
+    let source: superpanels_core::config::SpanSource = match req
+        .params
+        .get("source")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+    {
+        Some(s) => s,
+        None => return IpcResponse::failure("params.source (SpanSource) required"),
+    };
+    let mut guard = state.lock().await;
+    let path = match guard.config_save_path() {
+        Ok(p) => p,
+        Err(e) => return IpcResponse::failure(e.to_string()),
+    };
+    let Some(profile) = guard.config.profiles.iter_mut().find(|p| p.name == name) else {
+        return IpcResponse::failure(format!("profile '{name}' not found"));
+    };
+    if let superpanels_core::config::ProfileBody::Span(span) = &mut profile.body {
+        span.source = source;
+    } else {
+        return IpcResponse::failure("source updates require a Span profile");
+    }
+    profile.touch();
+    if let Err(e) = guard.config.save_to(&path) {
+        return IpcResponse::failure(e.to_string());
+    }
+    IpcResponse::success(json!({}))
+}
+
+pub(super) async fn cmd_list_schedules(state: Arc<Mutex<DaemonState>>) -> IpcResponse {
+    let guard = state.lock().await;
+    IpcResponse::success(json!({
+        "schedules": &guard.config.schedules,
+        "paused": guard.config.schedules_paused,
+        "location": &guard.config.location,
+    }))
+}
+
+pub(super) async fn cmd_save_schedules(
+    req: IpcRequest,
+    state: Arc<Mutex<DaemonState>>,
+) -> IpcResponse {
+    let schedules: Vec<superpanels_core::Schedule> = match req
+        .params
+        .get("schedules")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+    {
+        Some(s) => s,
+        None => return IpcResponse::failure("params.schedules (array) required"),
+    };
+    let mut guard = state.lock().await;
+    let path = match guard.config_save_path() {
+        Ok(p) => p,
+        Err(e) => return IpcResponse::failure(e.to_string()),
+    };
+    for s in &schedules {
+        if let Err(e) = superpanels_core::schedule::validate_trigger(&s.trigger) {
+            return IpcResponse::failure(e.to_string());
+        }
+    }
+    guard.config.schedules = schedules;
+    if let Some((a, b)) = crate::schedule::detect_same_minute_collision(&guard.config) {
+        return IpcResponse::failure(format!(
+            "schedules collide: rules {a} and {b} fire at the same minute"
+        ));
+    }
+    if let Err(e) = guard.config.save_to(&path) {
+        return IpcResponse::failure(e.to_string());
+    }
+    IpcResponse::success(json!({}))
+}
+
+pub(super) async fn cmd_set_schedules_paused(
+    req: IpcRequest,
+    state: Arc<Mutex<DaemonState>>,
+) -> IpcResponse {
+    let Some(paused) = req.params.get("paused").and_then(Value::as_bool) else {
+        return IpcResponse::failure("params.paused (bool) required");
+    };
+    let mut guard = state.lock().await;
+    let path = match guard.config_save_path() {
+        Ok(p) => p,
+        Err(e) => return IpcResponse::failure(e.to_string()),
+    };
+    guard.config.schedules_paused = paused;
+    if let Err(e) = guard.config.save_to(&path) {
+        return IpcResponse::failure(e.to_string());
+    }
+    IpcResponse::success(json!({"paused": paused}))
 }
 
 pub(super) async fn cmd_save_profile(
@@ -34,12 +289,17 @@ pub(super) async fn cmd_save_profile(
     let Some(profile_val) = req.params.get("profile") else {
         return IpcResponse::failure("params.profile required");
     };
-    let profile: superpanels_core::Profile = match serde_json::from_value(profile_val.clone()) {
+    let mut profile: superpanels_core::Profile = match serde_json::from_value(profile_val.clone()) {
         Ok(p) => p,
         Err(e) => return IpcResponse::failure(format!("profile is malformed: {e}")),
     };
 
     let mut guard = state.lock().await;
+    // Recompute topology fingerprint from the live monitor set when the
+    // client sends an empty placeholder; lets the UI side stay simple.
+    if profile.topology.0.is_empty() || profile.topology.0.contains('|') {
+        profile.topology = superpanels_core::TopologyFingerprint::from_monitors(&guard.monitors);
+    }
     let path = match guard.config_save_path() {
         Ok(p) => p,
         Err(e) => return IpcResponse::failure(e.to_string()),
@@ -169,16 +429,6 @@ pub(super) async fn cmd_preview_crop(
     let Some(image) = req.params.get("image").and_then(Value::as_str) else {
         return IpcResponse::failure("params.image (string) required");
     };
-    let bezel_h = req
-        .params
-        .get("bezel_h_mm")
-        .and_then(Value::as_f64)
-        .unwrap_or(0.0);
-    let bezel_v = req
-        .params
-        .get("bezel_v_mm")
-        .and_then(Value::as_f64)
-        .unwrap_or(0.0);
     let fit = match req
         .params
         .get("fit")
@@ -211,13 +461,6 @@ pub(super) async fn cmd_preview_crop(
         Ok(s) => s,
         Err(e) => return IpcResponse::failure(e.0),
     };
-    let bezels = match (v::validate_bezel_mm(bezel_h), v::validate_bezel_mm(bezel_v)) {
-        (Ok(h), Ok(v)) => BezelConfig {
-            horizontal_mm: h,
-            vertical_mm: v,
-        },
-        (Err(e), _) | (_, Err(e)) => return IpcResponse::failure(e.0),
-    };
 
     let roots = {
         let guard = state.lock().await;
@@ -228,7 +471,6 @@ pub(super) async fn cmd_preview_crop(
         Err(e) => return IpcResponse::failure(e),
     };
 
-    // Header-only read: microseconds, no decode budget concern (`SPEC §12.3`).
     let dims = match tokio::task::spawn_blocking(move || {
         superpanels_core::image::read_dimensions(&canonical)
     })
@@ -240,7 +482,15 @@ pub(super) async fn cmd_preview_crop(
     };
 
     let monitors = state.lock().await.monitors.clone();
-    match compute_crop_specs_with_offset(&monitors, &bezels, fit, dims, offset_px, image_size_px) {
+    let placements = synthesise_placements(&monitors);
+    match compute_crop_specs_with_offset(
+        &monitors,
+        &placements,
+        fit,
+        dims,
+        offset_px,
+        image_size_px,
+    ) {
         Ok(specs) => IpcResponse::success(&specs),
         Err(e) => IpcResponse::failure(e.to_string()),
     }
@@ -280,7 +530,9 @@ mod tests {
         let state = make_state(Config::default());
         let resp = cmd_list_profiles(state).await;
         assert!(resp.is_ok());
-        assert!(resp.result.unwrap().is_array());
+        let v = resp.result.unwrap();
+        assert!(v.get("profiles").is_some());
+        assert!(v["profiles"].is_array());
     }
 
     #[tokio::test]
@@ -456,25 +708,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn preview_crop_rejects_out_of_range_bezel() {
-        let state = make_state(Config::default());
-        let resp = cmd_preview_crop(
-            req(
-                "preview_crop",
-                json!({"image": "/never/exists.png", "bezel_h_mm": 1e9}),
-            ),
-            state,
-        )
-        .await;
-        assert!(!resp.is_ok());
-        let err = resp.error.unwrap();
-        assert!(
-            err.contains("bezel_*_mm") && err.contains("exceeds"),
-            "unexpected bezel error: {err}"
-        );
-    }
-
-    #[tokio::test]
     async fn preview_crop_rejects_path_outside_roots() {
         let dir = tempdir().unwrap();
         let mut cfg = Config::default();
@@ -584,9 +817,12 @@ mod tests {
 
     #[cfg(test)]
     fn sample_profile() -> Profile {
+        use std::collections::HashMap;
         use std::path::PathBuf;
         use superpanels_core::config::{ProfileBody, SpanProfile, SpanSource};
-        use superpanels_core::layout::{BezelConfig, FitMode};
+        use superpanels_core::layout::FitMode;
+        use superpanels_core::{ProfileColour, TopologyFingerprint};
+        let now = superpanels_core::config::now_timestamp();
         Profile {
             name: "sample".to_owned(),
             body: ProfileBody::Span(SpanProfile {
@@ -597,12 +833,14 @@ mod tests {
                 offset: [0, 0],
                 image_size_px: None,
             }),
-            bezels: BezelConfig {
-                horizontal_mm: 0.0,
-                vertical_mm: 0.0,
-            },
+            monitor_state: HashMap::new(),
+            topology: TopologyFingerprint(String::new()),
+            colour: ProfileColour::default(),
+            description: None,
+            created_at: now,
+            updated_at: now,
+            last_applied_at: None,
             backend_override: None,
-            schedule: None,
         }
     }
 }

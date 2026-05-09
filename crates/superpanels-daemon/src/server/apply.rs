@@ -1,5 +1,6 @@
 //! Apply / set / redetect / current-state IPC handlers (`SPEC §12.4`).
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -7,7 +8,8 @@ use std::time::Duration;
 use serde_json::json;
 use superpanels_core::config::{ProfileBody, SpanSource};
 use superpanels_core::ipc::{IpcRequest, IpcResponse};
-use superpanels_core::layout::{BezelConfig, FitMode};
+use superpanels_core::layout::FitMode;
+use superpanels_core::schedule::MonitorPlacement;
 use tokio::sync::{Mutex, watch};
 use tracing::info;
 
@@ -23,16 +25,6 @@ pub(super) async fn cmd_set(req: IpcRequest, state: Arc<Mutex<DaemonState>>) -> 
         Some(s) => PathBuf::from(s),
         None => return IpcResponse::failure("params.image (string) required"),
     };
-    let bezel_h: f32 = req
-        .params
-        .get("bezel_h")
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .unwrap_or(0.0_f32);
-    let bezel_v: f32 = req
-        .params
-        .get("bezel_v")
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .unwrap_or(0.0_f32);
     let fit: FitMode = req
         .params
         .get("fit")
@@ -52,18 +44,14 @@ pub(super) async fn cmd_set(req: IpcRequest, state: Arc<Mutex<DaemonState>>) -> 
             guard.config.backend.custom_command.clone(),
         )
     };
-    let bezels = BezelConfig {
-        horizontal_mm: bezel_h,
-        vertical_mm: bezel_v,
-    };
+
+    let placements: HashMap<String, MonitorPlacement> = HashMap::new();
 
     let report = tokio::task::spawn_blocking(move || {
-        // CLI-equivalent `set` doesn't carry image_size_px (`docs/plan/phase-4c-free-positioning.md`
-        // §4c.9); GUI free-transform always goes through `apply_profile`.
         run_immediate_set_with_offset(
             &image_path,
             &monitors,
-            bezels,
+            &placements,
             fit,
             offset_px,
             None,
@@ -101,6 +89,18 @@ pub(super) async fn cmd_apply_profile(
             return IpcResponse::failure(format!("profile '{name}' not found"));
         };
         let monitors = guard.monitors.clone();
+        // Skip validity gate during the transient empty-monitors state (e.g.
+        // detection hasn't run yet, or test fixtures); layout will surface a
+        // clearer error if it actually matters.
+        if !monitors.is_empty() {
+            let validity = superpanels_core::ProfileValidity::evaluate(&profile, &monitors);
+            if let superpanels_core::ProfileValidity::Disabled { reasons } = validity {
+                return IpcResponse::failure(format!(
+                    "profile '{name}' is disabled: {}",
+                    serde_json::to_string(&reasons).unwrap_or_default()
+                ));
+            }
+        }
         let backend_kind = profile
             .backend_override
             .unwrap_or(guard.config.backend.prefer);

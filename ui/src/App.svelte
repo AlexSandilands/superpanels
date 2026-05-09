@@ -22,14 +22,7 @@
     setSpanImage,
     switchAndApply,
   } from '$lib/actions';
-  import {
-    buildPreviewMonitors,
-    bbox,
-    hNeighbourPairs,
-    totalPixels,
-    uniformGap,
-    vNeighbourPairs,
-  } from '$lib/canvas/preview-layout';
+  import { buildPreviewMonitors } from '$lib/canvas/preview-layout';
   import { rotateSelected } from '$lib/canvas/select';
   import {
     resetLayout as runResetLayout,
@@ -38,49 +31,123 @@
     setVGap as runSetVGap,
     snapCover as runSnapCover,
   } from '$lib/canvas/transform-actions';
+  import {
+    bbox,
+    hNeighbourPairs,
+    totalPixels,
+    uniformGap,
+    vNeighbourPairs,
+  } from '$lib/canvas/preview-layout';
   import { slideshowController } from '$lib/slideshow-controller.svelte';
   import { attachWindowEvents } from '$lib/events/window';
   import { dispatchKey } from '$lib/keymap';
-  import { defaultBezels, isSpanBody } from '$lib/types/profile';
+  import { isSpanBody } from '$lib/types/profile-helpers';
   import PreviewCanvas from './components/canvas/PreviewCanvas.svelte';
-  import BezelDock from './components/chrome/BezelDock.svelte';
   import ModeHint from './components/chrome/ModeHint.svelte';
+  import MonitorGapDock from './components/chrome/MonitorGapDock.svelte';
   import MonitorInspector from './components/chrome/MonitorInspector.svelte';
   import SourceDock from './components/chrome/SourceDock.svelte';
   import TitleBar from './components/chrome/TitleBar.svelte';
   import Toast from './components/widgets/Toast.svelte';
   import ToolDock from './components/chrome/ToolDock.svelte';
   import LibraryModal from './components/overlays/LibraryModal.svelte';
+  import ProfileManagerModal from './components/overlays/ProfileManagerModal.svelte';
   import SettingsModal from './components/overlays/SettingsModal.svelte';
+  import SaveProfileDialog from './components/overlays/SaveProfileDialog.svelte';
   import TrayPopover from './components/overlays/TrayPopover.svelte';
+  import type { ProfileColour } from '$lib/types/ProfileColour';
+  import { api, errorMessage } from '$lib/api';
+  import { TopologyFingerprintFor } from '$lib/topology';
 
   let libraryOpen = $state(false);
   let settingsOpen = $state(false);
   let settingsSection = $state<'general' | 'monitors'>('general');
   let trayOpen = $state(false);
   let dragOverlay = $state(false);
+  let saveDialogOpen = $state(false);
+  let profileManagerOpen = $state(false);
+
+  async function saveAsNew(name: string, colour: ProfileColour, description: string | null) {
+    saveDialogOpen = false;
+    try {
+      const topology = TopologyFingerprintFor(monitorStore.monitors);
+      const rotationName = (deg: 0 | 90 | 180 | 270): 'none' | 'right' | 'inverted' | 'left' => {
+        switch (deg) {
+          case 90:
+            return 'right';
+          case 180:
+            return 'inverted';
+          case 270:
+            return 'left';
+          default:
+            return 'none';
+        }
+      };
+      const monitor_state: Record<
+        string,
+        { x_mm: number; y_mm: number; rotation: 'none' | 'right' | 'inverted' | 'left' }
+      > = {};
+      for (const m of previewMonitors) {
+        monitor_state[m.id] = {
+          x_mm: m.xMm,
+          y_mm: m.yMm,
+          rotation: rotationName(m.rotation),
+        };
+      }
+      const now = new Date().toISOString();
+      const profile = {
+        name,
+        body: span ?? {
+          type: 'span' as const,
+          source: { type: 'single' as const, path: sourcePath ?? '' },
+          fit: 'fill' as const,
+          offset: [0, 0] as [number, number],
+          image_size_px: imageNaturalDims
+            ? ([imageNaturalDims.w, imageNaturalDims.h] as [number, number])
+            : null,
+        },
+        monitor_state,
+        topology,
+        colour,
+        description,
+        created_at: now,
+        updated_at: now,
+        last_applied_at: null,
+        backend_override: null,
+      };
+      await api.saveProfile(profile);
+      void profileStore.refresh();
+      toast.success(`Saved '${name}'`);
+    } catch (err) {
+      toast.error('Save as new failed', errorMessage(err));
+    }
+  }
 
   applyDocumentTokens();
 
   const draft = $derived<Profile | null>(profileStore.draft);
   const span = $derived(draft && isSpanBody(draft.body) ? draft.body : null);
-  const bezels = $derived(draft?.bezels ?? defaultBezels());
   const sourcePath = $derived(span && span.source.type === 'single' ? span.source.path : null);
 
   const previewMonitors = $derived(
     buildPreviewMonitors(monitorStore.monitors, canvasView.overrides),
   );
-  const layoutMm = $derived.by(() => {
-    const bb = bbox(previewMonitors);
-    return { w: bb.w, h: bb.h };
-  });
-  const totalPx = $derived(totalPixels(previewMonitors));
+
   const hPairs = $derived(hNeighbourPairs(previewMonitors));
   const vPairs = $derived(vNeighbourPairs(previewMonitors));
   const currentHGap = $derived(uniformGap(hPairs));
   const currentVGap = $derived(uniformGap(vPairs));
   const hMixed = $derived(hPairs.length >= 2 && currentHGap === null);
   const vMixed = $derived(vPairs.length >= 2 && currentVGap === null);
+  const layoutMm = $derived.by(() => {
+    const bb = bbox(previewMonitors);
+    return { w: bb.w, h: bb.h };
+  });
+  const totalPx = $derived(totalPixels(previewMonitors));
+  const snapHmm = $derived(currentHGap ?? 0);
+
+  const setHGap = (h: number) => runSetHGap(previewMonitors, currentVGap ?? 0, h);
+  const setVGap = (v: number) => runSetVGap(previewMonitors, currentHGap ?? 0, v);
 
   const selectedMonitor = $derived(
     canvasView.selectId
@@ -92,7 +159,7 @@
 
   seedOverridesFromMonitors(
     () => monitorStore.monitors,
-    () => bezels.horizontal_mm,
+    () => 0,
   );
 
   useSourceImage(
@@ -105,9 +172,7 @@
 
   const snapCover = () => runSnapCover(previewMonitors, imageNaturalDims);
   const resetTransform = () => runResetTransform(previewMonitors, imageNaturalDims);
-  const resetLayout = () => runResetLayout(bezels.horizontal_mm);
-  const setHGap = (h: number) => runSetHGap(previewMonitors, bezels.vertical_mm, h);
-  const setVGap = (v: number) => runSetVGap(previewMonitors, bezels.horizontal_mm, v);
+  const resetLayout = () => runResetLayout(snapHmm);
 
   function onKey(e: KeyboardEvent) {
     dispatchKey(e, {
@@ -175,7 +240,7 @@
 <div class="fixed inset-0 overflow-hidden">
   <PreviewCanvas
     monitors={monitorStore.monitors}
-    bezelHmm={bezels.horizontal_mm}
+    bezelHmm={snapHmm}
     {imageUrl}
     imageTransform={imageTransform.value}
     onImageTransformChange={(t) => imageTransform.set(t)}
@@ -189,23 +254,36 @@
     activeName={profileStore.activeName}
     {backendName}
     {canApply}
+    canSaveAsNew={Boolean(sourcePath)}
     onApply={() => void applyDraftProfile()}
+    onSaveAsNew={() => (saveDialogOpen = true)}
     onSwitchProfile={(p) => void switchAndApply(p)}
-    onNewProfile={() => profileStore.newProfile()}
     onOpenLibrary={() => (libraryOpen = true)}
     onOpenSettings={() => (settingsOpen = true)}
+    onOpenProfileManager={() => (profileManagerOpen = true)}
     onTrayClick={() => (trayOpen = !trayOpen)}
   />
 
+  {#if saveDialogOpen}
+    <SaveProfileDialog
+      existingNames={profileStore.profiles.map((p) => p.name)}
+      defaultName={profileStore.activeName
+        ? `${profileStore.activeName}-copy`
+        : `untitled-${profileStore.profiles.length + 1}`}
+      onCancel={() => (saveDialogOpen = false)}
+      onConfirm={(n, c, d) => void saveAsNew(n, c, d)}
+    />
+  {/if}
+
   <ToolDock onResetTransform={resetTransform} onSnapCover={snapCover} onResetLayout={resetLayout} />
 
-  <BezelDock
+  <MonitorGapDock
     hGapMm={currentHGap}
     vGapMm={currentVGap}
     {hMixed}
     {vMixed}
-    fallbackHmm={bezels.horizontal_mm}
-    fallbackVmm={bezels.vertical_mm}
+    fallbackHmm={0}
+    fallbackVmm={0}
     onHGapChange={setHGap}
     onVGapChange={setVGap}
     {layoutMm}
@@ -254,6 +332,13 @@
       onClose={() => (libraryOpen = false)}
       onApplyAsSpan={setSpanImage}
       onPinToMonitor={pinImageToMonitor}
+    />
+  {/if}
+
+  {#if profileManagerOpen}
+    <ProfileManagerModal
+      onClose={() => (profileManagerOpen = false)}
+      onCreateFromCanvas={(n, c, d) => saveAsNew(n, c, d)}
     />
   {/if}
 

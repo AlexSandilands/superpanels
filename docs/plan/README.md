@@ -16,7 +16,8 @@ Companion to `docs/spec/`. The spec describes *what*; this describes *how* and *
 | 4b | [phase-4b-library.md](./phase-4b-library.md) | Library + SQLite — v0.5 |
 | 4c | [phase-4c-free-positioning.md](./phase-4c-free-positioning.md) | Free-positioning canvas (pan + resize, letterbox) — v0.6 |
 | 4d | [phase-4d-polish.md](./phase-4d-polish.md) | Polish & accessibility — v0.7 |
-| 5 | [phase-5-packaging.md](./phase-5-packaging.md) | Packaging & first release — v0.8 |
+| 4e | [phase-4e-profiles.md](./phase-4e-profiles.md) | Profiles redesign (mode model, schedules lift, manager window) — v0.8 |
+| 5 | [phase-5-packaging.md](./phase-5-packaging.md) | Packaging & first release — v0.9 |
 | 6 | [phase-6-stabilisation.md](./phase-6-stabilisation.md) | Stabilise toward 1.0 |
 
 ## Cross-cutting

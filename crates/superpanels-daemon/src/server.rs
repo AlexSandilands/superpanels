@@ -100,6 +100,18 @@ async fn dispatch(
         "list_profiles" => handlers::cmd_list_profiles(state).await,
         "save_profile" => handlers::cmd_save_profile(req, state).await,
         "delete_profile" => handlers::cmd_delete_profile(req, state).await,
+        "duplicate_profile" => handlers::cmd_duplicate_profile(req, state).await,
+        "rename_profile" => handlers::cmd_rename_profile(req, state).await,
+        "update_profile_monitor_state" => {
+            handlers::cmd_update_profile_monitor_state(req, state).await
+        }
+        "update_profile_image_transform" => {
+            handlers::cmd_update_profile_image_transform(req, state).await
+        }
+        "update_profile_source" => handlers::cmd_update_profile_source(req, state).await,
+        "list_schedules" => handlers::cmd_list_schedules(state).await,
+        "save_schedules" => handlers::cmd_save_schedules(req, state).await,
+        "set_schedules_paused" => handlers::cmd_set_schedules_paused(req, state).await,
         "get_config" => handlers::cmd_get_config(state).await,
         "save_config" => handlers::cmd_save_config(req, state).await,
         "set_monitor_physical_size" => handlers::cmd_set_monitor_physical_size(req, state).await,
@@ -122,15 +134,17 @@ mod tests {
     use std::time::Duration;
 
     use serde_json::json;
+    use std::collections::HashMap;
     use superpanels_core::config::{
         BackendKind, Config, ImageSet, Profile, ProfileBody, SlideshowConfig as SlideshowCfg,
         SlideshowSort, SlideshowStart, SpanProfile, SpanSource,
     };
-    use superpanels_core::layout::{BezelConfig, FitMode as LayoutFitMode};
+    use superpanels_core::layout::FitMode as LayoutFitMode;
     use superpanels_core::slideshow::{
         SlideshowConfig as PickerCfg, SlideshowPicker, SlideshowSort as PickerSort,
         SlideshowStart as PickerStart,
     };
+    use superpanels_core::{ProfileColour, TopologyFingerprint};
     use tempfile::tempdir;
 
     use super::*;
@@ -141,6 +155,7 @@ mod tests {
     }
 
     fn slideshow_profile(name: &str, folder: &std::path::Path) -> Profile {
+        let now = superpanels_core::config::now_timestamp();
         Profile {
             name: name.to_owned(),
             body: ProfileBody::Span(SpanProfile {
@@ -162,12 +177,14 @@ mod tests {
                 offset: [0, 0],
                 image_size_px: None,
             }),
-            bezels: BezelConfig {
-                horizontal_mm: 0.0,
-                vertical_mm: 0.0,
-            },
+            monitor_state: HashMap::new(),
+            topology: TopologyFingerprint(String::new()),
+            colour: ProfileColour::default(),
+            description: None,
+            created_at: now,
+            updated_at: now,
+            last_applied_at: None,
             backend_override: Some(BackendKind::Custom),
-            schedule: None,
         }
     }
 

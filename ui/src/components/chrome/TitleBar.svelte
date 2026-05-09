@@ -12,11 +12,13 @@
     activeName: string | null;
     backendName: string;
     canApply: boolean;
+    canSaveAsNew: boolean;
     onApply: () => void;
+    onSaveAsNew: () => void;
     onSwitchProfile: (p: Profile) => void;
-    onNewProfile: () => void;
     onOpenLibrary: () => void;
     onOpenSettings: () => void;
+    onOpenProfileManager: () => void;
     onTrayClick: () => void;
   };
   let {
@@ -24,11 +26,13 @@
     activeName,
     backendName,
     canApply,
+    canSaveAsNew,
     onApply,
+    onSaveAsNew,
     onSwitchProfile,
-    onNewProfile,
     onOpenLibrary,
     onOpenSettings,
+    onOpenProfileManager,
     onTrayClick,
   }: Props = $props();
 
@@ -139,9 +143,9 @@
           onSwitchProfile(p);
         }}
         onClose={() => (menuOpen = false)}
-        onNewProfile={() => {
+        onOpenManager={() => {
           menuOpen = false;
-          onNewProfile();
+          onOpenProfileManager();
         }}
       />
     {/if}
@@ -166,6 +170,17 @@
       <Icon name="tray" />
     </button>
     <div style:width="1px" style:height="18px" style:background="var(--line)"></div>
+    <button
+      class="btn ghost icon"
+      disabled={!canSaveAsNew}
+      onclick={onSaveAsNew}
+      title={canSaveAsNew ? 'Save current canvas as a new profile' : 'No image on canvas'}
+    >
+      <Icon name="save-new" />
+    </button>
+    <button class="btn ghost icon" title="Profile manager" onclick={onOpenProfileManager}>
+      <Icon name="stack" />
+    </button>
     <button class="btn primary" disabled={!canApply} onclick={onApply} title="Apply (Enter)">
       <Icon name="check" size={13} /> Apply
       <span
