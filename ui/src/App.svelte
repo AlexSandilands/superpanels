@@ -122,8 +122,10 @@
         backend_override: null,
       };
       await api.saveProfile(profile);
-      void profileStore.refresh();
+      await profileStore.refresh();
       toast.success(`Saved '${name}'`);
+      const saved = profileStore.profiles.find((p) => p.name === name);
+      if (saved) await switchAndApply(saved);
     } catch (err) {
       toast.error('Save as new failed', errorMessage(err));
     }

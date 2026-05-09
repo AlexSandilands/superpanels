@@ -154,8 +154,7 @@
   {/each}
   {#if profiles.length === 0}
     <div class="empty">
-      <p>No profiles yet.</p>
-      <button class="btn sm primary" onclick={onOpenManager}>Open profile manager</button>
+      <p>No profiles yet — create one below.</p>
     </div>
   {/if}
   <div class="divider"></div>
