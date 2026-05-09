@@ -33,11 +33,6 @@ blocked; all are small enough to defer.
   `crates/superpanels-gui/src/ipc_client.rs` are near-duplicates (frame format,
   timeouts, `MAX_FRAME_BYTES`, error enum). When either is next touched, hoist
   into `superpanels-core::ipc::client` (sync, no tokio).
-- `parse_monitor_identifier` and `parse_physical_mm` (added with the
-  `set_monitor_physical_size` IPC) are now duplicated near-verbatim between
-  the same two sites — one returns `String`, the other `IpcError`. Same
-  follow-up scope.
-
 **Library thumbnail cache**
 
 - `cmd_library_thumbnail` decodes + resizes on every call. Add an LRU keyed

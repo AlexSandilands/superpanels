@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use base64::Engine;
 use serde_json::{Value, json};
-use superpanels_core::config::{Config, ConfigError, MonitorIdentifier, write_monitor_block};
+use superpanels_core::config::{Config, ConfigError, write_monitor_block};
 use superpanels_core::detect;
 use superpanels_core::ipc::validate as v;
 use superpanels_core::library::{LibraryFilter as CoreLibraryFilter, apply_library_filter};
@@ -244,41 +244,12 @@ fn save_config(params: &Value, config_path: Option<&Path>) -> CallResult {
 }
 
 fn set_monitor_physical_size(params: &Value, config_path: Option<&Path>) -> CallResult {
-    let identifier = parse_monitor_identifier(params)?;
-    let physical_mm = parse_physical_mm(params)?;
+    let identifier = v::parse_monitor_identifier(params).map_err(|e| IpcError::invalid(e.0))?;
+    let physical_mm = v::parse_physical_mm(params).map_err(|e| IpcError::invalid(e.0))?;
     let path = config_path_or_default(config_path)?;
     write_monitor_block(&path, &identifier, physical_mm)
         .map_err(|e| IpcError::Config(e.to_string()))?;
     Ok(ok_unit())
-}
-
-fn parse_monitor_identifier(params: &Value) -> Result<MonitorIdentifier, IpcError> {
-    if let Some(id) = params.get("stable_id").and_then(Value::as_str) {
-        if !id.is_empty() {
-            return v::validate_monitor_id_string(id, "stable_id")
-                .map(|s| MonitorIdentifier::StableId(s.to_owned()))
-                .map_err(|e| IpcError::invalid(e.0));
-        }
-    }
-    if let Some(name) = params.get("name").and_then(Value::as_str) {
-        if !name.is_empty() {
-            return v::validate_monitor_id_string(name, "name")
-                .map(|s| MonitorIdentifier::Name(s.to_owned()))
-                .map_err(|e| IpcError::invalid(e.0));
-        }
-    }
-    Err(IpcError::invalid(
-        "params.stable_id or params.name (non-empty string) required",
-    ))
-}
-
-fn parse_physical_mm(params: &Value) -> Result<[f64; 2], IpcError> {
-    let val = params
-        .get("physical_mm")
-        .ok_or_else(|| IpcError::invalid("params.physical_mm required"))?;
-    let raw: [f64; 2] = serde_json::from_value(val.clone())
-        .map_err(|e| IpcError::invalid(format!("physical_mm must be [number, number]: {e}")))?;
-    v::validate_physical_mm(raw).map_err(|e| IpcError::invalid(e.0))
 }
 
 fn current_state() -> Value {

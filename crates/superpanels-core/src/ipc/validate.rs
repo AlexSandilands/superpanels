@@ -4,7 +4,10 @@
 //! from the contract. Bounds target *human plausibility, not perf*: hitting a
 //! cap means the input is malicious or malformed.
 
+use serde_json::Value;
 use thiserror::Error;
+
+use crate::config::MonitorIdentifier;
 
 /// Maximum monitor count in a saved config.
 pub const MAX_MONITORS: usize = 64;
@@ -130,6 +133,37 @@ pub fn validate_preview_image_size(raw: [u32; 2]) -> Result<[u32; 2], Validation
     Ok(raw)
 }
 
+/// Pull `params.stable_id` (preferred) or `params.name` from a JSON params
+/// object and validate the chosen identifier into a [`MonitorIdentifier`].
+/// `stable_id` wins when both are set and non-empty.
+pub fn parse_monitor_identifier(params: &Value) -> Result<MonitorIdentifier, ValidationError> {
+    if let Some(id) = params.get("stable_id").and_then(Value::as_str) {
+        if !id.is_empty() {
+            return validate_monitor_id_string(id, "stable_id")
+                .map(|s| MonitorIdentifier::StableId(s.to_owned()));
+        }
+    }
+    if let Some(name) = params.get("name").and_then(Value::as_str) {
+        if !name.is_empty() {
+            return validate_monitor_id_string(name, "name")
+                .map(|s| MonitorIdentifier::Name(s.to_owned()));
+        }
+    }
+    Err(ValidationError::new(
+        "params.stable_id or params.name (non-empty string) required",
+    ))
+}
+
+/// Pull `params.physical_mm` and validate it as a `[f64; 2]`.
+pub fn parse_physical_mm(params: &Value) -> Result<[f64; 2], ValidationError> {
+    let val = params
+        .get("physical_mm")
+        .ok_or_else(|| ValidationError::new("params.physical_mm required"))?;
+    let raw: [f64; 2] = serde_json::from_value(val.clone())
+        .map_err(|e| ValidationError::new(format!("physical_mm must be [number, number]: {e}")))?;
+    validate_physical_mm(raw)
+}
+
 /// Bound-check a bezel measurement and narrow `f64 → f32`.
 ///
 /// `BezelConfig::{horizontal_mm,vertical_mm}` are `f32`, but the wire format
@@ -151,6 +185,7 @@ pub fn validate_bezel_mm(v: f64) -> Result<f32, ValidationError> {
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)] // reason: tests panic loudly on harness bugs
+#[allow(clippy::panic)] // reason: same — explicit panic on unexpected enum branch
 mod tests {
     use super::*;
 
@@ -294,5 +329,61 @@ mod tests {
         assert!(validate_bezel_mm(MAX_BEZEL_MM + 1.0).is_err());
         assert!(validate_bezel_mm(-MAX_BEZEL_MM - 1.0).is_err());
         assert!(validate_bezel_mm(1e30).is_err());
+    }
+
+    #[test]
+    fn parse_monitor_identifier_prefers_stable_id_over_name() {
+        let params = serde_json::json!({"stable_id": "uuid-x", "name": "DP-1"});
+        match parse_monitor_identifier(&params).unwrap() {
+            MonitorIdentifier::StableId(s) => assert_eq!(s, "uuid-x"),
+            MonitorIdentifier::Name(_) => panic!("expected StableId branch"),
+        }
+    }
+
+    #[test]
+    fn parse_monitor_identifier_falls_back_to_name_when_stable_id_missing_or_empty() {
+        let params = serde_json::json!({"stable_id": "", "name": "DP-1"});
+        match parse_monitor_identifier(&params).unwrap() {
+            MonitorIdentifier::Name(s) => assert_eq!(s, "DP-1"),
+            MonitorIdentifier::StableId(_) => panic!("expected Name branch"),
+        }
+        let params = serde_json::json!({"name": "DP-1"});
+        assert!(matches!(
+            parse_monitor_identifier(&params).unwrap(),
+            MonitorIdentifier::Name(_)
+        ));
+    }
+
+    #[test]
+    fn parse_monitor_identifier_rejects_when_neither_present() {
+        assert!(parse_monitor_identifier(&serde_json::json!({})).is_err());
+        assert!(
+            parse_monitor_identifier(&serde_json::json!({"stable_id": "", "name": ""})).is_err()
+        );
+    }
+
+    #[test]
+    fn parse_monitor_identifier_propagates_validate_failures() {
+        // Control characters get rejected by `validate_monitor_id_string`; the
+        // wrapper must propagate, not silently fall through to the `name` branch.
+        let params = serde_json::json!({"stable_id": "DP-1\nname=injected", "name": "DP-1"});
+        assert!(parse_monitor_identifier(&params).is_err());
+    }
+
+    #[test]
+    fn parse_physical_mm_round_trips_typical_values() {
+        let params = serde_json::json!({"physical_mm": [597.0, 336.0]});
+        let mm = parse_physical_mm(&params).unwrap();
+        assert!((mm[0] - 597.0).abs() < f64::EPSILON);
+        assert!((mm[1] - 336.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn parse_physical_mm_rejects_missing_or_malformed() {
+        assert!(parse_physical_mm(&serde_json::json!({})).is_err());
+        assert!(parse_physical_mm(&serde_json::json!({"physical_mm": "abc"})).is_err());
+        assert!(parse_physical_mm(&serde_json::json!({"physical_mm": [597.0]})).is_err());
+        // Validation cap still applies after JSON extraction.
+        assert!(parse_physical_mm(&serde_json::json!({"physical_mm": [0.0, 100.0]})).is_err());
     }
 }

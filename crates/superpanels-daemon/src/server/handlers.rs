@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use serde_json::{Value, json};
-use superpanels_core::config::{Config, MonitorIdentifier, write_monitor_block};
+use superpanels_core::config::{Config, write_monitor_block};
 use superpanels_core::ipc::validate as v;
 use superpanels_core::ipc::{IpcRequest, IpcResponse};
 use superpanels_core::layout::{BezelConfig, FitMode, compute_crop_specs_with_offset};
@@ -124,13 +124,13 @@ pub(super) async fn cmd_set_monitor_physical_size(
     req: IpcRequest,
     state: Arc<Mutex<DaemonState>>,
 ) -> IpcResponse {
-    let identifier = match parse_monitor_identifier(&req) {
+    let identifier = match v::parse_monitor_identifier(&req.params) {
         Ok(id) => id,
-        Err(msg) => return IpcResponse::failure(msg),
+        Err(e) => return IpcResponse::failure(e.0),
     };
-    let physical_mm = match parse_physical_mm(&req) {
+    let physical_mm = match v::parse_physical_mm(&req.params) {
         Ok(mm) => mm,
-        Err(msg) => return IpcResponse::failure(msg),
+        Err(e) => return IpcResponse::failure(e.0),
     };
 
     let mut guard = state.lock().await;
@@ -155,34 +155,6 @@ pub(super) async fn cmd_set_monitor_physical_size(
 
     info!("monitor physical size updated");
     IpcResponse::success(json!({}))
-}
-
-fn parse_monitor_identifier(req: &IpcRequest) -> Result<MonitorIdentifier, String> {
-    if let Some(id) = req.params.get("stable_id").and_then(Value::as_str) {
-        if !id.is_empty() {
-            return v::validate_monitor_id_string(id, "stable_id")
-                .map(|s| MonitorIdentifier::StableId(s.to_owned()))
-                .map_err(|e| e.0);
-        }
-    }
-    if let Some(name) = req.params.get("name").and_then(Value::as_str) {
-        if !name.is_empty() {
-            return v::validate_monitor_id_string(name, "name")
-                .map(|s| MonitorIdentifier::Name(s.to_owned()))
-                .map_err(|e| e.0);
-        }
-    }
-    Err("params.stable_id or params.name (non-empty string) required".to_owned())
-}
-
-fn parse_physical_mm(req: &IpcRequest) -> Result<[f64; 2], String> {
-    let val = req
-        .params
-        .get("physical_mm")
-        .ok_or_else(|| "params.physical_mm required".to_owned())?;
-    let raw: [f64; 2] = serde_json::from_value(val.clone())
-        .map_err(|e| format!("physical_mm must be [number, number]: {e}"))?;
-    v::validate_physical_mm(raw).map_err(|e| e.0)
 }
 
 pub(super) async fn cmd_detect_monitors(state: Arc<Mutex<DaemonState>>) -> IpcResponse {
