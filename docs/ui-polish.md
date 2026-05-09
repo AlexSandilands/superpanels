@@ -24,15 +24,15 @@ the next batch of polish work.
       match the rest of the UI. Likely a custom Select component or
       consistent `appearance: none` styling + caret + theming.
 
-## 4. Monitor inspector popup overflows horizontally
+## 4. Monitor inspector popup overflows horizontally ✅
 
-- [ ] After clicking a monitor on the canvas, the right-hand inspector
+- [x] After clicking a monitor on the canvas, the right-hand inspector
       popup has a horizontal scrollbar.
-- [ ] Cause appears to be the **X / Y position** input boxes — they're
+- [x] Cause appears to be the **X / Y position** input boxes — they're
       too wide.
-- [ ] Shrink those boxes and align their visual treatment with similar
+- [x] Shrink those boxes and align their visual treatment with similar
       input boxes used elsewhere (consistent width, border, padding).
-- [ ] Refresh-rate (Hz) display is far too long — round to **2 decimal
+- [x] Refresh-rate (Hz) display is far too long — round to **2 decimal
       places**.
 
 ## 5. Bezel gap adjustor in the bottom panel doesn't drive anything, what is it actually for? Key question - does the bezel gap settings apply to the profile, or the monitor system settings

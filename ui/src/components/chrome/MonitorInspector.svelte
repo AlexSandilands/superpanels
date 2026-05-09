@@ -61,7 +61,9 @@
     <div class="kv">
       <span>Mode</span>
       <span class="mono"
-        >{monitor.pxW}×{monitor.pxH}{monitor.refreshHz ? ` @ ${monitor.refreshHz} Hz` : ''}</span
+        >{monitor.pxW}×{monitor.pxH}{monitor.refreshHz
+          ? ` @ ${monitor.refreshHz.toFixed(2)} Hz`
+          : ''}</span
       >
     </div>
     <div class="kv">
@@ -174,7 +176,10 @@
   }
   .numfield > .field {
     flex: 1;
+    min-width: 0;
+    width: 100%;
     height: 26px;
+    padding: 0 6px;
   }
   .crop {
     width: 100%;
