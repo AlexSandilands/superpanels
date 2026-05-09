@@ -18,6 +18,7 @@
   } from '$lib/stores/image-transform.svelte';
   import {
     applyDraftProfile,
+    applyMonitorStateToCanvas,
     openMainWindow,
     pinImageToMonitor,
     quitApp,
@@ -213,11 +214,8 @@
     // we have a dirty canvas snapshot ready to undo).
     const seen = profileStore.activeName;
     if (seen === userActiveSentinel) return;
-    if (
-      userActiveSentinel !== null &&
-      seen !== userActiveSentinel &&
-      lastDirtyCanvasSnapshot !== null
-    ) {
+    const externalChange = userActiveSentinel !== null && seen !== userActiveSentinel;
+    if (externalChange && lastDirtyCanvasSnapshot !== null) {
       const snapshot = lastDirtyCanvasSnapshot;
       const prev = userActiveSentinel;
       lastDirtyCanvasSnapshot = null;
@@ -237,6 +235,14 @@
           },
         },
       });
+    } else if (externalChange && seen !== null && profileStore.selectedName !== seen) {
+      // Clean canvas, external active swap (schedule fire) — pull the
+      // canvas across so it reflects what's now on the desktop.
+      const next = profileStore.profiles.find((p) => p.name === seen);
+      if (next) {
+        profileStore.select(seen);
+        applyMonitorStateToCanvas(next);
+      }
     }
     userActiveSentinel = seen;
   });

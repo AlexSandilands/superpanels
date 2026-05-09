@@ -13,7 +13,6 @@ use superpanels_core::config::Config;
 use superpanels_core::ipc::{IpcRequest, PROTOCOL_VERSION};
 use superpanels_core::schedule::{LatLong, Schedule, Trigger, sun_event_utc_minutes};
 use tokio::sync::{Mutex, watch};
-use tokio::time::MissedTickBehavior;
 use tracing::{debug, warn};
 
 use crate::server;
@@ -101,12 +100,8 @@ pub(crate) async fn run_schedule_checker(
     state: Arc<Mutex<DaemonState>>,
     timer_tx: watch::Sender<Option<Duration>>,
 ) {
-    let mut interval = tokio::time::interval(Duration::from_secs(60));
-    interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-    interval.tick().await;
-
     loop {
-        interval.tick().await;
+        tokio::time::sleep(sleep_to_next_minute(&Local::now())).await;
         let to_apply = {
             let mut guard = state.lock().await;
             let cfg = guard.config.clone();
@@ -128,6 +123,17 @@ pub(crate) async fn run_schedule_checker(
             }
         }
     }
+}
+
+/// Time until the next wall-clock minute boundary, plus a 250 ms grace so
+/// `Local::now()` after the sleep is reliably *past* the boundary (otherwise
+/// scheduling jitter could leave us at HH:MM:59.998 and miss the rule).
+/// Aligning each iteration to the wall clock keeps `Daily { HH, MM }` rules
+/// firing at HH:MM:00.x rather than at the daemon's startup phase.
+fn sleep_to_next_minute<Tz: TimeZone>(now: &DateTime<Tz>) -> Duration {
+    let secs_to_next: u32 = 60 - now.second();
+    let ms_to_next: u64 = u64::from(secs_to_next) * 1000 - u64::from(now.timestamp_subsec_millis());
+    Duration::from_millis(ms_to_next + 250)
 }
 
 // --- predicates ---
@@ -342,6 +348,27 @@ mod tests {
             .and_hms_opt(hour, minute, 0)
             .unwrap();
         Local.from_local_datetime(&naive).single().unwrap()
+    }
+
+    fn local_at(hour: u32, minute: u32, second: u32, milli: u32) -> DateTime<Local> {
+        let naive = NaiveDate::from_ymd_opt(2025, 6, 21)
+            .unwrap()
+            .and_hms_milli_opt(hour, minute, second, milli)
+            .unwrap();
+        Local.from_local_datetime(&naive).single().unwrap()
+    }
+
+    #[test]
+    fn sleep_to_next_minute_lands_past_the_boundary() {
+        // Mid-minute: ~30s + 250ms grace.
+        let d = sleep_to_next_minute(&local_at(11, 1, 30, 0));
+        assert_eq!(d, Duration::from_millis(30_000 + 250));
+        // Just before the boundary: short sleep + 250ms grace.
+        let d = sleep_to_next_minute(&local_at(11, 1, 59, 750));
+        assert_eq!(d, Duration::from_millis(250 + 250));
+        // Right on the boundary: full minute (we still wait, then re-check).
+        let d = sleep_to_next_minute(&local_at(11, 1, 0, 0));
+        assert_eq!(d, Duration::from_millis(60_000 + 250));
     }
 
     #[test]
