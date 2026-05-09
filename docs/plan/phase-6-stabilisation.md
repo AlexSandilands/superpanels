@@ -14,7 +14,7 @@
 - [ ] Tag the schema as `v1`. Future changes require migrations, not breakage.
 
 ## 6.2 Performance enforcement
-- [ ] `criterion` benches for: bezel math (10k random layouts), library scan (5k images), single-image apply (4K, 8K).
+- [ ] `criterion` benches for: bezel math (10k random layouts), library scan (5k images), single-image apply (4K, 8K), `read_dimensions`, `library_thumbnail` @ 4K source, `library_list` @ 5k entries, `temp::save_temp_in` (fast-PNG path). Establishes tracked baselines for SPEC §19's 5 ms/call canvas budget and 200 ms/4K thumbnail target.
 - [ ] `cargo bench` runs nightly in CI; results compared to `main`; > 10% regression fails.
 
 ## 6.3 Localisation

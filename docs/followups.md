@@ -21,24 +21,3 @@ affected stacks (track upstream WebKit / `webkit2gtk` Arch package).
 `set_enabled_at_true_writes_desktop_file` /
 `desktop_body_includes_webkit_dmabuf_workaround` test assertions in
 `autostart.rs`.
-
-## Phase 3 review nitpicks (advisory)
-
-Logged by the agent-team review on 2026-04-30 after Phase 3 landed. None
-blocked; all are small enough to defer.
-
-**Benches missing for new hot paths**
-
-- No `criterion` bench covers `read_dimensions`, `library_thumbnail` at
-  4K source, `library_list` at 5K entries, or the `temp::save_temp_in`
-  fast-PNG change. Add them so SPEC §19's 5 ms / call canvas budget and
-  200 ms / 4K thumbnail target become tracked baselines. Phase 6
-  stabilisation is the natural home.
-
-**Supply chain**
-
-- `cargo deny check` flags advisories on Tauri's transitive deps —
-  `RUSTSEC-2025-0098` (`unic-ucd-version`), `RUSTSEC-2024-0413` (`gtk`),
-  among others. Not introduced by Phase 3 but newly visible in our lockfile
-  because adding `image` runtime to daemon expanded the resolved graph.
-  Track upstream Tauri / `gtk-rs` releases and bump when they ship clean.
