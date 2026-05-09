@@ -23,7 +23,7 @@ pub fn dispatch(method: &str, params: &Value, config_path: Option<&Path>) -> Cal
     match method {
         "detect_monitors" | "redetect" => detect_monitors(config_path),
         "list_profiles" => list_profiles(config_path),
-        "apply_profile" => apply_profile(params, config_path),
+        "apply_profile" => apply_profile(),
         "save_profile" => save_profile(params, config_path),
         "delete_profile" => delete_profile(params, config_path),
         "preview_crop" => preview_crop(params, config_path),
@@ -72,11 +72,7 @@ fn list_profiles(config_path: Option<&Path>) -> CallResult {
     Ok(ok_payload(cfg.profiles))
 }
 
-fn apply_profile(params: &Value, _config_path: Option<&Path>) -> CallResult {
-    let _name = params
-        .get("name")
-        .and_then(Value::as_str)
-        .ok_or_else(|| IpcError::invalid("params.name (string) required"))?;
+fn apply_profile() -> CallResult {
     Err(IpcError::internal(
         "apply_profile in-process requires daemon-equivalent runtime state; \
          start `superpanels-daemon` to apply profiles from the GUI",
