@@ -4306,7 +4306,6 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "image",
- "notify-rust",
  "serde",
  "serde_json",
  "superpanels-core",

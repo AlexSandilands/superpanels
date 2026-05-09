@@ -42,13 +42,6 @@ blocked; all are small enough to defer.
   the same two sites — one returns `String`, the other `IpcError`. Same
   follow-up scope.
 
-**IPC validation consistency**
-
-- `canonicalise_inside_roots` silently skips a configured root whose own
-  canonicalisation fails (`is_ok_and(...)` short-circuits). Behaviour is
-  fail-deny and correct — add a one-line comment so a future reader doesn't
-  "improve" it into fail-open.
-
 **Tray polling**
 
 - `crates/superpanels-gui/src/tray.rs::spawn_poller` is an unbounded
@@ -76,18 +69,6 @@ blocked; all are small enough to defer.
 
 **GUI hygiene**
 
-- `crates/superpanels-gui/src/lib.rs` declares every submodule `pub mod`.
-  Tighten to `pub(crate)` for the modules that aren't part of the
-  `tauri::generate_handler!` consumer surface (`autostart`, `bridge`,
-  `notifications`, `state`, `tray`, `window_state`, `ipc_client`).
-- `ui/eslint.config.js:17` carries
-  `'no-console': ['error', { allow: ['warn', 'error'] }]` from before the
-  post-overhaul style guide. The current rule (`docs/style-frontend.md`
-  §Forbidden patterns) is "no `console.*` in committed code" with a
-  carve-out for deliberate dev-diagnostic `console.warn` carrying an
-  inline `// reason: …` justification. Drop the blanket `allow` and rely
-  on per-line `// eslint-disable-next-line no-console -- reason: …`
-  comments so the eslint rule matches the doc.
 - `crates/superpanels-gui/src/commands.rs` is at 453 LoC — well past the
   400 soft limit (and approaching the 600 hard limit) after the
   `set_monitor_physical_size` addition. Peel by responsibility — the
@@ -115,17 +96,9 @@ blocked; all are small enough to defer.
 
 **Misc small things**
 
-- `crates/superpanels-gui/src/commands/in_process.rs` `apply_profile`
-  validates `params.name` only to discard it (`_name`) and unconditionally
-  return an error. Either remove the dead validation or wire the
-  in-process apply path properly.
 - `crates/superpanels-gui/src/commands.rs` calls
   `serde_json::to_value(&args).unwrap_or(Value::Null)` for typed inputs
   that should never fail to serialise — surface the error instead.
-- 3 ts-rs-generated TS files (`IpcError.ts`, `LibraryFilter.ts`,
-  `PreviewArgs.ts`) trip Prettier; the generated output doesn't match the
-  project's formatter. Add a Prettier-ignore for `ui/src/lib/types/*.ts`
-  or post-process the ts-rs output through `prettier --write` in `build.rs`.
 
 **Supply chain**
 

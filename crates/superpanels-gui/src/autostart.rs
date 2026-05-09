@@ -24,7 +24,7 @@ Categories=Graphics;Utility;\n\
 Terminal=false\n\
 X-GNOME-Autostart-enabled=true\n";
 
-pub fn autostart_dir() -> Result<PathBuf, IpcError> {
+pub(crate) fn autostart_dir() -> Result<PathBuf, IpcError> {
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .filter(|p| !p.as_os_str().is_empty())
@@ -37,22 +37,22 @@ pub fn autostart_dir() -> Result<PathBuf, IpcError> {
     Ok(base.join("autostart"))
 }
 
-pub fn desktop_path() -> Result<PathBuf, IpcError> {
+pub(crate) fn desktop_path() -> Result<PathBuf, IpcError> {
     Ok(autostart_dir()?.join(FILE_NAME))
 }
 
-pub fn is_enabled() -> bool {
+pub(crate) fn is_enabled() -> bool {
     desktop_path().is_ok_and(|p| p.exists())
 }
 
-pub fn set_enabled(enabled: bool) -> Result<(), IpcError> {
+pub(crate) fn set_enabled(enabled: bool) -> Result<(), IpcError> {
     set_enabled_at(&desktop_path()?, enabled)
 }
 
 /// Toggle the autostart desktop file at an explicit path. Used by tests so
 /// they can avoid mutating the process-wide environment (which would require
 /// `unsafe`, forbidden by the workspace).
-pub fn set_enabled_at(path: &Path, enabled: bool) -> Result<(), IpcError> {
+pub(crate) fn set_enabled_at(path: &Path, enabled: bool) -> Result<(), IpcError> {
     if enabled {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(IpcError::from)?;

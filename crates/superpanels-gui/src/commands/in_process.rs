@@ -19,7 +19,7 @@ use crate::errors::IpcError;
 /// Floor when `LibraryConfig::thumbnail_size` is misconfigured (`SPEC §14.1`).
 const THUMBNAIL_MIN_EDGE: u32 = 64;
 
-pub fn dispatch(method: &str, params: &Value, config_path: Option<&Path>) -> CallResult {
+pub(crate) fn dispatch(method: &str, params: &Value, config_path: Option<&Path>) -> CallResult {
     match method {
         "detect_monitors" | "redetect" => detect_monitors(config_path),
         "list_profiles" => list_profiles(config_path),

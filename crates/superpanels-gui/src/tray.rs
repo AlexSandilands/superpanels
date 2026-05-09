@@ -28,7 +28,7 @@ const ID_SETTINGS: &str = "tray.settings";
 const ID_QUIT: &str = "tray.quit";
 const PROFILE_PREFIX: &str = "tray.profile.";
 
-pub fn install(app: &App, state: Arc<AppState>) -> tauri::Result<()> {
+pub(crate) fn install(app: &App, state: Arc<AppState>) -> tauri::Result<()> {
     let handle = app.handle().clone();
     let menu = build_initial_menu(&handle, &state)?;
     let _tray = TrayIconBuilder::with_id("main-tray")
@@ -62,7 +62,7 @@ pub fn install(app: &App, state: Arc<AppState>) -> tauri::Result<()> {
 /// Background poller that re-fetches `current_state` and rebuilds the tray
 /// menu when the active profile or pause flag changes. Keeps the tick mark
 /// and "Pause / Resume" label in sync without the user re-opening the menu.
-pub fn spawn_poller(handle: AppHandle, state: Arc<AppState>) {
+pub(crate) fn spawn_poller(handle: AppHandle, state: Arc<AppState>) {
     std::thread::Builder::new()
         .name("tray-poller".into())
         .spawn(move || {

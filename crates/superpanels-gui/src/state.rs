@@ -6,30 +6,30 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 #[derive(Debug, Default)]
-pub struct AppState {
+pub(crate) struct AppState {
     /// Most recent snapshot of `current_state` from the daemon (or in-process).
-    pub last_runtime: Mutex<Option<RuntimeSnapshot>>,
+    pub(crate) last_runtime: Mutex<Option<RuntimeSnapshot>>,
     /// Optional override for the config path; `None` means use the XDG default.
-    pub config_path: Mutex<Option<PathBuf>>,
+    pub(crate) config_path: Mutex<Option<PathBuf>>,
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct RuntimeSnapshot {
-    pub active_profile: Option<String>,
-    pub current_filename: Option<String>,
-    pub paused: bool,
+pub(crate) struct RuntimeSnapshot {
+    pub(crate) active_profile: Option<String>,
+    pub(crate) current_filename: Option<String>,
+    pub(crate) paused: bool,
 }
 
 impl AppState {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
-    pub fn config_path(&self) -> Option<PathBuf> {
+    pub(crate) fn config_path(&self) -> Option<PathBuf> {
         self.config_path.lock().ok().and_then(|g| g.clone())
     }
 
-    pub fn snapshot(&self) -> RuntimeSnapshot {
+    pub(crate) fn snapshot(&self) -> RuntimeSnapshot {
         self.last_runtime
             .lock()
             .ok()
@@ -37,7 +37,7 @@ impl AppState {
             .unwrap_or_default()
     }
 
-    pub fn set_snapshot(&self, snap: RuntimeSnapshot) {
+    pub(crate) fn set_snapshot(&self, snap: RuntimeSnapshot) {
         if let Ok(mut g) = self.last_runtime.lock() {
             *g = Some(snap);
         }

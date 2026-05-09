@@ -14,7 +14,7 @@ use crate::errors::IpcError;
 use crate::ipc_client;
 
 /// Result of a successful daemon (or synthesised) IPC call.
-pub type CallResult = Result<Value, IpcError>;
+pub(crate) type CallResult = Result<Value, IpcError>;
 
 /// Whether a given method should be attempted in-process when no daemon is up.
 /// Slideshow control commands genuinely need daemon state and have no useful
@@ -26,7 +26,7 @@ fn has_in_process_fallback(method: &str) -> bool {
     )
 }
 
-pub fn call(method: &str, params: Value, config_path: Option<&Path>) -> CallResult {
+pub(crate) fn call(method: &str, params: Value, config_path: Option<&Path>) -> CallResult {
     if let Some(mut stream) = ipc_client::try_connect(&socket_path()) {
         // Mid-call socket / framing failure is a transport problem, not a
         // logical rejection from the daemon — keep the two paths distinct so

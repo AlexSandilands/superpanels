@@ -24,7 +24,7 @@ use crate::bridge;
 use crate::errors::IpcError;
 use crate::state::{AppState, RuntimeSnapshot};
 
-pub mod in_process;
+pub(crate) mod in_process;
 
 // --- shared payload types (TS-exported) --------------------------------------
 
@@ -32,48 +32,48 @@ pub mod in_process;
 /// but is defined in the GUI crate so `ts-rs` can export it for the frontend.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../ui/src/lib/types/")]
-pub struct LibraryFilter {
+pub(crate) struct LibraryFilter {
     #[ts(optional)]
-    pub tag: Option<String>,
+    pub(crate) tag: Option<String>,
     #[ts(optional)]
-    pub min_width: Option<u32>,
+    pub(crate) min_width: Option<u32>,
     #[ts(optional)]
-    pub min_height: Option<u32>,
+    pub(crate) min_height: Option<u32>,
     #[ts(optional)]
-    pub aspect_min: Option<f32>,
+    pub(crate) aspect_min: Option<f32>,
     #[ts(optional)]
-    pub aspect_max: Option<f32>,
+    pub(crate) aspect_max: Option<f32>,
     #[ts(optional)]
-    pub offset: Option<u32>,
+    pub(crate) offset: Option<u32>,
     #[ts(optional)]
-    pub limit: Option<u32>,
+    pub(crate) limit: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../ui/src/lib/types/")]
-pub struct PreviewArgs {
-    pub image: String,
-    pub offset_px: [i32; 2],
-    pub bezel_h_mm: f32,
-    pub bezel_v_mm: f32,
-    pub fit: String,
+pub(crate) struct PreviewArgs {
+    pub(crate) image: String,
+    pub(crate) offset_px: [i32; 2],
+    pub(crate) bezel_h_mm: f32,
+    pub(crate) bezel_v_mm: f32,
+    pub(crate) fit: String,
 }
 
 // --- command bindings --------------------------------------------------------
 
 #[tauri::command]
-pub fn detect_monitors(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
+pub(crate) fn detect_monitors(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
     bridge::call("redetect", json!({}), state.config_path().as_deref())?;
     bridge::call("detect_monitors", json!({}), state.config_path().as_deref())
 }
 
 #[tauri::command]
-pub fn list_profiles(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
+pub(crate) fn list_profiles(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
     bridge::call("list_profiles", json!({}), state.config_path().as_deref())
 }
 
 #[tauri::command]
-pub fn apply_profile(
+pub(crate) fn apply_profile(
     name: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
@@ -88,7 +88,7 @@ pub fn apply_profile(
 }
 
 #[tauri::command]
-pub fn save_profile(
+pub(crate) fn save_profile(
     profile: Value,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
@@ -100,7 +100,7 @@ pub fn save_profile(
 }
 
 #[tauri::command]
-pub fn delete_profile(
+pub(crate) fn delete_profile(
     name: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
@@ -112,7 +112,7 @@ pub fn delete_profile(
 }
 
 #[tauri::command]
-pub fn preview_crop(
+pub(crate) fn preview_crop(
     args: PreviewArgs,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
@@ -124,7 +124,7 @@ pub fn preview_crop(
 }
 
 #[tauri::command]
-pub fn library_list(
+pub(crate) fn library_list(
     filter: LibraryFilter,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
@@ -136,7 +136,7 @@ pub fn library_list(
 }
 
 #[tauri::command]
-pub fn library_thumbnail(
+pub(crate) fn library_thumbnail(
     path: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
@@ -170,7 +170,7 @@ fn should_fall_back_to_local_render(err: &IpcError) -> bool {
 }
 
 #[tauri::command]
-pub fn source_thumbnail(path: String) -> Result<Value, IpcError> {
+pub(crate) fn source_thumbnail(path: String) -> Result<Value, IpcError> {
     let p = PathBuf::from(&path);
     if !p.is_absolute() {
         return Err(IpcError::invalid("source thumbnail path must be absolute"));
@@ -194,12 +194,12 @@ fn render_local_thumbnail(path: &std::path::Path) -> Result<Value, IpcError> {
 }
 
 #[tauri::command]
-pub fn library_rescan(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
+pub(crate) fn library_rescan(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
     bridge::call("library_rescan", json!({}), state.config_path().as_deref())
 }
 
 #[tauri::command]
-pub fn library_delete(
+pub(crate) fn library_delete(
     path: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
@@ -211,7 +211,7 @@ pub fn library_delete(
 }
 
 #[tauri::command]
-pub fn library_tag(
+pub(crate) fn library_tag(
     path: String,
     tag: String,
     on: bool,
@@ -225,17 +225,17 @@ pub fn library_tag(
 }
 
 #[tauri::command]
-pub fn slideshow_next(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
+pub(crate) fn slideshow_next(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
     bridge::call("slideshow_next", json!({}), state.config_path().as_deref())
 }
 
 #[tauri::command]
-pub fn slideshow_prev(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
+pub(crate) fn slideshow_prev(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
     bridge::call("slideshow_prev", json!({}), state.config_path().as_deref())
 }
 
 #[tauri::command]
-pub fn slideshow_pause(
+pub(crate) fn slideshow_pause(
     paused: Option<bool>,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
@@ -247,12 +247,12 @@ pub fn slideshow_pause(
 }
 
 #[tauri::command]
-pub fn get_config(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
+pub(crate) fn get_config(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
     bridge::call("get_config", json!({}), state.config_path().as_deref())
 }
 
 #[tauri::command]
-pub fn save_config(
+pub(crate) fn save_config(
     config: Value,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
@@ -264,12 +264,12 @@ pub fn save_config(
 }
 
 #[tauri::command]
-pub fn redetect(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
+pub(crate) fn redetect(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
     bridge::call("redetect", json!({}), state.config_path().as_deref())
 }
 
 #[tauri::command]
-pub fn set_monitor_physical_size(
+pub(crate) fn set_monitor_physical_size(
     stable_id: Option<String>,
     name: Option<String>,
     physical_mm: [f64; 2],
@@ -304,20 +304,20 @@ pub fn set_monitor_physical_size(
 }
 
 #[tauri::command]
-pub fn current_state(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
+pub(crate) fn current_state(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
     let v = bridge::call("current_state", json!({}), state.config_path().as_deref())?;
     state.set_snapshot(parse_runtime_snapshot(&v));
     Ok(v)
 }
 
 #[tauri::command]
-pub fn set_autostart(enabled: bool) -> Result<Value, IpcError> {
+pub(crate) fn set_autostart(enabled: bool) -> Result<Value, IpcError> {
     crate::autostart::set_enabled(enabled).map(|()| json!({ "enabled": enabled }))
 }
 
 #[tauri::command]
-pub fn get_autostart() -> Result<Value, IpcError> {
-    Ok(json!({ "enabled": crate::autostart::is_enabled() }))
+pub(crate) fn get_autostart() -> Value {
+    json!({ "enabled": crate::autostart::is_enabled() })
 }
 
 fn parse_runtime_snapshot(v: &Value) -> RuntimeSnapshot {

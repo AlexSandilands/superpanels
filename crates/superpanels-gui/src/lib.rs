@@ -5,18 +5,19 @@
 //! - typed `#[tauri::command]` wrappers for every IPC method (`SPEC.md` §12.4),
 //! - a daemon-first / in-process bridge that mirrors the CLI's behaviour,
 //! - the system tray (`SPEC.md` §13),
-//! - desktop-notification surfacing (`SPEC.md` §13.4),
 //! - autostart `.desktop` writer (`SPEC.md` §12 / §14).
+//!
+//! Desktop-notification surfacing (`SPEC.md` §13.4) is intentionally
+//! unimplemented; wire it back when the tray exposes failure events.
 
-pub mod autostart;
-pub mod bridge;
-pub mod commands;
-pub mod errors;
-pub mod ipc_client;
-pub mod notifications;
-pub mod state;
-pub mod tray;
-pub mod window_state;
+pub(crate) mod autostart;
+pub(crate) mod bridge;
+pub(crate) mod commands;
+pub(crate) mod errors;
+pub(crate) mod ipc_client;
+pub(crate) mod state;
+pub(crate) mod tray;
+pub(crate) mod window_state;
 
 use std::sync::Arc;
 

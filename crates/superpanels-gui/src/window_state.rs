@@ -10,17 +10,17 @@ use serde::{Deserialize, Serialize};
 use tauri::{App, Manager, PhysicalPosition, PhysicalSize, Window};
 
 #[derive(Debug, Default, Serialize, Deserialize)]
-pub struct WindowState {
-    pub width: Option<u32>,
-    pub height: Option<u32>,
-    pub x: Option<i32>,
-    pub y: Option<i32>,
-    pub maximized: bool,
+pub(crate) struct WindowState {
+    pub(crate) width: Option<u32>,
+    pub(crate) height: Option<u32>,
+    pub(crate) x: Option<i32>,
+    pub(crate) y: Option<i32>,
+    pub(crate) maximized: bool,
 }
 
 const FILE_NAME: &str = "window.json";
 
-pub fn state_dir() -> Option<PathBuf> {
+pub(crate) fn state_dir() -> Option<PathBuf> {
     let base = std::env::var_os("XDG_STATE_HOME")
         .map(PathBuf::from)
         .filter(|p| !p.as_os_str().is_empty())
@@ -32,18 +32,18 @@ pub fn state_dir() -> Option<PathBuf> {
     Some(base.join("superpanels"))
 }
 
-pub fn state_path() -> Option<PathBuf> {
+pub(crate) fn state_path() -> Option<PathBuf> {
     state_dir().map(|d| d.join(FILE_NAME))
 }
 
-pub fn load_from(path: &Path) -> WindowState {
+pub(crate) fn load_from(path: &Path) -> WindowState {
     let Ok(bytes) = fs::read(path) else {
         return WindowState::default();
     };
     serde_json::from_slice(&bytes).unwrap_or_default()
 }
 
-pub fn save_to(path: &Path, state: &WindowState) -> std::io::Result<()> {
+pub(crate) fn save_to(path: &Path, state: &WindowState) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -53,7 +53,7 @@ pub fn save_to(path: &Path, state: &WindowState) -> std::io::Result<()> {
 }
 
 /// Apply a saved window state (size, position, maximized) to the main window.
-pub fn restore(app: &App) {
+pub(crate) fn restore(app: &App) {
     let Some(path) = state_path() else { return };
     let state = load_from(&path);
     let Some(window) = app.get_webview_window("main") else {
@@ -71,7 +71,7 @@ pub fn restore(app: &App) {
 }
 
 /// Snapshot the window's current geometry into `state.json`. Called on close.
-pub fn persist(window: &Window) -> std::io::Result<()> {
+pub(crate) fn persist(window: &Window) -> std::io::Result<()> {
     let Some(path) = state_path() else {
         return Ok(());
     };

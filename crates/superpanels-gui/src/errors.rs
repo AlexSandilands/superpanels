@@ -9,7 +9,7 @@ use ts_rs::TS;
 #[derive(Debug, Serialize, TS)]
 #[ts(export, export_to = "../../../ui/src/lib/types/")]
 #[serde(tag = "kind", content = "message")]
-pub enum IpcError {
+pub(crate) enum IpcError {
     /// The daemon was reachable and answered, but its answer was an error
     /// string (logical rejection — bad params, path outside roots, etc.).
     Daemon(String),
@@ -38,11 +38,11 @@ pub enum IpcError {
 }
 
 impl IpcError {
-    pub fn invalid<M: Into<String>>(m: M) -> Self {
+    pub(crate) fn invalid<M: Into<String>>(m: M) -> Self {
         Self::InvalidArgument(m.into())
     }
 
-    pub fn internal<M: Into<String>>(m: M) -> Self {
+    pub(crate) fn internal<M: Into<String>>(m: M) -> Self {
         Self::Internal(m.into())
     }
 }

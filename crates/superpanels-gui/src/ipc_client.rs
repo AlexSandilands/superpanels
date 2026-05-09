@@ -18,9 +18,7 @@ const READ_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_FRAME_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, thiserror::Error)]
-pub enum ClientError {
-    #[error("daemon not reachable")]
-    NotReachable,
+pub(crate) enum ClientError {
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
     #[error("serde: {0}")]
@@ -29,11 +27,11 @@ pub enum ClientError {
     FrameTooLarge(usize),
 }
 
-pub fn try_connect(socket: &Path) -> Option<UnixStream> {
+pub(crate) fn try_connect(socket: &Path) -> Option<UnixStream> {
     UnixStream::connect(socket).ok()
 }
 
-pub fn call(
+pub(crate) fn call(
     stream: &mut UnixStream,
     method: &str,
     params: serde_json::Value,
