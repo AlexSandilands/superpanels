@@ -20,6 +20,7 @@ Slots in between Phase 4d and Phase 5 (packaging shifts to v0.9). Design doc: `d
 - [x] Top nav has a "Save as new profile" button beside Apply that captures the live canvas state into a new profile.
 - [x] CLI has parity with manager actions; `superpanels schedule …` subcommand exists.
 - [x] Working design doc deleted; relevant content folded into `docs/spec/03`, `docs/spec/09`, `docs/spec/12`.
+- [ ] Save model revised: Apply ephemeral; Save / Save-as-new / Revert button cluster; confirm-discard modal on user switch + window close; schedule preemption surfaces a toast with Undo. (See §4e.11.)
 
 ---
 
@@ -49,6 +50,8 @@ Slots in between Phase 4d and Phase 5 (packaging shifts to v0.9). Design doc: `d
 - [x] Tests: each disable reason triggers correctly; repair flow produces a re-Ok'd profile.
 
 ## 4e.3 Canvas state — per-profile auto-save
+
+> **Superseded by §4e.11 (2026-05-10).** Auto-save was removed; Apply is now ephemeral. Tickboxes below describe the original implementation; see §4e.11 for the current model.
 
 The model: when a profile is active, the canvas *is* the profile. Every canvas change auto-saves. The top-nav "Save as new" button (4e.7b) is the only way to fork without overwriting.
 
@@ -121,6 +124,8 @@ The tray selector is purely for **switching**. Creation actions live elsewhere (
 
 ## 4e.7b Top-nav "Save as new profile" button
 
+> **Re-framed by §4e.11 (2026-05-10).** Save-as-new is no longer the only escape from autosave; it now sits alongside Save, Revert, and the confirm-discard modal.
+
 Mockup reference: save-icon button in `chrome.jsx:67-71` (TitleBar), dialog component `SaveProfileDialog` (`profiles.jsx:66`).
 
 The auto-save model in 4e.3 means the active profile silently mutates as the user drags monitors or repositions the image. This button is the escape hatch — fork the current state into a new profile *before* further tweaks land on the active one.
@@ -157,3 +162,60 @@ The auto-save model in 4e.3 means the active profile silently mutates as the use
 
 - [x] If `Schedule::Cron` validation needs a non-trivial dep, log a `cargo-deny` follow-up.
 - [x] Topology-fingerprint stability under unrelated KDE updates — note in `docs/followups.md` to revisit if false-disable reports surface.
+
+## 4e.11 Save model revision (post-launch amendment)
+
+Phase 4e shipped with the canvas auto-saving every drag, drop, and rotation onto the active profile. After live use this turned out to be the wrong model: it makes Apply redundant, prevents experimentation, and forces users to type a new name (`Save as new`) before *any* tweak that they don't want to keep. The corrected model below is dated 2026-05-10 and supersedes §4e.3.
+
+The new contract:
+
+- **Apply** = ephemeral push of the current canvas state to the desktop. Does NOT mutate the active profile's TOML.
+- **Save** = commit the current canvas state to the active profile. New button.
+- **Save As New** = unchanged (§4e.7b). Forks current canvas into a new profile.
+- **Revert** = re-pulls active profile state into the canvas, discarding local edits. New button.
+- Auto-save is dropped.
+
+Visibility / enable rules:
+
+- Apply, Save, Save As New, Revert — all always visible.
+- Save — disabled when there is no active profile; rendered with the default white tint when the canvas is clean and tinted with `--accent` when it is dirty.
+- Revert — disabled when the canvas is clean OR when there is no active profile.
+- Save As New — disabled rules unchanged from §4e.7b ("no image on canvas" tooltip).
+- Apply — disabled rules unchanged.
+
+### 4e.11.1 Apply becomes ephemeral
+
+- [ ] Add a daemon IPC method `apply_canvas` that takes a transient canvas payload (image source, transform, `monitor_state`, optional `backend_override`) and runs the same `run_span_apply` / `run_per_monitor_apply` pipelines without writing to `config.profiles`. Mirrored in the GUI's `commands/profiles.rs` Tauri shell.
+- [ ] Drop autosave from the Apply path. `apply_profile(name)` keeps its existing semantics (no canvas snapshot, applies whatever's persisted) and remains the entry point used by schedule fires, the manager-list Apply action, and the boot catch-up.
+- [ ] Frontend `applyDraftProfile()` calls `apply_canvas` instead of `save_profile + apply_profile`. The active profile name (if any) is passed alongside so the daemon can update `last_applied_at` without rewriting `monitor_state`.
+- [ ] Tests: integration test that `apply_canvas` updates the desktop but does not change `config.profiles[active].monitor_state`; another that `apply_profile` still applies the persisted state verbatim.
+
+### 4e.11.2 Drop per-profile autosave wiring
+
+- [ ] Remove the eager `update_profile_monitor_state` / `update_profile_image_transform` / `update_profile_source` calls from canvas drag/drop/transform handlers in the frontend. The autosave wiring lived in `ui/src/lib/canvas/transform-actions.ts` plus the in-store `setSpanImage` / `pinImageToMonitor` flows.
+- [ ] The IPC commands themselves stay defined (used by Save, by the topology-repair flow, and the Settings panes). Keep the Rust-side handlers; only the unconditional client invocations go away.
+
+### 4e.11.3 Save (existing) button
+
+- [ ] Add a `save` button to the `TitleBar` cluster that calls `save_profile` for the currently-active profile. Disabled when there is no active profile.
+- [ ] Dirty detection: a `$derived` flag in `ui/src/lib/stores/profile.svelte.ts` that compares the live canvas state (draft body + image transform + canvas-view overrides) to the active profile's persisted state. The flag drives the accent-colour swap on the Save icon.
+- [ ] When the Save fires, the active profile's `monitor_state`, image transform, and `topology` are snapshotted from the live canvas — same payload shape that Save-as-new uses.
+
+### 4e.11.4 Revert button
+
+- [ ] Add a `revert` button to the cluster that re-pulls the active profile's persisted state into the canvas (overrides + draft + image-transform store). Equivalent to `profileStore.revertDraft()` plus `applyMonitorStateToCanvas(active)` plus `imageTransform.set(...)`.
+- [ ] Disabled when the canvas is clean OR when there is no active profile.
+
+### 4e.11.5 Confirm-discard modal
+
+- [ ] Reuse the existing `ConfirmDialog` widget (`ui/src/components/widgets/ConfirmDialog.svelte`) wrapped behind a thin helper. New file: `ui/src/components/overlays/ConfirmDiscardModal.svelte`.
+- [ ] Triggers on **user-initiated** profile switch (tray pill, profile-manager Apply, top-nav profile selector) when the canvas is dirty.
+- [ ] Triggers on the main window close-request (Tauri `WindowEvent::CloseRequested`) when the canvas is dirty. The Rust handler vetoes the close, emits a `request-discard-confirm` event, and the frontend pops the modal; the frontend re-issues `getCurrentWindow().close()` after the user confirms.
+- [ ] Confirm = drop edits and proceed; Cancel = stay on the current canvas.
+
+### 4e.11.6 Schedule preemption toast
+
+- [ ] Schedule preemption (§9.3.3) is **unchanged** — schedules still preempt manual choice when not paused.
+- [ ] When a schedule fires while the canvas is dirty, do not pop the modal. Instead, the frontend's `currentState` poller detects that `active_profile` changed, snapshots the previous canvas state into a transient buffer, then surfaces a toast: "Schedule switched to {profile}; unsaved changes to {prev} were discarded" with an "Undo" action button.
+- [ ] The Undo action re-applies the snapshotted previous canvas state via `apply_canvas` and restores it as the local canvas. Ephemeral — it does not save.
+- [ ] Test: vitest unit test that the toast wiring produces an Undo action and that invoking it issues `apply_canvas` with the snapshotted payload.
