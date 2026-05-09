@@ -11,7 +11,8 @@
     "lint": "eslint --ext .ts,.svelte src",
     "format": "prettier --write src",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "bench": "vitest bench --run"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.4.0",

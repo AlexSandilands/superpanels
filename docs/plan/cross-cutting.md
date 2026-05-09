@@ -36,4 +36,7 @@ These run through every phase and don't belong to any single one.
 ## Performance baselines
 - Phase 1: bench `compute_crop_specs` for 1, 3, 6, 9 monitors. Capture baseline.
 - Phase 2: bench library scan for 100, 1k, 10k images. Capture baseline.
-- Phase 4: bench canvas redraw frame time. Capture baseline.
+- Phase 4: canvas redraw — `ui/src/lib/canvas/previewLayout/gaps.bench.ts`
+  pins `hNeighbourPairs` / `vNeighbourPairs` at N=9 (3×3 grid). Run with
+  `npm run bench` from `ui/`. Mean stays ~1 µs/op on commodity hardware,
+  comfortably under the SPEC §19 8 ms canvas-frame budget.

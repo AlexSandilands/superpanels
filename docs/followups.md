@@ -22,22 +22,6 @@ affected stacks (track upstream WebKit / `webkit2gtk` Arch package).
 `desktop_body_includes_webkit_dmabuf_workaround` test assertions in
 `autostart.rs`.
 
-## Canvas-redraw vitest bench
-
-`PreviewCanvas` re-derives `dimLines`, `imgRect`, hover, and cursor on
-every pointer move; `previewLayout/gaps.ts::hNeighbourPairs` and
-`vNeighbourPairs` are O(N³) and run per frame. At N ≤ 9 monitors this
-sits comfortably under SPEC §19's 8 ms canvas-frame budget, but no
-benchmark pins it. `cross-cutting.md` §"Performance baselines" already
-has an unfilled placeholder for this.
-
-**Revisit when:** taking on Phase 6 stabilisation, or sooner if a
-high-N multi-monitor user reports drag jank.
-
-**Action:** add a vitest `bench` (or a Rust-side `criterion` mirror of
-the algorithm) for an N=9 layout pointer-move scenario; capture the
-baseline; track regressions per SPEC §19.
-
 ## Switch TS module file names to kebab-case
 
 `docs/style-frontend.md` §Naming currently prescribes **camelCase** for
