@@ -1,3 +1,4 @@
+<!-- reason: coherent rendering+hit-test surface; geometry is shared by draw and hit-test, further splitting would fragment a single concern -->
 <script lang="ts">
   // Bezel-aware monitor preview canvas. Free-positioning model: the source
   // image floats in mm-space and monitors are crop windows that hover over

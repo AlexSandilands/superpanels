@@ -75,7 +75,7 @@
     void getCurrentWindow()
       .startDragging()
       .catch((err) => {
-        // surface failures to devtools so we can tell if startDragging is rejecting
+        // reason: surface startDragging failures to devtools so we can tell if it's rejecting
         // (e.g. Wayland serial issue) vs. the handler not firing at all.
         console.warn('[titlebar] startDragging failed', err);
       });
