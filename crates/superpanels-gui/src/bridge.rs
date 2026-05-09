@@ -8,10 +8,10 @@
 use std::path::Path;
 
 use serde_json::{Value, json};
+use superpanels_core::ipc::client as ipc_client;
 use superpanels_core::ipc::{IpcResponse, socket_path};
 
 use crate::errors::IpcError;
-use crate::ipc_client;
 
 /// Result of a successful daemon (or synthesised) IPC call.
 pub(crate) type CallResult = Result<Value, IpcError>;

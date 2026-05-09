@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+pub mod client;
 pub mod validate;
 
 pub const PROTOCOL_VERSION: u32 = 1;

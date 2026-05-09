@@ -27,12 +27,6 @@ affected stacks (track upstream WebKit / `webkit2gtk` Arch package).
 Logged by the agent-team review on 2026-04-30 after Phase 3 landed. None
 blocked; all are small enough to defer.
 
-**Code dedup**
-
-- `crates/superpanels-cli/src/ipc_client.rs` and
-  `crates/superpanels-gui/src/ipc_client.rs` are near-duplicates (frame format,
-  timeouts, `MAX_FRAME_BYTES`, error enum). When either is next touched, hoist
-  into `superpanels-core::ipc::client` (sync, no tokio).
 **Library thumbnail cache**
 
 - `cmd_library_thumbnail` decodes + resizes on every call. Add an LRU keyed

@@ -19,12 +19,12 @@ use superpanels_core::backends::BackendError;
 use superpanels_core::config::{Config, ConfigError};
 use superpanels_core::display::kscreen::KscreenDoctorDetector;
 use superpanels_core::image::ImageError;
+pub(crate) use superpanels_core::ipc::client as ipc_client;
 use superpanels_core::ipc::{IpcResponse, socket_path};
 use superpanels_core::layout::{FitMode, LayoutError};
 use superpanels_core::{DetectError, DisplayDetector, Monitor, Rotation, VERSION, detect};
 use tracing_subscriber::EnvFilter;
 
-mod ipc_client;
 mod monitor_cmd;
 mod profile_cmd;
 mod set_cmd;

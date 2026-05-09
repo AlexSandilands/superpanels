@@ -14,7 +14,6 @@ pub(crate) mod autostart;
 pub(crate) mod bridge;
 pub(crate) mod commands;
 pub(crate) mod errors;
-pub(crate) mod ipc_client;
 pub(crate) mod state;
 pub(crate) mod tray;
 pub(crate) mod window_state;
