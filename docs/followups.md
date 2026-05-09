@@ -45,8 +45,6 @@ blocked; all are small enough to defer.
 
 **Test gaps**
 
-- `library_list` multi-roots case isn't exercised in either the daemon or
-  in-process tests.
 - `tray::handle_menu_event`'s profile-prefix parsing (`name != "empty"`
   guard) has no unit coverage. Tauri-bound code is hard to drive in unit
   tests; consider extracting the pure-string parsing into a helper.

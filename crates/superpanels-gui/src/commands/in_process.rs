@@ -263,6 +263,7 @@ fn current_state() -> Value {
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)] // reason: tests fail loudly on harness errors
+#[allow(clippy::expect_used)] // reason: same
 mod tests {
     use super::*;
     use tempfile::tempdir;
@@ -351,5 +352,46 @@ mod tests {
         cfg.save_to(&path).unwrap();
         let err = library_thumbnail(&json!({"path": "/etc/passwd"}), Some(&path)).unwrap_err();
         assert!(matches!(err, IpcError::InvalidArgument(_)));
+    }
+
+    #[test]
+    fn library_list_walks_all_configured_roots() {
+        // The in-process `library_list` scans each `config.library.roots`
+        // entry independently and concatenates. Pin that with a 2-root
+        // fixture so a regression in the for-loop (e.g. "first root only")
+        // shows up as a missing entry.
+        let root_a = tempdir().unwrap();
+        let root_b = tempdir().unwrap();
+        let img_a = root_a.path().join("a.png");
+        let img_b = root_b.path().join("b.png");
+        let pixel = image::RgbImage::from_pixel(8, 8, image::Rgb([0, 0, 0]));
+        pixel.save(&img_a).unwrap();
+        pixel.save(&img_b).unwrap();
+
+        let cfg_dir = tempdir().unwrap();
+        let cfg_path = cfg_dir.path().join("config.toml");
+        let mut cfg = Config::default();
+        cfg.library.roots = vec![root_a.path().to_path_buf(), root_b.path().to_path_buf()];
+        cfg.save_to(&cfg_path).unwrap();
+
+        let v = library_list(&Value::Null, Some(&cfg_path)).unwrap();
+        let arr = v.as_array().expect("library_list returns array");
+        let names: Vec<String> = arr
+            .iter()
+            .filter_map(|e| {
+                e.get("path")
+                    .and_then(Value::as_str)
+                    .and_then(|p| std::path::Path::new(p).file_name()?.to_str())
+                    .map(str::to_owned)
+            })
+            .collect();
+        assert!(
+            names.contains(&"a.png".to_owned()),
+            "missing root_a entry: {names:?}"
+        );
+        assert!(
+            names.contains(&"b.png".to_owned()),
+            "missing root_b entry: {names:?}"
+        );
     }
 }

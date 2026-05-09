@@ -567,6 +567,53 @@ mod tests {
         assert!(!e.favourite);
     }
 
+    #[tokio::test]
+    async fn library_list_aggregates_entries_from_multiple_roots() {
+        // `rescan_library` walks each `config.library.roots` entry and
+        // concatenates. Pin that with a 2-root fixture so a regression
+        // (e.g. "scans only roots[0]") shows up as a missing entry on
+        // `library_list`. Mirrors the in-process equivalent in
+        // `superpanels-gui/src/commands/in_process.rs`.
+        let root_a = tempdir().unwrap();
+        let root_b = tempdir().unwrap();
+        let img_a = root_a.path().join("a.png");
+        let img_b = root_b.path().join("b.png");
+        write_dummy_png(&img_a, 8, 8);
+        write_dummy_png(&img_b, 8, 8);
+
+        let mut cfg = Config::default();
+        cfg.library.roots = vec![root_a.path().to_path_buf(), root_b.path().to_path_buf()];
+        let mut s = DaemonState::for_tests(cfg);
+        s.rescan_library();
+        let state = make_state_from(s);
+
+        let resp = cmd_library_list(req("library_list", json!({})), state).await;
+        assert!(resp.is_ok());
+        let arr = resp.result.unwrap();
+        let arr = arr.as_array().expect("library_list returns array");
+        let names: Vec<String> = arr
+            .iter()
+            .filter_map(|e| {
+                e.get("path")
+                    .and_then(Value::as_str)
+                    .and_then(|p| Path::new(p).file_name()?.to_str())
+                    .map(str::to_owned)
+            })
+            .collect();
+        assert!(
+            names.contains(&"a.png".to_owned()),
+            "missing root_a entry: {names:?}"
+        );
+        assert!(
+            names.contains(&"b.png".to_owned()),
+            "missing root_b entry: {names:?}"
+        );
+    }
+
+    fn make_state_from(s: DaemonState) -> Arc<Mutex<DaemonState>> {
+        Arc::new(Mutex::new(s))
+    }
+
     #[test]
     fn apply_tag_ignores_blank_tag_after_trim() {
         // The whitespace-only branch is a silent no-op by design — guards
