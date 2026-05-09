@@ -12,7 +12,9 @@
   import {
     bbox,
     buildPreviewMonitors,
+    hNeighbourPairs,
     monitorRect,
+    vNeighbourPairs,
     type PreviewMonitor,
     type Rect,
   } from '$lib/canvas/previewLayout';
@@ -323,19 +325,20 @@
   const dimLines = $derived.by(() => {
     const showAlways = ui.dimsAlways;
     if (!showAlways && !drag && !canvasView.hoverId && !canvasView.selectId) return [];
-    const sorted = [...previewMonitors].sort((a, b) => a.xMm - b.xMm);
     const out: Array<{ x1: number; y1: number; x2: number; y2: number; label: string }> = [];
-    for (let i = 0; i < sorted.length - 1; i += 1) {
-      const a = sorted[i];
-      const b = sorted[i + 1];
-      if (!a || !b) continue;
-      const gap = b.xMm - (a.xMm + a.wMm);
-      if (gap > 0.1) {
-        const yMm = Math.max(a.yMm, b.yMm) + Math.min(a.hMm, b.hMm) / 2;
-        const p1 = mm2px(a.xMm + a.wMm, yMm);
-        const p2 = mm2px(b.xMm, yMm);
-        out.push({ x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, label: `${Math.round(gap)} mm` });
-      }
+    for (const p of hNeighbourPairs(previewMonitors)) {
+      if (p.gapMm <= 0.1) continue;
+      const yMm = Math.max(p.a.yMm, p.b.yMm) + Math.min(p.a.hMm, p.b.hMm) / 2;
+      const p1 = mm2px(p.a.xMm + p.a.wMm, yMm);
+      const p2 = mm2px(p.b.xMm, yMm);
+      out.push({ x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, label: `${Math.round(p.gapMm)} mm` });
+    }
+    for (const p of vNeighbourPairs(previewMonitors)) {
+      if (p.gapMm <= 0.1) continue;
+      const xMm = Math.max(p.a.xMm, p.b.xMm) + Math.min(p.a.wMm, p.b.wMm) / 2;
+      const p1 = mm2px(xMm, p.a.yMm + p.a.hMm);
+      const p2 = mm2px(xMm, p.b.yMm);
+      out.push({ x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, label: `${Math.round(p.gapMm)} mm` });
     }
     return out;
   });

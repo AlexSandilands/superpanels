@@ -3,13 +3,13 @@
 // commits the draft via `save_profile`; refresh discards it.
 
 import { api, errorMessage, type Profile } from '$lib/api';
-import { defaultBezels, defaultSlideshowConfig, type ProfileV2 } from '$lib/types/profile';
+import { defaultBezels, defaultSlideshowConfig } from '$lib/types/profile';
 import { toast } from './toast.svelte';
 
 let profiles = $state<Profile[]>([]);
 let activeName = $state<string | null>(null);
 let selectedName = $state<string | null>(null);
-let draft = $state<ProfileV2 | null>(null);
+let draft = $state<Profile | null>(null);
 let dirty = $state(false);
 let loading = $state(false);
 let saving = $state(false);
@@ -65,14 +65,14 @@ export const profileStore = {
   },
 
   /** Mutate the draft in place; sets `dirty` if the change matters. */
-  patchDraft(mutator: (d: ProfileV2) => void) {
+  patchDraft(mutator: (d: Profile) => void) {
     if (!draft) return;
     mutator(draft);
     dirty = true;
   },
 
   /** Replace the whole draft (e.g., switching body type). */
-  replaceDraft(next: ProfileV2) {
+  replaceDraft(next: Profile) {
     draft = next;
     dirty = true;
   },
@@ -86,7 +86,7 @@ export const profileStore = {
   },
 
   newProfile() {
-    const base: ProfileV2 = {
+    const base: Profile = {
       name: uniqueName('untitled', profiles),
       body: {
         type: 'span',

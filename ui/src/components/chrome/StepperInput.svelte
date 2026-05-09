@@ -10,6 +10,10 @@
     max?: number;
     decimals?: number;
     width?: number;
+    // When set, the label slot acts as a clear button on hover — shows an
+    // × glyph and clicking calls onChange(resetTo). Use for fields where
+    // "back to default" is a common action (e.g. monitor gap → 0 mm).
+    resetTo?: number;
   };
 
   let {
@@ -23,6 +27,7 @@
     max = Number.POSITIVE_INFINITY,
     decimals = 1,
     width = 44,
+    resetTo,
   }: Props = $props();
 
   let hover = $state(false);
@@ -68,7 +73,30 @@
   role="group"
 >
   {#if label}
-    <span class="lbl mono">{label}</span>
+    {#if resetTo !== undefined}
+      <button
+        type="button"
+        class="lbl lbl-reset mono"
+        class:lbl-reset-armed={hover && value !== resetTo}
+        onclick={() => onChange(clamp(resetTo))}
+        title="Reset to {resetTo}"
+        tabindex={-1}
+        aria-label="Reset {label} to {resetTo}"
+      >
+        <span class="lbl-text">{label}</span>
+        <svg class="lbl-x" width="9" height="9" viewBox="0 0 9 9" aria-hidden="true">
+          <path
+            d="M2 2l5 5M7 2l-5 5"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            fill="none"
+          ></path>
+        </svg>
+      </button>
+    {:else}
+      <span class="lbl mono">{label}</span>
+    {/if}
   {/if}
   <input
     type="text"
@@ -159,6 +187,36 @@
     color: var(--text-3);
     border-right: 1px solid var(--line);
     background: color-mix(in oklab, var(--bg) 60%, transparent);
+  }
+  .lbl-reset {
+    appearance: none;
+    border: none;
+    border-right: 1px solid var(--line);
+    cursor: pointer;
+    position: relative;
+    transition:
+      color 80ms,
+      background 80ms;
+  }
+  .lbl-reset .lbl-text {
+    transition: opacity 80ms;
+  }
+  .lbl-reset .lbl-x {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    opacity: 0;
+    color: var(--accent);
+    transition: opacity 80ms;
+  }
+  .lbl-reset-armed {
+    background: color-mix(in oklab, var(--accent) 14%, transparent);
+  }
+  .lbl-reset-armed .lbl-text {
+    opacity: 0;
+  }
+  .lbl-reset-armed .lbl-x {
+    opacity: 1;
   }
   .num {
     height: 100%;

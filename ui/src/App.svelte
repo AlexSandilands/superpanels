@@ -16,17 +16,20 @@
     bbox,
     coverImageRect,
     defaultOverrides,
+    hNeighbourPairs,
+    normaliseHGaps,
+    normaliseVGaps,
     stableId,
     totalPixels,
+    uniformGap,
+    vNeighbourPairs,
   } from '$lib/canvas/previewLayout';
   import { loadSourceImage, peekSourceImage } from '$lib/canvas/sourceImage';
   import {
     defaultBezels,
     isPerMonitorBody,
     isSpanBody,
-    type FitMode,
     type PerMonitorAssignment,
-    type ProfileV2,
   } from '$lib/types/profile';
   import PreviewCanvas from './components/canvas/PreviewCanvas.svelte';
   import BezelDock from './components/chrome/BezelDock.svelte';
@@ -68,9 +71,8 @@
 
   applyDocumentTokens();
 
-  const draft = $derived<ProfileV2 | null>(profileStore.draft);
+  const draft = $derived<Profile | null>(profileStore.draft);
   const span = $derived(draft && isSpanBody(draft.body) ? draft.body : null);
-  const fit = $derived<FitMode>(span?.fit ?? 'fill');
   const bezels = $derived(draft?.bezels ?? defaultBezels());
   const sourcePath = $derived(span && span.source.type === 'single' ? span.source.path : null);
 
@@ -82,6 +84,12 @@
     return { w: bb.w, h: bb.h };
   });
   const totalPx = $derived(totalPixels(previewMonitors));
+  const hPairs = $derived(hNeighbourPairs(previewMonitors));
+  const vPairs = $derived(vNeighbourPairs(previewMonitors));
+  const currentHGap = $derived(uniformGap(hPairs));
+  const currentVGap = $derived(uniformGap(vPairs));
+  const hMixed = $derived(hPairs.length >= 2 && currentHGap === null);
+  const vMixed = $derived(vPairs.length >= 2 && currentVGap === null);
 
   const selectedMonitor = $derived(
     canvasView.selectId
@@ -174,17 +182,20 @@
     toast.info('Monitor layout reset');
   }
 
-  function setBezels(h: number, v: number) {
+  function setHGap(h: number) {
     profileStore.patchDraft((d) => {
-      d.bezels = { horizontal_mm: h, vertical_mm: v };
+      d.bezels = { horizontal_mm: h, vertical_mm: bezels.vertical_mm };
     });
+    if (hNeighbourPairs(previewMonitors).length === 0) return;
+    canvasView.setOverrides(normaliseHGaps(previewMonitors, canvasView.overrides, h));
   }
 
-  function setFit(f: FitMode) {
+  function setVGap(v: number) {
     profileStore.patchDraft((d) => {
-      if (!isSpanBody(d.body)) return;
-      d.body.fit = f;
+      d.bezels = { horizontal_mm: bezels.horizontal_mm, vertical_mm: v };
     });
+    if (vNeighbourPairs(previewMonitors).length === 0) return;
+    canvasView.setOverrides(normaliseVGaps(previewMonitors, canvasView.overrides, v));
   }
 
   function setSpanImage(path: string) {
@@ -519,11 +530,14 @@
   <ToolDock onResetTransform={resetTransform} onSnapCover={snapCover} onResetLayout={resetLayout} />
 
   <BezelDock
-    bezelHmm={bezels.horizontal_mm}
-    bezelVmm={bezels.vertical_mm}
-    onBezelChange={setBezels}
-    fitMode={fit}
-    onFitChange={setFit}
+    hGapMm={currentHGap}
+    vGapMm={currentVGap}
+    {hMixed}
+    {vMixed}
+    fallbackHmm={bezels.horizontal_mm}
+    fallbackVmm={bezels.vertical_mm}
+    onHGapChange={setHGap}
+    onVGapChange={setVGap}
     {layoutMm}
     monitorCount={monitorStore.monitors.length}
     {totalPx}

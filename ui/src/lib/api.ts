@@ -5,7 +5,9 @@ import { invoke } from '@tauri-apps/api/core';
 import type { IpcError } from './types/IpcError';
 import type { LibraryFilter } from './types/LibraryFilter';
 import type { PreviewArgs } from './types/PreviewArgs';
-import type { ProfileV2 } from './types/profile';
+import type { Profile } from './types/profile';
+
+export type { Profile };
 
 // `Monitor`, `Profile`, `Config`, `CropSpec`, `LibraryEntry`, `RuntimeState`
 // have richer Rust shapes than we need to mirror here. Until ts-rs covers
@@ -23,8 +25,6 @@ export type Monitor = {
   primary: boolean;
   ppi: number | null;
 };
-
-export type Profile = ProfileV2;
 
 export type LibraryEntry = {
   path: string;
@@ -69,7 +69,7 @@ export const api = {
     }),
   listProfiles: () => call<Profile[]>('list_profiles'),
   applyProfile: (name: string) => call<AppliedReport>('apply_profile', { name }),
-  saveProfile: (profile: ProfileV2) => call<void>('save_profile', { profile }),
+  saveProfile: (profile: Profile) => call<void>('save_profile', { profile }),
   deleteProfile: (name: string) => call<void>('delete_profile', { name }),
   previewCrop: (args: PreviewArgs) => call<unknown>('preview_crop', { args }),
   libraryList: (filter: LibraryFilter) => call<LibraryEntry[]>('library_list', { filter }),

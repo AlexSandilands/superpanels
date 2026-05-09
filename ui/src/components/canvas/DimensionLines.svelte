@@ -11,10 +11,16 @@
   {#each lines as l, i (i)}
     {@const cx = (l.x1 + l.x2) / 2}
     {@const cy = (l.y1 + l.y2) / 2}
+    {@const isVertical = Math.abs(l.x2 - l.x1) < Math.abs(l.y2 - l.y1)}
     <g stroke="var(--accent)" stroke-opacity="0.85" fill="var(--accent)">
       <line x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke-width="1" stroke-dasharray="3 3"></line>
-      <line x1={l.x1} y1={l.y1 - 5} x2={l.x1} y2={l.y1 + 5} stroke-width="1"></line>
-      <line x1={l.x2} y1={l.y2 - 5} x2={l.x2} y2={l.y2 + 5} stroke-width="1"></line>
+      {#if isVertical}
+        <line x1={l.x1 - 5} y1={l.y1} x2={l.x1 + 5} y2={l.y1} stroke-width="1"></line>
+        <line x1={l.x2 - 5} y1={l.y2} x2={l.x2 + 5} y2={l.y2} stroke-width="1"></line>
+      {:else}
+        <line x1={l.x1} y1={l.y1 - 5} x2={l.x1} y2={l.y1 + 5} stroke-width="1"></line>
+        <line x1={l.x2} y1={l.y2 - 5} x2={l.x2} y2={l.y2 + 5} stroke-width="1"></line>
+      {/if}
       <rect
         x={cx - 24}
         y={cy - 9}

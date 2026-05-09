@@ -1,32 +1,42 @@
 <script lang="ts">
-  import type { FitMode } from '$lib/types/profile';
   import StepperInput from './StepperInput.svelte';
   import CollapseChevron from './CollapseChevron.svelte';
   import CollapseTab from './CollapseTab.svelte';
 
   type Props = {
-    bezelHmm: number;
-    bezelVmm: number;
-    onBezelChange: (h: number, v: number) => void;
-    fitMode: FitMode;
-    onFitChange: (f: FitMode) => void;
+    hGapMm: number | null;
+    vGapMm: number | null;
+    hMixed: boolean;
+    vMixed: boolean;
+    fallbackHmm: number;
+    fallbackVmm: number;
+    onHGapChange: (h: number) => void;
+    onVGapChange: (v: number) => void;
     layoutMm: { w: number; h: number };
     monitorCount: number;
     totalPx: { w: number; h: number };
   };
   let {
-    bezelHmm,
-    bezelVmm,
-    onBezelChange,
-    fitMode,
-    onFitChange,
+    hGapMm,
+    vGapMm,
+    hMixed,
+    vMixed,
+    fallbackHmm,
+    fallbackVmm,
+    onHGapChange,
+    onVGapChange,
     layoutMm,
     monitorCount,
     totalPx,
   }: Props = $props();
 
-  const fits: FitMode[] = ['fill', 'fit', 'stretch', 'center'];
   let collapsed = $state(false);
+
+  const hValue = $derived(hGapMm ?? fallbackHmm);
+  const vValue = $derived(vGapMm ?? fallbackVmm);
+  const summary = $derived(
+    `${hGapMm === null ? '—' : hGapMm.toFixed(1)} · ${vGapMm === null ? '—' : vGapMm.toFixed(1)} mm`,
+  );
 </script>
 
 {#if collapsed}
@@ -34,8 +44,8 @@
     side="left"
     left={70}
     bottom={14}
-    label="Bezels"
-    summary="{bezelHmm.toFixed(1)} · {bezelVmm.toFixed(1)} mm"
+    label="Gaps"
+    {summary}
     onExpand={() => (collapsed = false)}
   />
 {:else}
@@ -49,37 +59,36 @@
     style:z-index="5"
   >
     <div>
-      <div class="section-label">Bezel gap</div>
+      <div class="section-label">
+        Monitor gap{#if hMixed || vMixed}
+          <span
+            class="mixed-tag"
+            title="Adjacent monitor pairs disagree — committing a value normalises all pairs on that axis"
+            >mixed</span
+          >
+        {/if}
+      </div>
       <div class="flex items-center" style:gap="8px">
         <StepperInput
           label="H"
-          value={bezelHmm}
+          value={hValue}
           unit="mm"
           step={0.5}
           bigStep={5}
           decimals={1}
-          onChange={(v) => onBezelChange(v, bezelVmm)}
+          resetTo={0}
+          onChange={onHGapChange}
         />
         <StepperInput
           label="V"
-          value={bezelVmm}
+          value={vValue}
           unit="mm"
           step={0.5}
           bigStep={5}
           decimals={1}
-          onChange={(v) => onBezelChange(bezelHmm, v)}
+          resetTo={0}
+          onChange={onVGapChange}
         />
-      </div>
-    </div>
-    <div style:width="1px" style:height="36px" style:background="var(--line)"></div>
-    <div>
-      <div class="section-label">Fit</div>
-      <div class="seg">
-        {#each fits as f (f)}
-          <button class:seg-active={fitMode === f} onclick={() => onFitChange(f)}>
-            {f}
-          </button>
-        {/each}
       </div>
     </div>
     <div style:width="1px" style:height="36px" style:background="var(--line)"></div>
@@ -103,25 +112,18 @@
     color: var(--text-3);
     text-transform: uppercase;
     margin-bottom: 6px;
-  }
-  .seg {
     display: inline-flex;
-    border-radius: 6px;
-    overflow: hidden;
-    border: 1px solid var(--line);
+    align-items: center;
+    gap: 6px;
   }
-  .seg button {
-    border: none;
-    height: 26px;
-    padding: 0 10px;
-    font-size: 11px;
-    font-weight: 500;
-    background: transparent;
-    color: var(--text-2);
-    text-transform: capitalize;
-  }
-  .seg-active {
-    background: var(--accent) !important;
-    color: oklch(0.16 0.01 250) !important;
+  .mixed-tag {
+    font-size: 8.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--accent);
+    text-transform: uppercase;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: color-mix(in oklab, var(--accent) 14%, transparent);
   }
 </style>

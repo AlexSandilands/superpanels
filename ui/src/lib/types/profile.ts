@@ -63,7 +63,7 @@ export type Schedule =
   | { type: 'sunset'; offset_minutes: number; profile: string }
   | { type: 'cron'; expr: string };
 
-export type ProfileV2 = {
+export type Profile = {
   name: string;
   body: ProfileBody;
   bezels: Bezels;

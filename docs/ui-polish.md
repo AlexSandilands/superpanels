@@ -35,14 +35,25 @@ the next batch of polish work.
 - [x] Refresh-rate (Hz) display is far too long — round to **2 decimal
       places**.
 
-## 5. Bezel gap adjustor in the bottom panel doesn't drive anything, what is it actually for? Key question - does the bezel gap settings apply to the profile, or the monitor system settings
+## 5. Monitor-gap adjustor in the bottom panel doesn't drive anything ✅
 
-- [ ] The bezel gap slider/input in the bottom panel currently has no
-      effect.
-- [ ] Decide on the interaction model. Proposed: applies a single gap
-      value across **all** monitor pairs and **overrides** any gaps the
-      user set manually by dragging. Confirm with a quick UX call before
-      implementing.
+- [x] Re-frame the bottom panel as a readout + bulk action. H/V steppers
+      reflect the current adjacent-pair gap (or "mixed" when pairs
+      disagree); committing a value normalises every adjacent pair on
+      that axis to it, preserving each chain's leftmost/topmost head
+      position. Drag = local edit, stepper-commit = global edit.
+- [x] Detect vertical neighbours and render their dimension lines on
+      the canvas (previously only horizontal pairs were drawn).
+- [x] Rename "Bezel gap" → "Monitor gap" everywhere in the dock —
+      includes physical-air-gap, not just bezel.
+- [x] Drop the Fit segment from the bottom dock (Snap-to-cover on the
+      tool dock already covers Fill; the persistent fit mode lied about
+      what the canvas actually showed once the user moved the image).
+- [ ] Followup: bezels conceptually belong on the monitor (or pair),
+      not the profile. Move `bezels` off `Profile` onto monitor config
+      with optional per-pair overrides — see `docs/spec/04-bezel-math.md`
+      and `§14`. Track in `docs/followups.md` when we pick it up.
 
 
 ## 6 When there are no profiles saved, click the profile selector up the top left is awkward, can't click out of it, have to spam/double click the canvas
+- Profile selector needs a lot of work, text overflows etc
