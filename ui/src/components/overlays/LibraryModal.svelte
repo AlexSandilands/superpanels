@@ -103,150 +103,167 @@
       <button class="btn ghost icon" onclick={onClose} aria-label="Close">×</button>
     </div>
 
-    <div class="flex" style:flex="1" style:min-height="0">
-      <!-- Roots sidebar -->
-      <div
-        style:width="220px"
-        style:padding="14px"
-        style:border-right="1px solid var(--line)"
-        style:overflow="auto"
-      >
-        <div class="section-label">Roots</div>
-        {#each libraryStore.roots as root (root)}
-          <div class="root-row">
-            <Icon name="folder" />
-            <div style:flex="1" style:min-width="0">
-              <div
-                class="mono"
-                style:font-size="11px"
-                style:overflow="hidden"
-                style:text-overflow="ellipsis"
-                style:white-space="nowrap"
-                style:color="var(--text-2)"
-              >
-                {root}
-              </div>
-            </div>
-            <button
-              class="btn ghost sm"
-              style:padding="0 6px"
-              title="Remove"
-              onclick={() => void libraryStore.removeRoot(root)}
-              disabled={libraryStore.busyRoots}
-            >
-              ×
-            </button>
-          </div>
-        {/each}
+    {#if libraryStore.roots.length === 0 && !libraryStore.loading}
+      <div class="empty">
+        <div class="empty-title">No library folders yet</div>
+        <p>
+          Add a folder of images to start building your library. Subfolders are scanned
+          automatically.
+        </p>
         <button
-          class="btn ghost sm"
-          style:width="100%"
-          style:margin-top="8px"
-          style:justify-content="flex-start"
+          class="btn primary"
           onclick={() => void pickFolder()}
           disabled={libraryStore.busyRoots}
         >
-          <Icon name="plus" size={11} /> Add root
+          + Add your first folder
         </button>
-
-        <div class="section-label" style:margin-top="18px">Filters</div>
-        <div class="filter-row">
-          <span>Min px</span>
-          <StepperInput
-            value={libraryStore.minResolution}
-            unit="px"
-            step={100}
-            bigStep={500}
-            min={0}
-            max={16000}
-            decimals={0}
-            width={56}
-            onChange={(v) => (libraryStore.minResolution = v)}
-          />
-        </div>
-        <div class="filter-row" style:flex-direction="column" style:align-items="stretch">
-          <span style:margin-bottom="6px">Aspect</span>
-          <div class="seg">
-            {#each aspectOptions as o (o.value)}
+      </div>
+    {:else}
+      <div class="flex" style:flex="1" style:min-height="0">
+        <!-- Roots sidebar -->
+        <div
+          style:width="220px"
+          style:padding="14px"
+          style:border-right="1px solid var(--line)"
+          style:overflow="auto"
+        >
+          <div class="section-label">Roots</div>
+          {#each libraryStore.roots as root (root)}
+            <div class="root-row">
+              <Icon name="folder" />
+              <div style:flex="1" style:min-width="0">
+                <div
+                  class="mono"
+                  style:font-size="11px"
+                  style:overflow="hidden"
+                  style:text-overflow="ellipsis"
+                  style:white-space="nowrap"
+                  style:color="var(--text-2)"
+                >
+                  {root}
+                </div>
+              </div>
               <button
-                class:seg-active={libraryStore.aspect === o.value}
-                onclick={() => (libraryStore.aspect = o.value)}
+                class="btn ghost sm"
+                style:padding="0 6px"
+                title="Remove"
+                onclick={() => void libraryStore.removeRoot(root)}
+                disabled={libraryStore.busyRoots}
+              >
+                ×
+              </button>
+            </div>
+          {/each}
+          <button
+            class="btn ghost sm"
+            style:width="100%"
+            style:margin-top="8px"
+            style:justify-content="flex-start"
+            onclick={() => void pickFolder()}
+            disabled={libraryStore.busyRoots}
+          >
+            <Icon name="plus" size={11} /> Add root
+          </button>
+
+          <div class="section-label" style:margin-top="18px">Filters</div>
+          <div class="filter-row">
+            <span>Min px</span>
+            <StepperInput
+              value={libraryStore.minResolution}
+              unit="px"
+              step={100}
+              bigStep={500}
+              min={0}
+              max={16000}
+              decimals={0}
+              width={56}
+              onChange={(v) => (libraryStore.minResolution = v)}
+            />
+          </div>
+          <div class="filter-row" style:flex-direction="column" style:align-items="stretch">
+            <span style:margin-bottom="6px">Aspect</span>
+            <div class="seg">
+              {#each aspectOptions as o (o.value)}
+                <button
+                  class:seg-active={libraryStore.aspect === o.value}
+                  onclick={() => (libraryStore.aspect = o.value)}
+                >
+                  {o.label}
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <div class="section-label" style:margin-top="18px">Sort by</div>
+          <div class="flex" style:gap="4px" style:flex-wrap="wrap">
+            {#each sortOptions as o (o.value)}
+              <button
+                class="chip"
+                class:active={libraryStore.sort === o.value}
+                onclick={() => (libraryStore.sort = o.value)}
               >
                 {o.label}
               </button>
             {/each}
           </div>
-        </div>
 
-        <div class="section-label" style:margin-top="18px">Sort by</div>
-        <div class="flex" style:gap="4px" style:flex-wrap="wrap">
-          {#each sortOptions as o (o.value)}
-            <button
-              class="chip"
-              class:active={libraryStore.sort === o.value}
-              onclick={() => (libraryStore.sort = o.value)}
-            >
-              {o.label}
-            </button>
-          {/each}
-        </div>
-
-        {#if libraryStore.tags.length > 0}
-          <div class="section-label" style:margin-top="18px">Tags</div>
-          <div class="flex" style:gap="4px" style:flex-wrap="wrap">
-            <button
-              class="chip"
-              class:active={libraryStore.activeTag === null}
-              onclick={() => (libraryStore.activeTag = null)}
-            >
-              any
-            </button>
-            {#each libraryStore.tags as tag (tag)}
+          {#if libraryStore.tags.length > 0}
+            <div class="section-label" style:margin-top="18px">Tags</div>
+            <div class="flex" style:gap="4px" style:flex-wrap="wrap">
               <button
                 class="chip"
-                class:active={libraryStore.activeTag === tag}
-                onclick={() =>
-                  (libraryStore.activeTag = libraryStore.activeTag === tag ? null : tag)}
+                class:active={libraryStore.activeTag === null}
+                onclick={() => (libraryStore.activeTag = null)}
               >
-                {tag}
+                any
               </button>
-            {/each}
-          </div>
-        {/if}
+              {#each libraryStore.tags as tag (tag)}
+                <button
+                  class="chip"
+                  class:active={libraryStore.activeTag === tag}
+                  onclick={() =>
+                    (libraryStore.activeTag = libraryStore.activeTag === tag ? null : tag)}
+                >
+                  {tag}
+                </button>
+              {/each}
+            </div>
+          {/if}
 
-        <button
-          class="btn sm"
-          style:width="100%"
-          style:margin-top="14px"
-          onclick={() => void libraryStore.rescan()}
-          disabled={libraryStore.loading}
-        >
-          <Icon name="refresh" size={12} />
-          {libraryStore.loading ? 'Scanning…' : 'Rescan'}
-        </button>
+          <button
+            class="btn sm"
+            style:width="100%"
+            style:margin-top="14px"
+            onclick={() => void libraryStore.rescan()}
+            disabled={libraryStore.loading}
+          >
+            <Icon name="refresh" size={12} />
+            {libraryStore.loading ? 'Scanning…' : 'Rescan'}
+          </button>
 
-        {#if libraryStore.loading}
-          <div class="progress-card">
-            <div style:font-size="11px" style:font-weight="500" style:margin-bottom="4px">
-              Indexing…
+          {#if libraryStore.loading}
+            <div class="progress-card">
+              <div style:font-size="11px" style:font-weight="500" style:margin-bottom="4px">
+                Indexing…
+              </div>
+              <div class="progress-track">
+                <div class="progress-bar"></div>
+              </div>
+              <div
+                class="mono"
+                style:font-size="10px"
+                style:color="var(--text-3)"
+                style:margin-top="4px"
+              >
+                {libraryStore.entries.length} so far
+              </div>
             </div>
-            <div class="progress-track">
-              <div class="progress-bar"></div>
-            </div>
-            <div
-              class="mono"
-              style:font-size="10px"
-              style:color="var(--text-3)"
-              style:margin-top="4px"
-            >
-              {libraryStore.entries.length} so far
-            </div>
-          </div>
-        {/if}
+          {/if}
+        </div>
+
+        <LibraryGrid entries={visible} onApply={applyEntry} onPin={onPinToMonitor} />
       </div>
-
-      <LibraryGrid entries={visible} onApply={applyEntry} onPin={onPinToMonitor} />
-    </div>
+    {/if}
   </div>
 </Backdrop>
 
@@ -333,5 +350,25 @@
     100% {
       transform: translateX(250%);
     }
+  }
+  .empty {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 12px;
+    padding: 40px;
+    text-align: center;
+  }
+  .empty-title {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .empty p {
+    font-size: 12px;
+    color: var(--text-3);
+    max-width: 360px;
+    margin: 0;
   }
 </style>

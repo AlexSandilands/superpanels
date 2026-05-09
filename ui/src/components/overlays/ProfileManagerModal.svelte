@@ -500,8 +500,9 @@
     confirmLabel="Delete"
     onCancel={() => (confirmDel = null)}
     onConfirm={() => {
+      const t = target;
       confirmDel = null;
-      void deleteProfile(target);
+      void deleteProfile(t);
     }}
   />
 {/if}

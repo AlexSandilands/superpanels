@@ -52,10 +52,14 @@
     justify-content: flex-end;
     gap: 8px;
   }
-  .danger {
+  .btn.danger {
     background: var(--danger);
     border-color: var(--danger);
     color: white;
     font-weight: 600;
+  }
+  .btn.danger:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--danger) 88%, white);
+    border-color: color-mix(in oklab, var(--danger) 88%, white);
   }
 </style>
