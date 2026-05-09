@@ -18,9 +18,9 @@ the next batch of polish work.
       physical width/height (mm). Add it. This is the canonical place
       a user would expect to fix the warning from item 1.
 
-## 3. Settings → General Select dropdowns look ugly
+## 3. Settings → General Select dropdowns look ugly ✅
 
-- [ ] Restyle the native `<select>` elements in Settings → General to
+- [x] Restyle the native `<select>` elements in Settings → General to
       match the rest of the UI. Likely a custom Select component or
       consistent `appearance: none` styling + caret + theming.
 
@@ -35,7 +35,7 @@ the next batch of polish work.
 - [ ] Refresh-rate (Hz) display is far too long — round to **2 decimal
       places**.
 
-## 5. Bezel gap adjustor in the bottom panel doesn't drive anything
+## 5. Bezel gap adjustor in the bottom panel doesn't drive anything, what is it actually for? Key question - does the bezel gap settings apply to the profile, or the monitor system settings
 
 - [ ] The bezel gap slider/input in the bottom panel currently has no
       effect.
@@ -43,3 +43,6 @@ the next batch of polish work.
       value across **all** monitor pairs and **overrides** any gaps the
       user set manually by dragging. Confirm with a quick UX call before
       implementing.
+
+
+## 6 When there are no profiles saved, click the profile selector up the top left is awkward, can't click out of it, have to spam/double click the canvas

@@ -4,6 +4,7 @@
   import { toast } from '$lib/stores/toast.svelte';
   import { ui } from '$lib/stores/ui.svelte';
   import SectionHeader from './SectionHeader.svelte';
+  import Select from '../../chrome/Select.svelte';
   import SettingRow from './SettingRow.svelte';
   import Toggle from './Toggle.svelte';
 
@@ -42,39 +43,36 @@
   <Toggle value={ui.trayRun} onChange={(v) => ui.set({ trayRun: v })} />
 </SettingRow>
 <SettingRow label="Notifications" sub="Errors are always written to the log regardless">
-  <select
-    class="field ui"
+  <Select
     value={ui.notify}
-    onchange={(e) =>
-      ui.set({
-        notify: (e.currentTarget as HTMLSelectElement).value as 'off' | 'errors only' | 'all',
-      })}
-  >
-    <option value="off">off</option>
-    <option value="errors only">errors only</option>
-    <option value="all">all</option>
-  </select>
+    options={[
+      { value: 'off', label: 'off' },
+      { value: 'errors only', label: 'errors only' },
+      { value: 'all', label: 'all' },
+    ]}
+    onChange={(v) => ui.set({ notify: v as 'off' | 'errors only' | 'all' })}
+    minWidth={140}
+  />
 </SettingRow>
 <SettingRow label="Reduced motion" sub="Mirrors prefers-reduced-motion when set to system.">
-  <select
-    class="field ui"
+  <Select
     value={ui.motion}
-    onchange={(e) =>
-      ui.set({ motion: (e.currentTarget as HTMLSelectElement).value as 'system' | 'on' | 'off' })}
-  >
-    <option value="system">system</option>
-    <option value="on">on</option>
-    <option value="off">off</option>
-  </select>
+    options={[
+      { value: 'system', label: 'system' },
+      { value: 'on', label: 'on' },
+      { value: 'off', label: 'off' },
+    ]}
+    onChange={(v) => ui.set({ motion: v as 'system' | 'on' | 'off' })}
+    minWidth={140}
+  />
 </SettingRow>
 <SettingRow label="Locale" sub="Only English ships in v1.">
-  <select
-    class="field ui"
+  <Select
     value={ui.locale}
-    onchange={(e) => ui.set({ locale: (e.currentTarget as HTMLSelectElement).value })}
-  >
-    <option value="en-US (system)">en-US (system)</option>
-  </select>
+    options={[{ value: 'en-US (system)', label: 'en-US (system)' }]}
+    onChange={(v) => ui.set({ locale: v })}
+    minWidth={180}
+  />
 </SettingRow>
 
 {#if !autostartLoaded}
