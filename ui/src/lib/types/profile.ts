@@ -14,7 +14,12 @@ export type ImageSet =
   | { type: 'folder'; path: string; recursive: boolean }
   | { type: 'playlist'; paths: string[] };
 
-export type SlideshowSort = 'shuffle' | 'alphabetical' | 'date_asc' | 'date_desc' | 'last_shown_asc';
+export type SlideshowSort =
+  | 'shuffle'
+  | 'alphabetical'
+  | 'date_asc'
+  | 'date_desc'
+  | 'last_shown_asc';
 export type SlideshowStart = 'resume' | 'new_random' | 'first';
 
 export type SlideshowConfig = {
