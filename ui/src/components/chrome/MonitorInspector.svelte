@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PreviewMonitor } from '$lib/canvas/previewLayout';
   import { canvasView } from '$lib/stores/canvasView.svelte';
+  import StepperInput from './StepperInput.svelte';
 
   type ImageTransform = {
     offsetMmX: number;
@@ -112,25 +113,27 @@
 
   <div class="section">
     <div class="section-label">Position (mm, preview only)</div>
-    <div class="flex" style:gap="6px">
-      <label class="numfield">
-        <span class="mono">x</span>
-        <input
-          type="number"
-          class="field mono"
-          value={Math.round(monitor.xMm)}
-          oninput={(e) => setX(Number((e.currentTarget as HTMLInputElement).value || '0'))}
-        />
-      </label>
-      <label class="numfield">
-        <span class="mono">y</span>
-        <input
-          type="number"
-          class="field mono"
-          value={Math.round(monitor.yMm)}
-          oninput={(e) => setY(Number((e.currentTarget as HTMLInputElement).value || '0'))}
-        />
-      </label>
+    <div class="flex" style:gap="8px">
+      <StepperInput
+        label="x"
+        value={monitor.xMm}
+        step={1}
+        bigStep={10}
+        decimals={0}
+        min={Number.NEGATIVE_INFINITY}
+        width={56}
+        onChange={setX}
+      />
+      <StepperInput
+        label="y"
+        value={monitor.yMm}
+        step={1}
+        bigStep={10}
+        decimals={0}
+        min={Number.NEGATIVE_INFINITY}
+        width={56}
+        onChange={setY}
+      />
     </div>
   </div>
 
@@ -163,23 +166,6 @@
   }
   .kv > span:first-child {
     color: var(--text-3);
-  }
-  .numfield {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-  .numfield > .mono {
-    font-size: 10px;
-    color: var(--text-3);
-  }
-  .numfield > .field {
-    flex: 1;
-    min-width: 0;
-    width: 100%;
-    height: 26px;
-    padding: 0 6px;
   }
   .crop {
     width: 100%;
