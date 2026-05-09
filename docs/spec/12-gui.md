@@ -129,11 +129,16 @@ The tray pill in the title bar is purely a **switcher**. Creation actions live e
 - Footer items: "Open profile manager…" and "Pause schedules" toggle.
 - Empty state: clear "No profiles yet — open the profile manager" CTA.
 
-## 12.4.3 Top-nav "Save as new profile" button
+## 12.4.3 Top-nav button cluster
 
-A save-icon button beside the Apply button. The auto-save model (§9.1) means the active profile silently mutates as the user drags monitors or repositions the image; this button is the escape hatch — fork the current state into a new profile *before* further tweaks land on the active one.
+The top-nav row exposes the four canvas-authoring actions, in order: **Apply**, **Save**, **Save as new**, **Revert**. All four are always visible. Their enable rules and visual states track §9.1.2.
 
-Click opens a dialog with name (required, validated for uniqueness), colour swatch (curated 12-swatch palette), and an optional description. Confirm creates a new profile capturing the current canvas state (image source, transform, `monitor_state`, `topology` from live OS) and switches to it as active.
+- **Apply** — `Enter` shortcut. Pushes the current canvas to the desktop (`apply_canvas` IPC). Disabled while the draft has no usable image source or while a save is in flight.
+- **Save** — `Ctrl+S` shortcut. Commits the current canvas state into the active profile's TOML (`save_profile`). Disabled when there is no active profile. Rendered with the default white tint when the canvas matches the persisted state and with `--accent` when dirty so the user can tell at a glance that there are unsaved edits.
+- **Save as new** — `Ctrl+Shift+S` shortcut. Opens a dialog with name (required, validated for uniqueness), colour swatch (curated 12-swatch palette), and an optional description. Confirm creates a new profile capturing the current canvas state (image source, transform, `monitor_state`, `topology` from live OS) and switches to it as active. Disabled when the canvas has no image (tooltip: "no image on canvas").
+- **Revert** — re-pulls the active profile's persisted state into the canvas (overrides + draft + image transform). Disabled when the canvas is clean OR when there is no active profile.
+
+A confirm-discard modal (`ConfirmDiscardModal`) interposes whenever the user initiates a profile switch (tray pill, profile-manager Apply, top-nav profile pill) while the canvas is dirty, and on `WindowEvent::CloseRequested` while the canvas is dirty. Cancel keeps the canvas; Confirm drops the edits and proceeds. Schedule-driven switches do not trigger this modal — see §9.3.3.
 
 ## 12.4.4 Settings → Schedules
 

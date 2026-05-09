@@ -11,7 +11,7 @@ The on-disk shape is in §3.4. Highlights:
 - `colour: ProfileColour` — one of 12 curated swatches.
 - `created_at` / `updated_at` / `last_applied_at` — provenance for the manager UI.
 
-When a profile is active, its `monitor_state` *is* the canvas: any drag, rotate, or image-transform tweak on the canvas auto-saves to the active profile. The "Save as new" top-nav button is the escape hatch — fork the current state into a new profile *before* further tweaks land on the active one.
+A profile's `monitor_state` is mutated only on explicit Save. The canvas is a working buffer above the active profile, not a live view of it: drags, rotations, and image-transform tweaks change the canvas but do not touch persisted state until the user commits via the top-nav Save (§9.1.2) or Save-as-new buttons. This is a deliberate reversal of the original Phase 4e auto-save model — see §4e.3 / §4e.11 in `docs/plan/phase-4e-profiles.md` for the rationale.
 
 ### 9.1.1 Validity / disabled state
 
@@ -24,6 +24,24 @@ A profile is `Disabled` when *any* of:
 - Required `physical_size_mm` missing for any expected monitor.
 
 Disabled profiles are visible everywhere greyed-out, surface their disable reasons inline, and don't auto-apply when their schedule fires. Clicking opens the **topology-repair flow**: drop into the canvas with the *current* live monitor layout pre-populated, image reset to its `FitMode`-derived transform, and on save recapture `topology` + `monitor_state` from the live setup.
+
+### 9.1.2 Apply / Save / Revert / dirty state
+
+The canvas exposes four authoring actions that operate on the active profile:
+
+- **Apply** — push the current canvas state to the desktop (single-shot render via `apply_canvas` IPC). Does not mutate `config.profiles`. The active profile's `last_applied_at` is bumped; nothing else changes on disk.
+- **Save** — commit the current canvas state to the active profile's TOML. Equivalent to `save_profile(active_with_canvas)`. Disabled when there is no active profile. Surfaces with the default white tint when the canvas matches the persisted state and with `--accent` tint when the canvas is dirty.
+- **Save as new** — fork the canvas into a new profile (§12.4.3 dialog).
+- **Revert** — re-pull the active profile's persisted state into the canvas, discarding local edits. Disabled when the canvas is clean OR when there is no active profile.
+
+A canvas is **dirty** iff any of the following differ from the active profile's persisted state: image source, image transform (`offset`, `image_size_px`), per-monitor `MonitorPlacement` set (positions or rotations). Dirty status is derived in the GUI (`ui/src/lib/stores/profile.svelte.ts`); the daemon never tracks it.
+
+The GUI surfaces a confirm-discard modal whenever the user initiates an action that would silently drop unsaved canvas state:
+
+- A user-initiated profile switch (tray selector pill, profile-manager Apply, top-nav profile pill).
+- A window close (`WindowEvent::CloseRequested`).
+
+Schedule fires are **not** gated by the modal. See §9.3.3 for the preemption-toast behaviour that replaces it.
 
 ## 9.2 Slideshow
 
@@ -73,6 +91,8 @@ On daemon start, the schedule checker finds the most recent past fire-time today
 ### 9.3.3 Preemption
 
 Schedule fires preempt manual choice. The escape is the master `schedules_paused` toggle (§9.5).
+
+When a schedule fire arrives while the canvas is dirty (§9.1.2), the GUI does **not** pop the confirm-discard modal — that would block the schedule's intent. Instead, the GUI snapshots the previous canvas state into a transient buffer and surfaces a toast naming the prior profile, with an "Undo" action that re-applies the snapshotted canvas via `apply_canvas` (ephemeral; the schedule-applied profile remains the persisted active one).
 
 ### 9.3.4 Sunset / sunrise approximation
 
