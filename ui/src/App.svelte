@@ -3,6 +3,7 @@
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import type { Profile } from '$lib/api';
   import { canvasView } from '$lib/stores/canvas-view.svelte';
+  import { daemonStatus } from '$lib/stores/daemon-status.svelte';
   import { libraryStore } from '$lib/stores/library.svelte';
   import { monitorStore } from '$lib/stores/monitors.svelte';
   import { profileStore } from '$lib/stores/profile.svelte';
@@ -327,14 +328,19 @@
     }
 
     window.addEventListener('keydown', onKey);
+    void daemonStatus.probe();
     const interval = window.setInterval(() => {
       void profileStore.refresh();
       void slideshowController.refresh();
     }, 5000);
+    const daemonInterval = window.setInterval(() => {
+      void daemonStatus.probe();
+    }, 10_000);
 
     return () => {
       detachWindow();
       window.clearInterval(interval);
+      window.clearInterval(daemonInterval);
       window.removeEventListener('keydown', onKey);
       if (closeUnlistenFn) closeUnlistenFn();
     };
@@ -444,7 +450,31 @@
     />
   {/if}
 
-  {#if someMissingMm}
+  {#if !daemonStatus.connected}
+    <div class="banner banner-danger">
+      <span class="dot danger"></span>
+      <span>
+        Daemon not running — Apply, Save, and slideshow controls are disabled
+        {#if daemonStatus.lastError}
+          <span
+            class="mono"
+            style:font-size="10px"
+            style:color="var(--text-3)"
+            style:margin-left="6px"
+          >
+            ({daemonStatus.lastError})
+          </span>
+        {/if}
+      </span>
+      <button
+        class="btn sm primary"
+        disabled={daemonStatus.starting}
+        onclick={() => void daemonStatus.start()}
+      >
+        {daemonStatus.starting ? 'Starting…' : 'Start daemon'}
+      </button>
+    </div>
+  {:else if someMissingMm}
     <div class="banner">
       <span class="dot warn"></span>
       <span>One or more monitors are missing physical size — bezel math will be approximate.</span>
@@ -546,6 +576,10 @@
     display: flex;
     gap: 8px;
     align-items: center;
+  }
+  .banner-danger {
+    background: color-mix(in oklab, var(--danger) 22%, var(--panel));
+    border-color: color-mix(in oklab, var(--danger) 60%, var(--line));
   }
   .dnd-overlay {
     position: absolute;

@@ -57,7 +57,18 @@ export type AppliedReport = {
 };
 
 async function call<T>(name: string, args: Record<string, unknown> = {}): Promise<T> {
-  return invoke<T>(name, args);
+  try {
+    return await invoke<T>(name, args);
+  } catch (err) {
+    // Lazy import dodges a circular module dep — `daemon-status` consumes
+    // `errorMessage` / `isIpcError` from this file. The store filters for
+    // the `DaemonUnreachable` variant only, so logical rejections never
+    // trip the banner.
+    void import('$lib/stores/daemon-status.svelte').then(({ daemonStatus }) => {
+      daemonStatus.noteIpcError(err);
+    });
+    throw err;
+  }
 }
 
 export const api = {
@@ -123,6 +134,8 @@ export const api = {
   currentState: () => call<RuntimeState>('current_state'),
   setAutostart: (enabled: boolean) => call<{ enabled: boolean }>('set_autostart', { enabled }),
   getAutostart: () => call<{ enabled: boolean }>('get_autostart'),
+  daemonStatus: () => call<{ connected: boolean }>('daemon_status'),
+  startDaemon: () => call<{ exe: string }>('start_daemon'),
 };
 
 export type ApiError = IpcError;

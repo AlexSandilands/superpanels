@@ -10,6 +10,7 @@
 
 pub(crate) mod autostart;
 pub(crate) mod config;
+pub(crate) mod daemon;
 pub(crate) mod in_process;
 pub(crate) mod library;
 pub(crate) mod monitors;

@@ -89,6 +89,8 @@ fn build_app() -> tauri::App {
             commands::runtime::current_state,
             commands::autostart::set_autostart,
             commands::autostart::get_autostart,
+            commands::daemon::daemon_status,
+            commands::daemon::start_daemon,
         ]);
 
     builder
