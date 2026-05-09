@@ -5,11 +5,11 @@
 // drives the daemon-not-running banner so the user gets a clear signal
 // instead of a half-working UI.
 //
-// Calls `invoke` directly to avoid a circular import with `$lib/api`,
-// which itself notifies this store on every IPC rejection.
+// Calls `invoke` directly (not `api.ts`) so we can register an error hook
+// on `api.ts` without a circular import.
 
 import { invoke } from '@tauri-apps/api/core';
-import { errorMessage, isIpcError } from '$lib/api';
+import { errorMessage, isIpcError, setIpcErrorHook } from '$lib/api';
 
 let connected = $state(true);
 let starting = $state(false);
@@ -85,3 +85,5 @@ function delay(ms: number): Promise<void> {
     window.setTimeout(resolve, ms);
   });
 }
+
+setIpcErrorHook((err) => daemonStatus.noteIpcError(err));

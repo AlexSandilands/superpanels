@@ -56,17 +56,22 @@ export type AppliedReport = {
   elapsed_ms?: number;
 };
 
+type IpcErrorHook = (err: unknown) => void;
+let ipcErrorHook: IpcErrorHook | null = null;
+
+/** Register a handler invoked on every IPC rejection. Used by the
+ *  daemon-status store so the banner can react to `DaemonUnreachable`
+ *  errors without `api.ts` needing to import the store (which would
+ *  introduce a circular dep). One handler at a time — last writer wins. */
+export function setIpcErrorHook(handler: IpcErrorHook | null): void {
+  ipcErrorHook = handler;
+}
+
 async function call<T>(name: string, args: Record<string, unknown> = {}): Promise<T> {
   try {
     return await invoke<T>(name, args);
   } catch (err) {
-    // Lazy import dodges a circular module dep — `daemon-status` consumes
-    // `errorMessage` / `isIpcError` from this file. The store filters for
-    // the `DaemonUnreachable` variant only, so logical rejections never
-    // trip the banner.
-    void import('$lib/stores/daemon-status.svelte').then(({ daemonStatus }) => {
-      daemonStatus.noteIpcError(err);
-    });
+    ipcErrorHook?.(err);
     throw err;
   }
 }
