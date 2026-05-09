@@ -45,12 +45,21 @@ affected stacks (track upstream WebKit / `webkit2gtk` Arch package).
   shows a Repair button) but the click-through flow that pre-populates
   the canvas with the live monitor layout is implemented at the IPC
   level, not yet polished in the canvas UI. Track UX feedback.
-- **Canvas auto-save not wired (4e.3).** The IPC commands
-  `update_profile_monitor_state`, `update_profile_image_transform`, and
-  `update_profile_source` exist in `crates/superpanels-gui` and are
-  exposed in `ui/src/lib/api.ts`, but nothing calls them — drag-release,
-  rotation, image-transform changes, and gap normalisations from
-  `MonitorGapDock` only mutate `canvasView.overrides` and
-  `imageTransform`. Changes are lost unless the user hits *Apply* or
-  *Save as new*. Wire on drag-release / rotation-commit / dock-commit
-  with the debouncing the plan called for.
+- **Schedule preemption sentinel test (4e.11.6).** The
+  `userActiveSentinel` + dirty-snapshot logic that surfaces the
+  schedule-preemption toast lives inside `App.svelte` `$effect`s; the
+  vitest harness can't drive Svelte runes directly. Extract the
+  decision into a pure module (input: previous sentinel, runtime
+  active, dirty snapshot; output: toast payload | none) and write the
+  test against it. Until then, the dirty-diff helper has direct
+  coverage in `dirty.test.ts` but the sentinel→toast hand-off is only
+  exercised manually.
+- **Image transform not in dirty diff (4e.11.3).** `canvasOverridesDirty`
+  in `ui/src/lib/canvas/dirty.ts` only diffs the per-monitor placements;
+  the image transform stays in `imageTransform.value` (mm-space) while
+  the persisted profile stores `offset` and `image_size_px` in pixels.
+  Closing the gap needs a mm↔px converter (probably by sharing the
+  layout-bbox math in `preview-layout.ts`). When wired, the Save button's
+  accent-tint and the Revert button's enable rule should switch on the
+  combined diff. Until then, image-only edits don't tint the Save icon
+  and Revert is disabled despite there being something to revert.

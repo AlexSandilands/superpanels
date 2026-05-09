@@ -25,6 +25,7 @@
     setSpanImage,
     switchAndApply,
   } from '$lib/actions';
+  import { canvasOverridesDirty } from '$lib/canvas/dirty';
   import { buildPreviewMonitors } from '$lib/canvas/preview-layout';
   import { rotateSelected } from '$lib/canvas/select';
   import {
@@ -161,35 +162,17 @@
 
   const canApply = $derived(Boolean(draft && draft.name.trim() && !profileStore.saving));
 
-  // Dirty detection (§4e.11.3). The canvas is dirty whenever any field that
-  // the active profile would persist differs from what the user is looking
-  // at. The store's own `dirty` flag covers explicit `patchDraft` calls
-  // (image source, body shape); we additionally compare the canvas-view
-  // overrides against the active profile's `monitor_state` so drag /
-  // rotate edits show up here too. Image transform isn't compared yet —
-  // it lives in mm-space while the profile stores pixels; tracking it
-  // would need a converter pass and is deferred to a follow-up.
+  // Dirty detection (§4e.11.3). The store's own `dirty` flag covers
+  // explicit `patchDraft` calls (image source, body shape); we additionally
+  // compare the canvas-view overrides against the active profile's
+  // `monitor_state` so drag / rotate edits show up here too. Image transform
+  // diffing isn't included yet — it lives in mm-space while the profile
+  // stores pixels; tracking it needs a converter pass (see followups).
   const canvasDirty = $derived.by(() => {
     if (profileStore.dirty) return true;
     const active = profileStore.activeProfile;
     if (!active) return false;
-    for (const [id, persisted] of Object.entries(active.monitor_state)) {
-      const live = canvasView.overrides[id];
-      if (!live) continue;
-      if (Math.abs(live.xMm - persisted.x_mm) > 0.5 || Math.abs(live.yMm - persisted.y_mm) > 0.5) {
-        return true;
-      }
-      const persistedDeg =
-        persisted.rotation === 'right'
-          ? 90
-          : persisted.rotation === 'inverted'
-            ? 180
-            : persisted.rotation === 'left'
-              ? 270
-              : 0;
-      if (live.rotation !== persistedDeg) return true;
-    }
-    return false;
+    return canvasOverridesDirty(canvasView.overrides, active);
   });
   const canSave = $derived(Boolean(profileStore.activeName) && !profileStore.saving);
   const canRevert = $derived(canvasDirty && Boolean(profileStore.activeName));
