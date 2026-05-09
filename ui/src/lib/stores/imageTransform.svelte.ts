@@ -6,7 +6,7 @@ import { untrack } from 'svelte';
 import { errorMessage, type Monitor } from '$lib/api';
 import { canvasView, type MonitorOverride } from '$lib/stores/canvasView.svelte';
 import { coverImageRect, defaultOverrides, type PreviewMonitor } from '$lib/canvas/previewLayout';
-import { loadSourceImage, peekSourceImage } from '$lib/canvas/sourceImage';
+import { loadSourceImage, peekSourceImage } from '$lib/library/sourceImage';
 import { toast } from '$lib/stores/toast.svelte';
 
 export type ImageTransform = {
