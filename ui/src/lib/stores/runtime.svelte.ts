@@ -13,7 +13,7 @@ let last = $state<ApplyMeta | null>(null);
 let flashKey = $state(0);
 let flashAt = $state(0);
 
-function formatRelative(ms: number): string {
+export function formatRelative(ms: number): string {
   if (ms < 1500) return 'just now';
   const s = Math.round(ms / 1000);
   if (s < 60) return `${s}s ago`;
