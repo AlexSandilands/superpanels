@@ -52,6 +52,11 @@
 
   let tip = $state<{ x: number; y: number; m: PreviewMonitor } | null>(null);
   let dropHover = $state<string | null>(null);
+  // Click-vs-drag disambiguation: a monitor is selected (which surfaces the
+  // inspector) only on a discrete click-release. Hold-and-drag must not flash
+  // the inspector open mid-gesture.
+  let pendingSelect: { id: string; sx: number; sy: number } | null = null;
+  const CLICK_SLOP_PX = 4;
 
   const previewMonitors = $derived(buildPreviewMonitors(monitors, canvasView.overrides));
 
@@ -158,7 +163,8 @@
     if (hit.type === 'monitor') {
       const m = previewMonitors.find((x) => x.id === hit.id);
       if (!m) return;
-      canvasView.setSelectId(hit.id);
+      pendingSelect =
+        canvasView.selectId === hit.id ? null : { id: hit.id, sx: ev.clientX, sy: ev.clientY };
       dragController.begin({
         kind: 'monitor',
         id: hit.id,
@@ -228,10 +234,20 @@
       }
       return;
     }
+    if (
+      pendingSelect &&
+      Math.hypot(ev.clientX - pendingSelect.sx, ev.clientY - pendingSelect.sy) > CLICK_SLOP_PX
+    ) {
+      pendingSelect = null;
+    }
     dragController.move(ev);
   }
 
   function onPointerUp(ev: PointerEvent) {
+    if (pendingSelect) {
+      canvasView.setSelectId(pendingSelect.id);
+      pendingSelect = null;
+    }
     dragController.end();
     if (stageEl) stageEl.releasePointerCapture(ev.pointerId);
   }
