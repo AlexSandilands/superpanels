@@ -1,6 +1,6 @@
 // Profile store. Owns the profile list, the active profile name, and the
-// per-edit "draft" buffer that the canvas + ProfileEditor mutate. Saving
-// commits the draft via `save_profile`; refresh discards it.
+// per-edit "draft" buffer that the canvas, docks, and settings panes mutate.
+// Saving commits the draft via `save_profile`; refresh discards it.
 
 import { api, errorMessage, type Profile } from '$lib/api';
 import { defaultBezels, defaultSlideshowConfig } from '$lib/types/profile';

@@ -124,9 +124,19 @@ function allTags(): string[] {
 // stutter even when the entry list itself is already in memory.
 const PREWARM_THUMBS = 32;
 
-function prewarmThumbnails(list: LibraryEntry[]): void {
+// Concurrency bound for the prewarm fan-out. The thumbnail IPC opens a file,
+// decodes it, and rescales — saturating the daemon's worker pool with 32
+// parallel requests caused noticeable apply-time stalls on slower disks.
+// Six in flight at a time keeps the daemon responsive and still finishes
+// the prewarm well before the user can scroll.
+const PREWARM_CONCURRENCY = 6;
+
+async function prewarmThumbnails(list: LibraryEntry[]): Promise<void> {
   const head = [...list].sort((a, b) => compare(a, b, 'date_added')).slice(0, PREWARM_THUMBS);
-  for (const e of head) void getLibraryThumbUrl(e.path).catch(() => {});
+  for (let i = 0; i < head.length; i += PREWARM_CONCURRENCY) {
+    const chunk = head.slice(i, i + PREWARM_CONCURRENCY);
+    await Promise.allSettled(chunk.map((e) => getLibraryThumbUrl(e.path)));
+  }
 }
 
 // Walk `library_list` pages until either the daemon returns a short page (no
@@ -215,7 +225,7 @@ export const libraryStore = {
       ]);
       entries = list;
       roots = config.library?.roots ?? [];
-      prewarmThumbnails(list);
+      void prewarmThumbnails(list);
     } catch (err) {
       toast.error('Could not load library', errorMessage(err));
       entries = [];
