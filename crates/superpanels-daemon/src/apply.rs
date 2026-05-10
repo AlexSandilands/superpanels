@@ -2,6 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
+use std::collections::HashMap;
+
 use anyhow::{Context, Result};
 use superpanels_core::backends::{AppliedReport, WallpaperBackend, detect_backend};
 use superpanels_core::config::{
@@ -13,7 +15,8 @@ use superpanels_core::display::{Monitor, MonitorRef};
 use superpanels_core::image::{
     FitMode as ImageFitMode, clear_temp_dir, load, render_slice, rotate, save_temp, scale_to_fit,
 };
-use superpanels_core::layout::{FitMode, compute_crop_specs_with_offset};
+use superpanels_core::layout::{FitMode, compute_crop_specs_with_offset, synthesise_placements};
+use superpanels_core::schedule::MonitorPlacement;
 use superpanels_core::slideshow::{
     SlideshowConfig as PickerSlideshowConfig, SlideshowSort as PickerSort,
     SlideshowStart as PickerStart,
@@ -53,7 +56,6 @@ pub(crate) fn run_span_apply(
     backend_kind: BackendKind,
     custom_cmd: &str,
 ) -> Result<AppliedReport> {
-    let bezels = profile.bezels;
     let fit = match &profile.body {
         ProfileBody::Span(s) => s.fit,
         ProfileBody::PerMonitor(pm) => pm.fit,
@@ -69,7 +71,7 @@ pub(crate) fn run_span_apply(
     run_immediate_set_with_offset(
         image_path,
         monitors,
-        bezels,
+        &profile.monitor_state,
         fit,
         offset,
         image_size_px,
@@ -82,7 +84,7 @@ pub(crate) fn run_span_apply(
 pub(crate) fn run_immediate_set_with_offset(
     image_path: &Path,
     monitors: &[Monitor],
-    bezels: superpanels_core::layout::BezelConfig,
+    placements: &HashMap<String, MonitorPlacement>,
     fit: FitMode,
     offset_px: [i32; 2],
     image_size_px: Option<[u32; 2]>,
@@ -93,9 +95,19 @@ pub(crate) fn run_immediate_set_with_offset(
         load(image_path).with_context(|| format!("loading image {}", image_path.display()))?;
     let image_size = (source.width(), source.height());
 
+    // Empty placements (CLI `set --image` style) → synthesise from detected
+    // positions so the transient apply path still works without a profile.
+    let synthesised;
+    let resolved_placements: &HashMap<String, MonitorPlacement> = if placements.is_empty() {
+        synthesised = synthesise_placements(monitors);
+        &synthesised
+    } else {
+        placements
+    };
+
     let specs = compute_crop_specs_with_offset(
         monitors,
-        &bezels,
+        resolved_placements,
         fit,
         image_size,
         offset_px,

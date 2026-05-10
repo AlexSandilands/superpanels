@@ -357,20 +357,23 @@ mod tests {
     use std::path::PathBuf;
     use std::time::Duration;
 
+    use std::collections::HashMap;
     use superpanels_core::config::{
         BackendKind, ImageSet, Profile, ProfileBody, SlideshowConfig as SlideshowCfg,
         SlideshowSort, SlideshowStart, SpanProfile, SpanSource,
     };
-    use superpanels_core::layout::{BezelConfig, FitMode};
+    use superpanels_core::layout::FitMode;
     use superpanels_core::slideshow::{
         SlideshowConfig as PickerCfg, SlideshowPicker, SlideshowSort as PickerSort,
         SlideshowStart as PickerStart, persist_state,
     };
+    use superpanels_core::{ProfileColour, TopologyFingerprint};
     use tempfile::tempdir;
 
     use super::*;
 
     fn slideshow_profile(name: &str) -> Profile {
+        let now = superpanels_core::config::now_timestamp();
         Profile {
             name: name.to_owned(),
             body: ProfileBody::Span(SpanProfile {
@@ -392,12 +395,14 @@ mod tests {
                 offset: [0, 0],
                 image_size_px: None,
             }),
-            bezels: BezelConfig {
-                horizontal_mm: 0.0,
-                vertical_mm: 0.0,
-            },
+            monitor_state: HashMap::new(),
+            topology: TopologyFingerprint(String::new()),
+            colour: ProfileColour::default(),
+            description: None,
+            created_at: now,
+            updated_at: now,
+            last_applied_at: None,
             backend_override: Some(BackendKind::Custom),
-            schedule: None,
         }
     }
 

@@ -14,7 +14,7 @@ use tempfile::tempdir;
 use superpanels_core::backends::{MockBackend, WallpaperBackend};
 use superpanels_core::display::{Monitor, MonitorId, MonitorRef, Rotation};
 use superpanels_core::image::{clear_temp_dir_at, crop, load, save_temp_in};
-use superpanels_core::layout::{BezelConfig, FitMode, compute_crop_specs};
+use superpanels_core::layout::{FitMode, compute_crop_specs, synthesise_placements};
 
 fn solid_image(w: u32, h: u32) -> DynamicImage {
     DynamicImage::ImageRgba8(RgbaImage::from_pixel(w, h, image::Rgba([180, 90, 45, 255])))
@@ -46,11 +46,8 @@ fn pipeline_dispatches_per_monitor_pairs_to_mock_backend() {
     clear_temp_dir_at(&temp).unwrap();
 
     let monitors = vec![monitor(0, "DP-1", 0), monitor(1, "DP-2", 1920)];
-    let bezels = BezelConfig {
-        horizontal_mm: 0.0,
-        vertical_mm: 0.0,
-    };
-    let crops = compute_crop_specs(&monitors, &bezels, FitMode::Fill, (3840, 1080)).unwrap();
+    let placements = synthesise_placements(&monitors);
+    let crops = compute_crop_specs(&monitors, &placements, FitMode::Fill, (3840, 1080)).unwrap();
     let loaded = load(&src_path).unwrap();
     let mut assignments = Vec::new();
     for (m, c) in monitors.iter().zip(crops.iter()) {

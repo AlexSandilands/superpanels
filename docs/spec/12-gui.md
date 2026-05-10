@@ -100,7 +100,54 @@ rectangle on the canvas is `(offset.x, offset.y, w, h)` regardless of fit.
 
 The GUI also exposes a local-only `source_thumbnail(path: String)` command for selected/dropped source preview bytes. It is intentionally not mirrored in daemon IPC because it represents a webview-local, user-mediated file choice rather than library state. `set_autostart`/`get_autostart` are similarly GUI-local — they touch the user's XDG autostart directory directly.
 
-`IpcError` is a thin enum that flattens the typed errors from `superpanels-core` (`DetectError`, `BackendError`, `LayoutError`, `ConfigError`) into a single shape suitable for serialisation to the frontend. `Profile`, `BezelConfig`, `FitMode`, `CropSpec`, and friends are the types from §3 (after the rework — see §3.4 for `Profile`'s shape).
+`IpcError` is a thin enum that flattens the typed errors from `superpanels-core` (`DetectError`, `BackendError`, `LayoutError`, `ConfigError`) into a single shape suitable for serialisation to the frontend. `Profile`, `MonitorPlacement`, `FitMode`, `CropSpec`, and friends are the types from §3.
+
+## 12.4.1 Profile manager
+
+The profile manager opens as a modal overlay in the main window, shaped like `LibraryModal` — left rail (search + list), main detail pane on a `Backdrop`. Same-window overlay rather than a dedicated Tauri webview keeps the capability surface small (no `core:webview:allow-create-webview-window`) and lets the manager share the main window's profile/canvas state without IPC round-trips. Reachable from:
+
+- The tray menu's "Open profile manager…" item.
+- The top-nav profile-manager icon button.
+- The tray-pill profile dropdown's "Open profile manager…" footer.
+
+List view per profile: thumbnail, name, colour swatch, last-applied recency, validity badge, "Authored for: {topology}" chip when current topology differs.
+
+Per-profile actions: Apply, Rename (inline), Edit colour swatch (palette popover), Edit description, Open referenced file/folder in the OS file manager, Duplicate, Export (TOML bundle), Delete (confirm dialog).
+
+Top-level actions: New profile (disabled — directs the user to the canvas's "Save as new" button), Import bundle, Empty-state CTA.
+
+Disabled-profile rows are greyed-out, list every applicable disable reason inline, and offer a "Repair" button that triggers the topology-repair flow (§9.1.1).
+
+## 12.4.2 Tray selector
+
+The tray pill in the title bar is purely a **switcher**. Creation actions live elsewhere (the manager window for blank/duplicate/import; the top-nav "Save as new" button for capture-current).
+
+- Outside click closes the dropdown.
+- Long names truncate with ellipsis + native tooltip.
+- Sort: pinned/active profile first, then by `last_applied_at` desc.
+- Surfaces the active schedule rule when present ("Auto: switching to dark at 18:00").
+- Footer items: "Open profile manager…" and "Pause schedules" toggle.
+- Empty state: clear "No profiles yet — open the profile manager" CTA.
+
+## 12.4.3 Top-nav button cluster
+
+The top-nav row exposes the four canvas-authoring actions, in order: **Apply**, **Save**, **Save as new**, **Revert**. All four are always visible. Their enable rules and visual states track §9.1.2.
+
+- **Apply** — `Enter` shortcut. Pushes the current canvas to the desktop (`apply_canvas` IPC). Disabled while the draft has no usable image source or while a save is in flight.
+- **Save** — `Ctrl+S` shortcut. Commits the current canvas state into the active profile's TOML (`save_profile`). Disabled when there is no active profile. Rendered with the default white tint when the canvas matches the persisted state and with `--accent` when dirty so the user can tell at a glance that there are unsaved edits.
+- **Save as new** — `Ctrl+Shift+S` shortcut. Opens a dialog with name (required, validated for uniqueness), colour swatch (curated 12-swatch palette), and an optional description. Confirm creates a new profile capturing the current canvas state (image source, transform, `monitor_state`, `topology` from live OS) and switches to it as active. Disabled when the canvas has no image (tooltip: "no image on canvas").
+- **Revert** — re-pulls the active profile's persisted state into the canvas (overrides + draft + image transform). Disabled when the canvas is clean OR when there is no active profile.
+
+A confirm-discard modal (`ConfirmDiscardModal`) interposes whenever the user initiates a profile switch (tray pill, profile-manager Apply, top-nav profile pill) while the canvas is dirty, and on `WindowEvent::CloseRequested` while the canvas is dirty. Cancel keeps the canvas; Confirm drops the edits and proceeds. Schedule-driven switches do not trigger this modal — see §9.3.3.
+
+## 12.4.4 Settings → Schedules
+
+Populates the previously-empty Schedules tab.
+
+- Rule list. Each row: enabled toggle, trigger summary, target profile, "next fires at HH:MM" hint, edit/delete.
+- Add-rule form: trigger type (daily / cron), parameters, target profile dropdown.
+- **Conflict prevention:** save is blocked when a new/edited rule would fire at the same minute as another enabled rule.
+- Master "pause all schedules" toggle (mirrored in tray).
 
 ## 12.5 Keyboard shortcuts
 

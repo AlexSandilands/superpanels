@@ -24,6 +24,7 @@ pub(crate) fn dispatch(method: &str, params: &Value, config_path: Option<&Path>)
         "detect_monitors" | "redetect" => detect_monitors(config_path),
         "list_profiles" => list_profiles(config_path),
         "apply_profile" => apply_profile(),
+        "apply_canvas" => apply_canvas(),
         "save_profile" => save_profile(params, config_path),
         "delete_profile" => delete_profile(params, config_path),
         "preview_crop" => preview_crop(params, config_path),
@@ -69,13 +70,41 @@ fn detect_monitors(config_path: Option<&Path>) -> CallResult {
 
 fn list_profiles(config_path: Option<&Path>) -> CallResult {
     let cfg = load_config(config_path)?;
-    Ok(ok_payload(cfg.profiles))
+    // Validity needs detected monitors merged with config-supplied physical
+    // sizes (`SPEC §6 / §10`). If detection fails (no compositor in scope —
+    // e.g. CI, headless dev), fall through with an empty validity list so
+    // the rest of the GUI keeps working; the daemon path is the source of
+    // truth in production.
+    let validity_entries: Vec<Value> = match detect(None) {
+        Ok(mut monitors) => {
+            cfg.merge_into_monitors(&mut monitors);
+            cfg.profiles
+                .iter()
+                .map(|p| {
+                    let v = superpanels_core::ProfileValidity::evaluate(p, &monitors);
+                    json!({ "profile": p.name, "validity": v })
+                })
+                .collect()
+        }
+        Err(_) => Vec::new(),
+    };
+    Ok(json!({
+        "profiles": cfg.profiles,
+        "validity": validity_entries,
+    }))
 }
 
 fn apply_profile() -> CallResult {
     Err(IpcError::internal(
         "apply_profile in-process requires daemon-equivalent runtime state; \
          start `superpanels-daemon` to apply profiles from the GUI",
+    ))
+}
+
+fn apply_canvas() -> CallResult {
+    Err(IpcError::internal(
+        "apply_canvas in-process requires daemon-equivalent runtime state; \
+         start `superpanels-daemon` to apply canvas state from the GUI",
     ))
 }
 
@@ -113,20 +142,14 @@ fn delete_profile(params: &Value, config_path: Option<&Path>) -> CallResult {
 }
 
 fn preview_crop(params: &Value, config_path: Option<&Path>) -> CallResult {
-    use superpanels_core::layout::{BezelConfig, FitMode, compute_crop_specs_with_offset};
+    use superpanels_core::layout::{
+        FitMode, compute_crop_specs_with_offset, synthesise_placements,
+    };
 
     let image = params
         .get("image")
         .and_then(Value::as_str)
         .ok_or_else(|| IpcError::invalid("params.image required"))?;
-    let bezel_h = params
-        .get("bezel_h_mm")
-        .and_then(Value::as_f64)
-        .unwrap_or(0.0);
-    let bezel_v = params
-        .get("bezel_v_mm")
-        .and_then(Value::as_f64)
-        .unwrap_or(0.0);
     let fit_str = params.get("fit").and_then(Value::as_str).unwrap_or("fill");
     let fit = match fit_str {
         "fill" => FitMode::Fill,
@@ -152,13 +175,17 @@ fn preview_crop(params: &Value, config_path: Option<&Path>) -> CallResult {
     let canonical = canonicalise_inside_roots(Path::new(image), &cfg.library.roots)?;
     let dims = superpanels_core::image::read_dimensions(&canonical)
         .map_err(|e| IpcError::Image(e.to_string()))?;
-    let monitors = detect(None)?;
-    let bezels = BezelConfig {
-        horizontal_mm: v::validate_bezel_mm(bezel_h).map_err(|e| IpcError::invalid(e.0))?,
-        vertical_mm: v::validate_bezel_mm(bezel_v).map_err(|e| IpcError::invalid(e.0))?,
-    };
-    let specs =
-        compute_crop_specs_with_offset(&monitors, &bezels, fit, dims, offset_px, image_size_px)?;
+    let mut monitors = detect(None)?;
+    cfg.merge_into_monitors(&mut monitors);
+    let placements = synthesise_placements(&monitors);
+    let specs = compute_crop_specs_with_offset(
+        &monitors,
+        &placements,
+        fit,
+        dims,
+        offset_px,
+        image_size_px,
+    )?;
     Ok(ok_payload(specs))
 }
 
@@ -276,12 +303,19 @@ mod tests {
     }
 
     #[test]
-    fn list_profiles_reads_from_explicit_config_path() {
+    fn list_profiles_returns_profiles_and_validity_object() {
+        // Frontend types in `ui/src/lib/api.ts` expect a
+        // `{ profiles: Profile[], validity: [...] }` object — same shape the
+        // daemon's `cmd_list_profiles` returns. A bare array (the old
+        // in-process shape) made `profileStore.refresh()` read undefined for
+        // `resp.profiles` and silently break the GUI when no daemon was up.
         let dir = tempdir().unwrap();
         let path = dir.path().join("config.toml");
         Config::default().save_to(&path).unwrap();
         let v = list_profiles(Some(&path)).unwrap();
-        assert!(v.is_array());
+        assert!(v.is_object(), "expected object, got {v}");
+        assert!(v.get("profiles").is_some_and(Value::is_array));
+        assert!(v.get("validity").is_some_and(Value::is_array));
     }
 
     #[test]

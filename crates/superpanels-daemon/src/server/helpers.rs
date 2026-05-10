@@ -75,6 +75,24 @@ pub(super) async fn update_active_profile(state: &Arc<Mutex<DaemonState>>, name:
     let mut guard = state.lock().await;
     guard.active_profile = Some(name.to_owned());
     guard.last_apply_unix_secs = Some(DaemonState::now_unix_secs());
+    let now = superpanels_core::config::now_timestamp();
+    let mut touched = false;
+    if let Some(profile) = guard.config.profiles.iter_mut().find(|p| p.name == name) {
+        profile.last_applied_at = Some(now);
+        touched = true;
+    }
+    if touched {
+        let path = match guard.config_save_path() {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!(error = %e, "no config path; skipping last_applied_at persist");
+                return;
+            }
+        };
+        if let Err(e) = guard.config.save_to(&path) {
+            tracing::warn!(error = %e, "could not persist last_applied_at");
+        }
+    }
 }
 
 pub(super) async fn update_timer(

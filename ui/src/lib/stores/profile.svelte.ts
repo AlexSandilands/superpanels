@@ -1,9 +1,10 @@
 // Profile store. Owns the profile list, the active profile name, and the
 // per-edit "draft" buffer that the canvas, docks, and settings panes mutate.
-// Saving commits the draft via `save_profile`; refresh discards it.
+// `Save` (§4e.11) commits the draft via `save_profile`; `Revert` re-pulls
+// the active profile's persisted state.
 
 import { api, errorMessage, type Profile } from '$lib/api';
-import { defaultBezels, defaultSlideshowConfig } from '$lib/types/profile';
+import { defaultSlideshowConfig } from '$lib/types/profile-helpers';
 import { toast } from './toast.svelte';
 
 let profiles = $state<Profile[]>([]);
@@ -20,6 +21,9 @@ export const profileStore = {
   },
   get activeName() {
     return activeName;
+  },
+  get activeProfile(): Profile | null {
+    return activeName ? (profiles.find((p) => p.name === activeName) ?? null) : null;
   },
   get selectedName() {
     return selectedName;
@@ -40,7 +44,8 @@ export const profileStore = {
   async refresh() {
     loading = true;
     try {
-      const [list, runtime] = await Promise.all([api.listProfiles(), api.currentState()]);
+      const [resp, runtime] = await Promise.all([api.listProfiles(), api.currentState()]);
+      const list = resp.profiles;
       profiles = list;
       activeName = runtime.active_profile;
       // Don't clobber an in-progress edit. If the user has unsaved changes
@@ -85,7 +90,30 @@ export const profileStore = {
     dirty = false;
   },
 
+  /** Re-pull the *active* profile (§4e.11.4 Revert). The Revert button in the
+   *  TitleBar uses this rather than `revertDraft` because the canvas is
+   *  conceptually authored against the active profile, not the manager-pane
+   *  selection. Returns the active profile snapshot the caller can use to
+   *  re-seed canvas-view + image-transform stores. */
+  revertToActive(): Profile | null {
+    if (!activeName) return null;
+    const saved = profiles.find((p) => p.name === activeName) ?? null;
+    if (!saved) return null;
+    selectedName = activeName;
+    draft = snapshotClone(saved);
+    dirty = false;
+    return saved;
+  },
+
+  /** Force-clear the dirty flag (e.g. after a successful Save commits the
+   *  active profile via `save_profile`). The caller is responsible for
+   *  ensuring the in-memory profile list reflects the committed state. */
+  clearDirty(): void {
+    dirty = false;
+  },
+
   newProfile() {
+    const now = new Date().toISOString();
     const base: Profile = {
       name: uniqueName('untitled', profiles),
       body: {
@@ -95,7 +123,14 @@ export const profileStore = {
         offset: [0, 0],
         image_size_px: null,
       },
-      bezels: defaultBezels(),
+      monitor_state: {},
+      topology: '',
+      colour: 'slate',
+      description: null,
+      created_at: now,
+      updated_at: now,
+      last_applied_at: null,
+      backend_override: null,
     };
     draft = base;
     selectedName = null;

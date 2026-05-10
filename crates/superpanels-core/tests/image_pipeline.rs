@@ -13,7 +13,7 @@ use tempfile::tempdir;
 
 use superpanels_core::display::{Monitor, MonitorId, Rotation};
 use superpanels_core::image::{clear_temp_dir_at, crop, load, save_temp_in};
-use superpanels_core::layout::{BezelConfig, FitMode, compute_crop_specs};
+use superpanels_core::layout::{FitMode, compute_crop_specs, synthesise_placements};
 
 fn solid_image(w: u32, h: u32) -> DynamicImage {
     DynamicImage::ImageRgba8(RgbaImage::from_pixel(
@@ -53,13 +53,10 @@ fn full_compute_crop_save_pipeline_writes_per_monitor_files() {
         monitor(0, "DP-1", 0, 1920, 1080, 480, 270),
         monitor(1, "DP-2", 1920, 1920, 1080, 480, 270),
     ];
-    let bezels = BezelConfig {
-        horizontal_mm: 0.0,
-        vertical_mm: 0.0,
-    };
+    let placements = synthesise_placements(&monitors);
 
     // Act — compute, then crop + save each monitor's slice.
-    let crops = compute_crop_specs(&monitors, &bezels, FitMode::Fill, (3840, 1080)).unwrap();
+    let crops = compute_crop_specs(&monitors, &placements, FitMode::Fill, (3840, 1080)).unwrap();
     let loaded = load(&src_path).unwrap();
     let mut written = Vec::new();
     for c in &crops {

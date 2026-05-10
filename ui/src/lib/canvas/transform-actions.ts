@@ -17,20 +17,20 @@ import { monitorStore } from '$lib/stores/monitors.svelte';
 import { profileStore } from '$lib/stores/profile.svelte';
 import { toast } from '$lib/stores/toast.svelte';
 
-export function setHGap(monitors: PreviewMonitor[], vMm: number, hMm: number): void {
-  profileStore.patchDraft((d) => {
-    d.bezels = { horizontal_mm: hMm, vertical_mm: vMm };
-  });
+export function setHGap(monitors: PreviewMonitor[], _vMm: number, hMm: number): void {
+  // Bezel field is gone; this just normalises the canvas placements so the
+  // gap between adjacent monitors becomes `hMm`. The change is captured into
+  // the active profile via the canvas auto-save path (4e.3).
   if (hNeighbourPairs(monitors).length === 0) return;
   canvasView.setOverrides(normaliseHGaps(monitors, canvasView.overrides, hMm));
+  // Suppress the unused-import warning until 4e.3 wires up auto-save here.
+  void profileStore;
 }
 
-export function setVGap(monitors: PreviewMonitor[], hMm: number, vMm: number): void {
-  profileStore.patchDraft((d) => {
-    d.bezels = { horizontal_mm: hMm, vertical_mm: vMm };
-  });
+export function setVGap(monitors: PreviewMonitor[], _hMm: number, vMm: number): void {
   if (vNeighbourPairs(monitors).length === 0) return;
   canvasView.setOverrides(normaliseVGaps(monitors, canvasView.overrides, vMm));
+  void profileStore;
 }
 
 export function resetLayout(bezelHmm: number): void {

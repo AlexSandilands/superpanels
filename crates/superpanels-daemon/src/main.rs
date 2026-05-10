@@ -102,6 +102,7 @@ fn main() -> ExitCode {
     }
 }
 
+#[allow(clippy::too_many_lines)] // reason: linear startup sequence; splitting reads worse than the current shape
 async fn run_daemon(cli: Cli) -> Result<()> {
     let sock_path = cli.socket.clone().unwrap_or_else(socket_path);
 
@@ -200,6 +201,36 @@ async fn run_daemon(cli: Cli) -> Result<()> {
             }
         });
     }
+
+    // Boot catch-up: if any enabled schedule rule fired earlier today and
+    // resolves to a profile different from the active one, apply it.
+    let catch_up_state = Arc::clone(&state);
+    let catch_up_timer_tx = timer_tx.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(750)).await;
+        let (target, active) = {
+            let guard = catch_up_state.lock().await;
+            (
+                guard.schedule_checker.boot_catch_up(&guard.config),
+                guard.active_profile.clone(),
+            )
+        };
+        if let Some(name) = target {
+            if active.as_deref() == Some(name.as_str()) {
+                return;
+            }
+            info!(profile = %name, "schedule boot catch-up applying past rule");
+            let req = superpanels_core::ipc::IpcRequest {
+                v: superpanels_core::ipc::PROTOCOL_VERSION,
+                method: "apply_profile".to_owned(),
+                params: serde_json::json!({"name": name}),
+            };
+            let resp = server::dispatch_for_tests(req, catch_up_state, catch_up_timer_tx).await;
+            if !resp.is_ok() {
+                warn!(error = ?resp.error, "boot catch-up apply failed");
+            }
+        }
+    });
 
     // Main accept loop — runs until SIGTERM.
     let server_state = Arc::clone(&state);

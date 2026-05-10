@@ -18,11 +18,14 @@ repos:
     hooks:
       # Fixtures are captured verbatim from real tools — never reformat them.
       # The parser must handle whatever the tool actually produces, trailing
-      # whitespace and all.
+      # whitespace and all. ts-rs-generated bindings under `ui/src/lib/types/`
+      # are owned by ts-rs (cargo test re-emits them with trailing whitespace);
+      # `profile-helpers.ts` is the lone hand-written sibling — keep it
+      # formatted via the negative lookahead.
       - id: trailing-whitespace
-        exclude: ^tests/fixtures/|^crates/.+/tests/fixtures/
+        exclude: ^tests/fixtures/|^crates/.+/tests/fixtures/|^ui/src/lib/types/(?!profile-helpers\.ts$).+\.ts$
       - id: end-of-file-fixer
-        exclude: ^tests/fixtures/|^crates/.+/tests/fixtures/
+        exclude: ^tests/fixtures/|^crates/.+/tests/fixtures/|^ui/src/lib/types/(?!profile-helpers\.ts$).+\.ts$
       - id: check-yaml
       - id: check-toml
       - id: check-json

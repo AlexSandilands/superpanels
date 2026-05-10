@@ -63,8 +63,17 @@ fn build_app() -> tauri::App {
             commands::monitors::set_monitor_physical_size,
             commands::profiles::list_profiles,
             commands::profiles::apply_profile,
+            commands::profiles::apply_canvas,
             commands::profiles::save_profile,
             commands::profiles::delete_profile,
+            commands::profiles::duplicate_profile,
+            commands::profiles::rename_profile,
+            commands::profiles::update_profile_monitor_state,
+            commands::profiles::update_profile_image_transform,
+            commands::profiles::update_profile_source,
+            commands::profiles::list_schedules,
+            commands::profiles::save_schedules,
+            commands::profiles::set_schedules_paused,
             commands::preview::preview_crop,
             commands::library::library_list,
             commands::library::library_thumbnail,
@@ -80,6 +89,8 @@ fn build_app() -> tauri::App {
             commands::runtime::current_state,
             commands::autostart::set_autostart,
             commands::autostart::get_autostart,
+            commands::daemon::daemon_status,
+            commands::daemon::start_daemon,
         ]);
 
     builder

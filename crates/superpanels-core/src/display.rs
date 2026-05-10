@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use ts_rs::TS;
 
 pub mod hyprctl;
 pub mod kscreen;
@@ -20,7 +21,8 @@ use xrandr::XrandrDetector;
 
 /// A physical display normalised into Superpanels' internal model
 /// (`SPEC.md` §3.1).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../ui/src/lib/types/")]
 pub struct Monitor {
     /// Runtime-only; never persisted — use [`MonitorRef`] for that.
     pub id: MonitorId,
@@ -45,10 +47,12 @@ pub struct Monitor {
 
 /// Runtime monitor id. Newtype so `fn apply(profile: ProfileId, monitor: MonitorId)`
 /// can't be called with arguments swapped.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../ui/src/lib/types/", type = "number")]
 pub struct MonitorId(pub u32);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../ui/src/lib/types/")]
 #[serde(rename_all = "snake_case")]
 pub enum Rotation {
     #[default]
@@ -59,10 +63,11 @@ pub enum Rotation {
 }
 
 /// Persistent monitor reference (`SPEC.md` §6.4). All persisted data —
-/// per-monitor config, profile assignments, bezel overrides — keys on this
-/// rather than the runtime [`MonitorId`]. `name` is the fallback when the
-/// detector can't supply a `stable_id`.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// per-monitor config, profile assignments — keys on this rather than the
+/// runtime [`MonitorId`]. `name` is the fallback when the detector can't
+/// supply a `stable_id`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../ui/src/lib/types/")]
 pub struct MonitorRef {
     pub stable_id: String,
     pub name: String,

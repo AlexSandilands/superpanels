@@ -16,14 +16,12 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
 use superpanels_core::display::MonitorId;
-use superpanels_core::{BezelConfig, FitMode, Monitor, Rotation, compute_crop_specs};
+use superpanels_core::layout::synthesise_placements;
+use superpanels_core::{FitMode, Monitor, Rotation, compute_crop_specs};
 
 /// A wide panoramic source matching what a real spanned-wallpaper input looks
 /// like (8K-ish across, ultrawide aspect).
 const IMAGE_SIZE: (u32, u32) = (7680, 2160);
-
-/// Standard physical bezel between adjacent panels in millimetres.
-const BEZEL_MM: f32 = 8.0;
 
 /// Build a monitor at a given grid cell. Resolutions and physical sizes are
 /// uniform across the bench fixtures so the only varying input is monitor
@@ -84,25 +82,20 @@ fn fixture_9_monitors() -> Vec<Monitor> {
 }
 
 fn bench_compute_crop_specs(c: &mut Criterion) {
-    let zero_bezel = BezelConfig {
-        horizontal_mm: 0.0,
-        vertical_mm: 0.0,
-    };
-    let uniform_bezel = BezelConfig {
-        horizontal_mm: BEZEL_MM,
-        vertical_mm: BEZEL_MM,
-    };
-
     let m1 = fixture_1_monitor();
     let m3 = fixture_3_monitors();
     let m6 = fixture_6_monitors();
     let m9 = fixture_9_monitors();
+    let p1 = synthesise_placements(&m1);
+    let p3 = synthesise_placements(&m3);
+    let p6 = synthesise_placements(&m6);
+    let p9 = synthesise_placements(&m9);
 
     c.bench_function("1_monitor_fill", |b| {
         b.iter(|| {
             compute_crop_specs(
                 black_box(&m1),
-                black_box(&zero_bezel),
+                black_box(&p1),
                 black_box(FitMode::Fill),
                 black_box(IMAGE_SIZE),
             )
@@ -114,7 +107,7 @@ fn bench_compute_crop_specs(c: &mut Criterion) {
         b.iter(|| {
             compute_crop_specs(
                 black_box(&m3),
-                black_box(&uniform_bezel),
+                black_box(&p3),
                 black_box(FitMode::Fill),
                 black_box(IMAGE_SIZE),
             )
@@ -126,7 +119,7 @@ fn bench_compute_crop_specs(c: &mut Criterion) {
         b.iter(|| {
             compute_crop_specs(
                 black_box(&m6),
-                black_box(&uniform_bezel),
+                black_box(&p6),
                 black_box(FitMode::Fill),
                 black_box(IMAGE_SIZE),
             )
@@ -138,7 +131,7 @@ fn bench_compute_crop_specs(c: &mut Criterion) {
         b.iter(|| {
             compute_crop_specs(
                 black_box(&m9),
-                black_box(&uniform_bezel),
+                black_box(&p9),
                 black_box(FitMode::Fill),
                 black_box(IMAGE_SIZE),
             )

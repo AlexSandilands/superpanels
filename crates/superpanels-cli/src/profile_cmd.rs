@@ -8,6 +8,7 @@ use std::time::SystemTime;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::HashMap;
 use superpanels_core::backends::detect_backend;
 use superpanels_core::config::{
     BackendKind, Config, PerMonitorAssignment, Profile, ProfileBody, SpanSource,
@@ -18,8 +19,9 @@ use superpanels_core::image::{
     FitMode as ImageFitMode, clear_temp_dir, load, render_slice, rotate, save_temp, scale_to_fit,
 };
 use superpanels_core::layout::{
-    BezelConfig, FitMode as LayoutFitMode, compute_crop_specs_with_offset,
+    FitMode as LayoutFitMode, compute_crop_specs_with_offset, synthesise_placements,
 };
+use superpanels_core::schedule::MonitorPlacement;
 use tracing::{info, warn};
 
 use crate::ipc_client;
@@ -101,7 +103,7 @@ pub(crate) fn apply_cmd(
             run_span_apply(
                 &image_path,
                 &monitors,
-                profile.bezels,
+                &profile.monitor_state,
                 span.fit,
                 span.offset,
                 span.image_size_px,
@@ -178,6 +180,42 @@ pub(crate) fn export_cmd(
     Ok(())
 }
 
+pub(crate) fn show_cmd(name: &str, config_path: Option<&Path>) -> Result<()> {
+    let cfg = load_config(config_path)?;
+    let profile = cfg
+        .profiles
+        .iter()
+        .find(|p| p.name == name)
+        .ok_or_else(|| anyhow::anyhow!("profile '{name}' not found"))?;
+    let text = toml::to_string(profile).context("serialising profile")?;
+    print!("{text}");
+    Ok(())
+}
+
+pub(crate) fn duplicate_cmd(name: &str, new_name: &str, config_path: Option<&Path>) -> Result<()> {
+    let cfg_path = resolve_config_path(config_path)?;
+    let mut cfg = Config::load_from(&cfg_path)?;
+    let source = cfg
+        .profiles
+        .iter()
+        .find(|p| p.name == name)
+        .ok_or_else(|| anyhow::anyhow!("profile '{name}' not found"))?
+        .clone();
+    if cfg.profiles.iter().any(|p| p.name == new_name) {
+        bail!("a profile named '{new_name}' already exists");
+    }
+    let now = superpanels_core::config::now_timestamp();
+    let mut copy = source;
+    new_name.clone_into(&mut copy.name);
+    copy.created_at = now;
+    copy.updated_at = now;
+    copy.last_applied_at = None;
+    cfg.profiles.push(copy);
+    cfg.save_to(&cfg_path)?;
+    println!("Duplicated '{name}' → '{new_name}'.");
+    Ok(())
+}
+
 pub(crate) fn import_cmd(file: &Path, config_path: Option<&Path>) -> Result<()> {
     let cfg_path = resolve_config_path(config_path)?;
     let mut cfg = Config::load_from(&cfg_path)?;
@@ -210,7 +248,7 @@ pub(crate) fn import_cmd(file: &Path, config_path: Option<&Path>) -> Result<()> 
 fn run_span_apply(
     image_path: &Path,
     monitors: &[Monitor],
-    bezels: BezelConfig,
+    placements: &HashMap<String, MonitorPlacement>,
     fit: LayoutFitMode,
     offset_px: [i32; 2],
     image_size_px: Option<[u32; 2]>,
@@ -219,14 +257,15 @@ fn run_span_apply(
 ) -> Result<()> {
     let source = load(image_path).with_context(|| format!("loading {}", image_path.display()))?;
     let image_size = (source.width(), source.height());
-    let specs = compute_crop_specs_with_offset(
-        monitors,
-        &bezels,
-        fit,
-        image_size,
-        offset_px,
-        image_size_px,
-    )?;
+    let synth;
+    let p: &HashMap<String, MonitorPlacement> = if placements.is_empty() {
+        synth = synthesise_placements(monitors);
+        &synth
+    } else {
+        placements
+    };
+    let specs =
+        compute_crop_specs_with_offset(monitors, p, fit, image_size, offset_px, image_size_px)?;
     let backend = detect_backend(backend_kind, custom_cmd);
     clear_temp_dir()?;
     let token = apply_token();
@@ -335,13 +374,13 @@ fn resolve_config_path(path: Option<&Path>) -> Result<PathBuf> {
 #[allow(clippy::unwrap_used)] // reason: tests fail loudly on unexpected errors
 mod tests {
     use super::*;
-    use superpanels_core::config::{
-        BackendConfig, GeneralConfig, LibraryConfig, SpanProfile, SpanSource,
-    };
-    use superpanels_core::layout::{BezelConfig, FitMode};
+    use superpanels_core::config::{SpanProfile, SpanSource};
+    use superpanels_core::layout::FitMode;
+    use superpanels_core::{ProfileColour, TopologyFingerprint};
     use tempfile::tempdir;
 
     fn sample_profile(name: &str) -> Profile {
+        let now = superpanels_core::config::now_timestamp();
         Profile {
             name: name.to_owned(),
             body: ProfileBody::Span(SpanProfile {
@@ -352,23 +391,22 @@ mod tests {
                 offset: [0, 0],
                 image_size_px: None,
             }),
-            bezels: BezelConfig {
-                horizontal_mm: 8.0,
-                vertical_mm: 5.0,
-            },
+            monitor_state: HashMap::new(),
+            topology: TopologyFingerprint(String::new()),
+            colour: ProfileColour::default(),
+            description: None,
+            created_at: now,
+            updated_at: now,
+            last_applied_at: None,
             backend_override: None,
-            schedule: None,
         }
     }
 
     fn write_config_with_profiles(dir: &Path, profiles: Vec<Profile>) -> PathBuf {
         let cfg_path = dir.join("config.toml");
         let cfg = Config {
-            general: GeneralConfig::default(),
-            backend: BackendConfig::default(),
-            library: LibraryConfig::default(),
-            monitors: vec![],
             profiles,
+            ..Config::default()
         };
         cfg.save_to(&cfg_path).unwrap();
         cfg_path

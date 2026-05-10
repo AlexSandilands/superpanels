@@ -21,3 +21,14 @@ affected stacks (track upstream WebKit / `webkit2gtk` Arch package).
 `set_enabled_at_true_writes_desktop_file` /
 `desktop_body_includes_webkit_dmabuf_workaround` test assertions in
 `autostart.rs`.
+
+## Fix transforms/cropping from canvas
+  - Should be pixel perfect according to canvas
+  - Align with the preview in the profile manager
+  - We should stop rendering the bezels in the canvas - it is breaking the math I think
+
+## Slideshows
+
+## Remove colors from profiles, not necessary anymore
+
+## Review daemon logging - is it firing too frequently?

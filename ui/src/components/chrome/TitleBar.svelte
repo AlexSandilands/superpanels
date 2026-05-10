@@ -12,11 +12,18 @@
     activeName: string | null;
     backendName: string;
     canApply: boolean;
+    canSaveAsNew: boolean;
+    canSave: boolean;
+    canRevert: boolean;
+    saveDirty: boolean;
     onApply: () => void;
+    onSave: () => void;
+    onSaveAsNew: () => void;
+    onRevert: () => void;
     onSwitchProfile: (p: Profile) => void;
-    onNewProfile: () => void;
     onOpenLibrary: () => void;
     onOpenSettings: () => void;
+    onOpenProfileManager: () => void;
     onTrayClick: () => void;
   };
   let {
@@ -24,11 +31,18 @@
     activeName,
     backendName,
     canApply,
+    canSaveAsNew,
+    canSave,
+    canRevert,
+    saveDirty,
     onApply,
+    onSave,
+    onSaveAsNew,
+    onRevert,
     onSwitchProfile,
-    onNewProfile,
     onOpenLibrary,
     onOpenSettings,
+    onOpenProfileManager,
     onTrayClick,
   }: Props = $props();
 
@@ -139,9 +153,9 @@
           onSwitchProfile(p);
         }}
         onClose={() => (menuOpen = false)}
-        onNewProfile={() => {
+        onOpenManager={() => {
           menuOpen = false;
-          onNewProfile();
+          onOpenProfileManager();
         }}
       />
     {/if}
@@ -166,6 +180,40 @@
       <Icon name="tray" />
     </button>
     <div style:width="1px" style:height="18px" style:background="var(--line)"></div>
+    <button
+      class="btn ghost icon"
+      class:save-dirty={saveDirty}
+      disabled={!canSave}
+      onclick={onSave}
+      title={canSave
+        ? saveDirty
+          ? `Save changes to '${activeName}' (Ctrl+S)`
+          : `Save '${activeName}' (no changes)`
+        : 'No active profile to save'}
+    >
+      <Icon name="save" />
+    </button>
+    <button
+      class="btn ghost icon"
+      disabled={!canSaveAsNew}
+      onclick={onSaveAsNew}
+      title={canSaveAsNew ? 'Save current canvas as a new profile' : 'No image on canvas'}
+    >
+      <Icon name="save-new" />
+    </button>
+    <button
+      class="btn ghost icon"
+      disabled={!canRevert}
+      onclick={onRevert}
+      title={canRevert
+        ? `Revert canvas to '${activeName}' (drops unsaved edits)`
+        : 'Nothing to revert'}
+    >
+      <Icon name="reset" />
+    </button>
+    <button class="btn ghost icon" title="Profile manager" onclick={onOpenProfileManager}>
+      <Icon name="stack" />
+    </button>
     <button class="btn primary" disabled={!canApply} onclick={onApply} title="Apply (Enter)">
       <Icon name="check" size={13} /> Apply
       <span
@@ -193,3 +241,11 @@
     onAlwaysOnTopChange={(v) => (alwaysOnTop = v)}
   />
 {/if}
+
+<style>
+  /* Dirty Save: tint the icon button with --accent so the user can tell
+     at a glance there are unsaved canvas edits (§9.1.2 / §12.4.3). */
+  .save-dirty {
+    color: var(--accent);
+  }
+</style>

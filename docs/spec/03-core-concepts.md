@@ -37,19 +37,19 @@ enum Rotation { None, Left, Right, Inverted }
 
 `rotation` matters for the layout math: a portrait monitor's *physical* width is its (rotated) short side and its height is its long side. Everything in `physical_size_mm` is recorded in native orientation; the layout module applies the rotation when building the desktop's physical canvas.
 
-## 3.2 BezelConfig
+## 3.2 Monitor placement
 
-Physical gap sizes between adjacent screens, specified in millimetres.
+`BezelConfig` is gone. Each profile authors a `monitor_state: HashMap<StableId, MonitorPlacement>` on its canvas, and the gaps between monitors fall out of the placements — there is no separate bezel field.
 
 ```rust
-struct BezelConfig {
-    horizontal_mm: f32,                                // uniform gap between any pair of horizontally adjacent monitors
-    vertical_mm: f32,                                  // uniform gap between any pair of vertically adjacent monitors
-    overrides: HashMap<(MonitorRef, MonitorRef), f32>, // optional per-pair override; key is sorted-pair
+struct MonitorPlacement {
+    x_mm: f32,
+    y_mm: f32,
+    rotation: Rotation,
 }
 ```
 
-Default is uniform `horizontal_mm` / `vertical_mm`, which covers ~90% of real setups. Overrides exist for the rare case where bezel widths differ — e.g., a thin-bezel ultrawide between two thick-bezel old IPS panels. The override key is normalised so `(a, b)` and `(b, a)` collapse to the same entry; see `MonitorRef` (§6.4) for why we key on `MonitorRef`, not `MonitorId`.
+Bezels and air-gaps are both expressed by the gaps between authored `(x_mm, y_mm)` rectangles — one concept, no double-bookkeeping (`docs/spec/04-bezel-math.md`).
 
 ## 3.3 CropSpec
 
@@ -67,15 +67,28 @@ struct CropSpec {
 
 ## 3.4 Profile
 
-A named, persistent configuration that bundles the inputs needed to set a wallpaper. The shape is built around the principle "make illegal states unrepresentable": *how images map to monitors* (span vs per-monitor) and *whether the source rotates over time* (single vs slideshow) are orthogonal concerns expressed by nested enums, so a configuration like `mode=Slideshow, images=Single` is unrepresentable rather than runtime-validated.
+A named, persistent **mode the user is in**, not a one-shot apply request. A profile bundles the canvas state — image transform, per-monitor placements, colour swatch — that the user authored under a specific monitor topology. Switching profiles atomically swaps both the image transform *and* the per-monitor canvas arrangement.
+
+The shape is built around the principle "make illegal states unrepresentable": *how images map to monitors* (span vs per-monitor) and *whether the source rotates over time* (single vs slideshow) are orthogonal concerns expressed by nested enums, so a configuration like `mode=Slideshow, images=Single` is unrepresentable rather than runtime-validated.
 
 ```rust
 struct Profile {
     name: String,
     body: ProfileBody,
-    bezels: BezelConfig,
+    /// Per-monitor canvas state captured at authoring time. Keys are
+    /// `Monitor.stable_id` (or `name` fallback). Layout consumes this
+    /// directly — there is no separate bezel field.
+    monitor_state: HashMap<String, MonitorPlacement>,
+    /// Hash over (sorted stable_ids ∥ rotations). Compared by equality at
+    /// apply time; mismatch disables the profile until the user re-authors.
+    topology: TopologyFingerprint,
+    /// One of a curated 12-swatch palette; surfaces in the tray and manager.
+    colour: ProfileColour,
+    description: Option<String>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+    last_applied_at: Option<DateTime<Utc>>,
     backend_override: Option<BackendKind>,
-    schedule: Option<Schedule>,           // optional time-of-day trigger (see §9)
 }
 
 enum ProfileBody {
@@ -90,6 +103,7 @@ struct SpanProfile {
     source: SpanSource,
     fit: FitMode,
     offset: (i32, i32),                   // image-position offset in canvas px (see §8.3)
+    image_size_px: Option<(u32, u32)>,    // explicit image rectangle (`docs/spec/12-gui.md` §12.3)
 }
 
 enum SpanSource {

@@ -35,11 +35,28 @@ pub(crate) fn apply_profile(
 #[tauri::command]
 pub(crate) fn save_profile(
     profile: Value,
+    recompute_topology: Option<bool>,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
     bridge::call(
         "save_profile",
-        json!({ "profile": profile }),
+        json!({
+            "profile": profile,
+            "recompute_topology": recompute_topology.unwrap_or(false),
+        }),
+        state.config_path().as_deref(),
+    )
+}
+
+#[tauri::command]
+pub(crate) fn apply_canvas(
+    profile: Value,
+    active_name: Option<String>,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Value, IpcError> {
+    bridge::call(
+        "apply_canvas",
+        json!({ "profile": profile, "active_name": active_name }),
         state.config_path().as_deref(),
     )
 }
@@ -52,6 +69,106 @@ pub(crate) fn delete_profile(
     bridge::call(
         "delete_profile",
         json!({ "name": name }),
+        state.config_path().as_deref(),
+    )
+}
+
+#[tauri::command]
+pub(crate) fn duplicate_profile(
+    name: String,
+    new_name: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Value, IpcError> {
+    bridge::call(
+        "duplicate_profile",
+        json!({ "name": name, "new_name": new_name }),
+        state.config_path().as_deref(),
+    )
+}
+
+#[tauri::command]
+pub(crate) fn rename_profile(
+    name: String,
+    new_name: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Value, IpcError> {
+    bridge::call(
+        "rename_profile",
+        json!({ "name": name, "new_name": new_name }),
+        state.config_path().as_deref(),
+    )
+}
+
+#[tauri::command]
+pub(crate) fn update_profile_monitor_state(
+    profile: String,
+    stable_id: String,
+    placement: Value,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Value, IpcError> {
+    bridge::call(
+        "update_profile_monitor_state",
+        json!({ "profile": profile, "stable_id": stable_id, "placement": placement }),
+        state.config_path().as_deref(),
+    )
+}
+
+#[tauri::command]
+pub(crate) fn update_profile_image_transform(
+    profile: String,
+    offset: Option<Value>,
+    image_size_px: Option<Value>,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Value, IpcError> {
+    bridge::call(
+        "update_profile_image_transform",
+        json!({
+            "profile": profile,
+            "offset": offset,
+            "image_size_px": image_size_px,
+        }),
+        state.config_path().as_deref(),
+    )
+}
+
+#[tauri::command]
+pub(crate) fn update_profile_source(
+    profile: String,
+    source: Value,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Value, IpcError> {
+    bridge::call(
+        "update_profile_source",
+        json!({ "profile": profile, "source": source }),
+        state.config_path().as_deref(),
+    )
+}
+
+#[tauri::command]
+pub(crate) fn list_schedules(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
+    bridge::call("list_schedules", json!({}), state.config_path().as_deref())
+}
+
+#[tauri::command]
+pub(crate) fn save_schedules(
+    schedules: Value,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Value, IpcError> {
+    bridge::call(
+        "save_schedules",
+        json!({ "schedules": schedules }),
+        state.config_path().as_deref(),
+    )
+}
+
+#[tauri::command]
+pub(crate) fn set_schedules_paused(
+    paused: bool,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Value, IpcError> {
+    bridge::call(
+        "set_schedules_paused",
+        json!({ "paused": paused }),
         state.config_path().as_deref(),
     )
 }

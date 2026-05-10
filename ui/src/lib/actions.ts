@@ -4,12 +4,79 @@
 
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { api, errorMessage, type Profile } from '$lib/api';
-import { stableId } from '$lib/canvas/preview-layout';
+import { buildPreviewMonitors, stableId } from '$lib/canvas/preview-layout';
+import { canvasView, type MonitorOverride } from '$lib/stores/canvas-view.svelte';
 import { monitorStore } from '$lib/stores/monitors.svelte';
+import { preemption } from '$lib/stores/preemption.svelte';
 import { profileStore } from '$lib/stores/profile.svelte';
 import { runtime } from '$lib/stores/runtime.svelte';
 import { toast } from '$lib/stores/toast.svelte';
-import { isPerMonitorBody, isSpanBody, type PerMonitorAssignment } from '$lib/types/profile';
+import type { MonitorPlacement } from '$lib/types/MonitorPlacement';
+import type { Rotation } from '$lib/types/Rotation';
+import {
+  isPerMonitorBody,
+  isSpanBody,
+  type PerMonitorAssignment,
+} from '$lib/types/profile-helpers';
+
+function rotationFromDeg(d: 0 | 90 | 180 | 270): Rotation {
+  switch (d) {
+    case 90:
+      return 'right';
+    case 180:
+      return 'inverted';
+    case 270:
+      return 'left';
+    default:
+      return 'none';
+  }
+}
+
+function rotationToDeg(r: Rotation): 0 | 90 | 180 | 270 {
+  switch (r) {
+    case 'right':
+      return 90;
+    case 'inverted':
+      return 180;
+    case 'left':
+      return 270;
+    default:
+      return 0;
+  }
+}
+
+// Fold the current canvas (detected monitors + canvasView overrides) into the
+// active draft so a fresh untitled profile actually carries placements when it
+// gets persisted on Apply. Topology is left empty here — the daemon recomputes
+// the canonical SHA-256 fingerprint when `recompute_topology` is set on save.
+function syncDraftMonitorStateFromCanvas(): void {
+  if (!profileStore.draft) return;
+  const previews = buildPreviewMonitors(monitorStore.monitors, canvasView.overrides);
+  if (previews.length === 0) return;
+  const next: Record<string, MonitorPlacement> = {};
+  for (const m of previews) {
+    next[m.id] = { x_mm: m.xMm, y_mm: m.yMm, rotation: rotationFromDeg(m.rotation) };
+  }
+  profileStore.patchDraft((d) => {
+    d.monitor_state = next;
+    d.topology = '';
+  });
+}
+
+// Push a profile's authored placements into `canvasView.overrides` so the
+// canvas reflects what was just applied. Existing entries for monitors not in
+// the profile are preserved.
+export function applyMonitorStateToCanvas(p: Profile): void {
+  const next: Record<string, MonitorOverride> = { ...canvasView.overrides };
+  for (const [id, placement] of Object.entries(p.monitor_state)) {
+    next[id] = {
+      xMm: placement.x_mm,
+      yMm: placement.y_mm,
+      rotation: rotationToDeg(placement.rotation),
+    };
+  }
+  canvasView.setOverrides(next);
+}
 
 function recordAndToast(r: Awaited<ReturnType<typeof api.applyProfile>>, t0: number): number {
   const elapsed = r.elapsed_ms ?? Math.round(performance.now() - t0);
@@ -22,26 +89,67 @@ function recordAndToast(r: Awaited<ReturnType<typeof api.applyProfile>>, t0: num
   return elapsed;
 }
 
+/** Push the current canvas state to the desktop without persisting it
+ *  (§4e.11.1). The active profile name (if any) is sent alongside so the
+ *  daemon updates `last_applied_at` and rotates `active_profile`, but
+ *  `monitor_state`, image transform, and source on disk stay untouched. */
 export async function applyDraftProfile(): Promise<void> {
   const draft = profileStore.draft;
   if (!draft) return;
-  if (profileStore.dirty) {
-    const saved = await profileStore.save();
-    if (!saved) return;
-  }
+  syncDraftMonitorStateFromCanvas();
+  const refreshed = profileStore.draft;
+  if (!refreshed) return;
+  preemption.claimSwitchTo(profileStore.activeName);
   try {
     const t0 = performance.now();
-    const r = await api.applyProfile(draft.name);
+    const r = await api.applyCanvas(refreshed, profileStore.activeName);
     const elapsed = recordAndToast(r, t0);
-    toast.success(`Applied '${draft.name}'`, `${r.backend ?? 'backend'} · ${elapsed} ms`);
+    toast.success(`Applied '${refreshed.name}'`, `${r.backend ?? 'backend'} · ${elapsed} ms`);
     void profileStore.refresh();
   } catch (err) {
     toast.error('Apply failed', errorMessage(err));
   }
 }
 
+/** Commit the current canvas state into the active profile's TOML
+ *  (§4e.11.3 Save). No-op when there is no active profile. */
+export async function saveActiveProfile(): Promise<boolean> {
+  const draft = profileStore.draft;
+  const active = profileStore.activeName;
+  if (!draft || !active) return false;
+  syncDraftMonitorStateFromCanvas();
+  const refreshed = profileStore.draft;
+  if (!refreshed) return false;
+  const payload: Profile = { ...refreshed, name: active };
+  preemption.claimSwitchTo(active);
+  try {
+    await api.saveProfile(payload, { recomputeTopology: true });
+    void profileStore.refresh();
+    profileStore.clearDirty();
+    toast.success(`Saved '${active}'`);
+    return true;
+  } catch (err) {
+    toast.error(`Failed to save '${active}'`, errorMessage(err));
+    return false;
+  }
+}
+
+/** Re-pull the active profile's persisted state into the canvas
+ *  (§4e.11.4 Revert). */
+export function revertCanvasToActive(): void {
+  const saved = profileStore.revertToActive();
+  if (!saved) {
+    toast.info('Nothing to revert', 'no active profile');
+    return;
+  }
+  applyMonitorStateToCanvas(saved);
+  toast.info(`Reverted to '${saved.name}'`);
+}
+
 export async function switchAndApply(p: Profile): Promise<void> {
   profileStore.select(p.name);
+  applyMonitorStateToCanvas(p);
+  preemption.claimSwitchTo(p.name);
   try {
     const t0 = performance.now();
     const r = await api.applyProfile(p.name);

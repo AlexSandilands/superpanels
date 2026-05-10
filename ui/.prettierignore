@@ -2,11 +2,9 @@ dist/
 node_modules/
 package-lock.json
 
-# ts-rs writes these files from Rust definitions in superpanels-gui;
+# ts-rs writes these files from Rust definitions in superpanels-{gui,core};
 # the generated output doesn't match Prettier's formatting and will be
-# overwritten on every build. Source of truth is the Rust types.
-# Hand-written siblings in this directory (e.g. `profile.ts`) are NOT
-# ignored — list generated files explicitly so the ignore stays narrow.
-src/lib/types/IpcError.ts
-src/lib/types/LibraryFilter.ts
-src/lib/types/PreviewArgs.ts
+# overwritten on every test run. Source of truth is the Rust types.
+# `profile-helpers.ts` is the only hand-written sibling — keep it formatted.
+src/lib/types/*.ts
+!src/lib/types/profile-helpers.ts
