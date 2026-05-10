@@ -8,12 +8,11 @@ use std::time::Duration;
 use serde_json::json;
 use superpanels_core::config::{ProfileBody, SpanSource};
 use superpanels_core::ipc::{IpcRequest, IpcResponse};
-use superpanels_core::layout::FitMode;
 use superpanels_core::schedule::MonitorPlacement;
 use tokio::sync::{Mutex, watch};
 use tracing::info;
 
-use crate::apply::{run_immediate_set_with_offset, run_per_monitor_apply, run_span_apply};
+use crate::apply::{run_immediate_span_apply, run_per_monitor_apply, run_span_apply};
 use crate::state::DaemonState;
 
 use super::helpers::{
@@ -25,16 +24,6 @@ pub(super) async fn cmd_set(req: IpcRequest, state: Arc<Mutex<DaemonState>>) -> 
         Some(s) => PathBuf::from(s),
         None => return IpcResponse::failure("params.image (string) required"),
     };
-    let fit: FitMode = req
-        .params
-        .get("fit")
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .unwrap_or_default();
-    let offset_px: [i32; 2] = req
-        .params
-        .get("offset_px")
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .unwrap_or([0, 0]);
 
     let (monitors, backend_kind, custom_cmd) = {
         let guard = state.lock().await;
@@ -48,12 +37,10 @@ pub(super) async fn cmd_set(req: IpcRequest, state: Arc<Mutex<DaemonState>>) -> 
     let placements: HashMap<String, MonitorPlacement> = HashMap::new();
 
     let report = tokio::task::spawn_blocking(move || {
-        run_immediate_set_with_offset(
+        run_immediate_span_apply(
             &image_path,
             &monitors,
             &placements,
-            fit,
-            offset_px,
             None,
             backend_kind,
             &custom_cmd,

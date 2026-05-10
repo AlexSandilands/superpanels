@@ -1,10 +1,8 @@
-//! Authored-placement-aware layout (`docs/spec/04-bezel-math.md`).
-//!
-//! Bezels and air-gaps are no longer a separate concept: each monitor's
-//! `(x_mm, y_mm)` placement on the canvas is authored, and the gaps between
-//! monitors fall out of those placements. The layout step consumes the
-//! profile's `monitor_state` directly; live OS state is consulted only for
-//! pixel resolutions and rotation.
+//! Canvas-as-truth layout. Each monitor is a rectangle in mm-space; the
+//! image is a separate rectangle in the same mm-space. The crop for a
+//! monitor is whatever piece of the image overlaps it, mapped from mm to
+//! source-image pixels. Anything outside the image becomes black via the
+//! `dst_offset` / `slice_dst_size` letterbox path.
 
 use std::collections::HashMap;
 use std::hash::BuildHasher;
@@ -18,7 +16,7 @@ use crate::schedule::{MonitorPlacement, monitor_key};
 
 mod algorithm;
 
-use algorithm::{EffectiveMonitor, SrcMapping, validate_inputs};
+use algorithm::{EffectiveMonitor, validate_inputs};
 
 /// Source-image pixel rectangle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
@@ -33,7 +31,7 @@ pub struct Rect {
 /// The piece of the source image that lands on a single monitor, plus where
 /// it lands inside that monitor's destination canvas. `dst_offset` +
 /// `dst_size` describe the covered region; the rest is letterboxed black on
-/// Apply (`docs/spec/04-bezel-math.md` §4.6).
+/// Apply.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CropSliceSpec {
     pub src_rect: Rect,
@@ -53,7 +51,6 @@ pub struct CropSpec {
     #[serde(default)]
     pub slice_dst_size: (u32, u32),
     pub rotation: Rotation,
-    pub fit: FitMode,
 }
 
 impl CropSpec {
@@ -63,6 +60,18 @@ impl CropSpec {
     }
 }
 
+/// Image rectangle in canvas mm-space — the source of truth for span apply.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../ui/src/lib/types/")]
+pub struct ImageRectMm {
+    pub x_mm: f32,
+    pub y_mm: f32,
+    pub w_mm: f32,
+    pub h_mm: f32,
+}
+
+/// `FitMode` survives only as a per-monitor scaling hint for `PerMonitor`
+/// profiles. Span profiles describe placement entirely via `ImageRectMm`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../ui/src/lib/types/")]
 #[serde(rename_all = "snake_case")]
@@ -85,19 +94,14 @@ pub enum LayoutError {
     )]
     PhysicalSizeMissing { monitors: Vec<MonitorRef> },
 
-    #[error("image too small for canvas: {image_w}x{image_h} vs canvas {canvas_w}x{canvas_h}")]
-    ImageTooSmall {
-        image_w: u32,
-        image_h: u32,
-        canvas_w: u32,
-        canvas_h: u32,
-    },
-
     #[error("monitor `{name}` has invalid physical size (zero in one or both dimensions)")]
     InvalidPhysicalSize { name: String },
 
-    #[error("fit mode `{mode:?}` is not yet implemented")]
-    FitModeUnsupported { mode: FitMode },
+    #[error("image natural size must be non-zero, got {image_w}x{image_h}")]
+    ImageZeroSize { image_w: u32, image_h: u32 },
+
+    #[error("image rect mm must have positive width/height, got {w_mm}x{h_mm}")]
+    ImageRectDegenerate { w_mm: f32, h_mm: f32 },
 
     /// A connected monitor has no entry in the profile's `monitor_state`.
     /// In normal use this is caught earlier by topology-fingerprint
@@ -107,30 +111,36 @@ pub enum LayoutError {
     PlacementMissing { name: String },
 }
 
-/// Compute one [`CropSpec`] per monitor; the image is mapped onto the
-/// authored placement plane in mm so crops form a continuous spanning
-/// composition (`docs/spec/04-bezel-math.md`).
+/// Compute one [`CropSpec`] per monitor — the canvas is the source of truth.
+/// `image_rect_mm` is the image's rectangle in canvas mm-space; each
+/// monitor's crop is the piece of the source image that maps onto its
+/// `(x_mm, y_mm, w_mm, h_mm)` window. Out-of-image regions letterbox to
+/// black via `dst_offset` / `slice_dst_size`.
 pub fn compute_crop_specs<S: BuildHasher>(
     monitors: &[Monitor],
     placements: &HashMap<String, MonitorPlacement, S>,
-    fit: FitMode,
-    image_size: (u32, u32),
+    image_size_px: (u32, u32),
+    image_rect_mm: ImageRectMm,
 ) -> Result<Vec<CropSpec>, LayoutError> {
-    compute_crop_specs_with_offset(monitors, placements, fit, image_size, [0, 0], None)
-}
+    validate_inputs(monitors, image_size_px)?;
+    if !image_rect_mm.w_mm.is_finite()
+        || !image_rect_mm.h_mm.is_finite()
+        || image_rect_mm.w_mm <= 0.0
+        || image_rect_mm.h_mm <= 0.0
+    {
+        return Err(LayoutError::ImageRectDegenerate {
+            w_mm: image_rect_mm.w_mm,
+            h_mm: image_rect_mm.h_mm,
+        });
+    }
 
-#[allow(clippy::too_many_arguments)] // reason: free-positioning has 6 independent inputs; bundling reads worse
-pub fn compute_crop_specs_with_offset<S: BuildHasher>(
-    monitors: &[Monitor],
-    placements: &HashMap<String, MonitorPlacement, S>,
-    fit: FitMode,
-    image_size: (u32, u32),
-    offset_px: [i32; 2],
-    image_size_px: Option<[u32; 2]>,
-) -> Result<Vec<CropSpec>, LayoutError> {
-    validate_inputs(monitors, fit, image_size)?;
+    let mut specs = Vec::with_capacity(monitors.len());
+    let img_origin = (f64::from(image_rect_mm.x_mm), f64::from(image_rect_mm.y_mm));
+    let px_per_mm = (
+        f64::from(image_size_px.0) / f64::from(image_rect_mm.w_mm),
+        f64::from(image_size_px.1) / f64::from(image_rect_mm.h_mm),
+    );
 
-    let mut effs: Vec<EffectiveMonitor> = Vec::with_capacity(monitors.len());
     for m in monitors {
         let key = monitor_key(m);
         let Some(placement) = placements.get(&key) else {
@@ -138,37 +148,19 @@ pub fn compute_crop_specs_with_offset<S: BuildHasher>(
                 name: m.name.clone(),
             });
         };
-        effs.push(EffectiveMonitor::from_monitor(m, *placement));
-    }
-
-    let reference_ppi = effs
-        .iter()
-        .map(EffectiveMonitor::ppi)
-        .fold(0.0_f64, f64::max);
-
-    let (canvas_width_mm, canvas_height_mm) = bounding_box_mm(&effs);
-    let canvas = algorithm::compute_canvas_pixels(
-        canvas_width_mm,
-        canvas_height_mm,
-        reference_ppi,
-        image_size,
-    )?;
-    let mapping = SrcMapping::for_layout(fit, &canvas, image_size, image_size_px)?;
-
-    let mut specs = Vec::with_capacity(monitors.len());
-    for (i, m) in monitors.iter().enumerate() {
-        let eff = &effs[i];
-        let mon_origin_mm = (f64::from(eff.placement.x_mm), f64::from(eff.placement.y_mm));
-        let mon_size_mm = (eff.width_mm, eff.height_mm);
+        let eff = EffectiveMonitor::from_monitor(m, *placement);
+        let mon_origin = (f64::from(eff.placement.x_mm), f64::from(eff.placement.y_mm));
+        let mon_size = (eff.width_mm, eff.height_mm);
         let mon_dst_size = (eff.pixel_w, eff.pixel_h);
-        let slice = mapping.monitor_to_slice(
-            mon_origin_mm,
-            mon_size_mm,
-            mon_dst_size,
-            reference_ppi,
-            image_size,
-            offset_px,
-        );
+
+        let unclamped = algorithm::UnclampedSrc {
+            left: (mon_origin.0 - img_origin.0) * px_per_mm.0,
+            top: (mon_origin.1 - img_origin.1) * px_per_mm.1,
+            width: mon_size.0 * px_per_mm.0,
+            height: mon_size.1 * px_per_mm.1,
+        };
+        let slice = algorithm::clamp_to_slice(&unclamped, image_size_px, mon_dst_size);
+
         specs.push(CropSpec {
             monitor_id: m.id,
             src_rect: slice.src_rect,
@@ -176,27 +168,59 @@ pub fn compute_crop_specs_with_offset<S: BuildHasher>(
             dst_size: mon_dst_size,
             slice_dst_size: slice.dst_size,
             rotation: m.rotation,
-            fit,
         });
     }
 
     Ok(specs)
 }
 
-fn bounding_box_mm(effs: &[EffectiveMonitor]) -> (f64, f64) {
-    let mut max_w = 0.0_f64;
-    let mut max_h = 0.0_f64;
-    for e in effs {
-        let r = f64::from(e.placement.x_mm) + e.width_mm;
-        let b = f64::from(e.placement.y_mm) + e.height_mm;
-        if r > max_w {
-            max_w = r;
-        }
-        if b > max_h {
-            max_h = b;
-        }
+/// Pick a sensible default `ImageRectMm` that covers the monitor union with
+/// the image's aspect preserved. Used by transient apply paths (CLI
+/// `set --image`, daemon dry-run preview) that don't carry a canvas state.
+#[must_use]
+pub fn cover_image_rect_mm(monitors: &[Monitor], image_size_px: (u32, u32)) -> ImageRectMm {
+    if monitors.is_empty() || image_size_px.0 == 0 || image_size_px.1 == 0 {
+        return ImageRectMm::default();
     }
-    (max_w, max_h)
+    let placements = synthesise_placements(monitors);
+    let mut x0 = f32::INFINITY;
+    let mut y0 = f32::INFINITY;
+    let mut x1 = f32::NEG_INFINITY;
+    let mut y1 = f32::NEG_INFINITY;
+    for m in monitors {
+        let key = monitor_key(m);
+        let Some(p) = placements.get(&key) else {
+            continue;
+        };
+        let eff = EffectiveMonitor::from_monitor(m, *p);
+        #[allow(clippy::cast_possible_truncation)]
+        // reason: f64→f32 narrowing of mm bounds is fine for a coarse cover-fit
+        let (w, h) = (eff.width_mm as f32, eff.height_mm as f32);
+        x0 = x0.min(p.x_mm);
+        y0 = y0.min(p.y_mm);
+        x1 = x1.max(p.x_mm + w);
+        y1 = y1.max(p.y_mm + h);
+    }
+    if !x0.is_finite() || !y0.is_finite() {
+        return ImageRectMm::default();
+    }
+    let bb_w = x1 - x0;
+    let bb_h = y1 - y0;
+    #[allow(clippy::cast_possible_truncation)]
+    // reason: aspect ratio fits comfortably in f32 for any sane image
+    let aspect = (f64::from(image_size_px.0) / f64::from(image_size_px.1)) as f32;
+    let mut w = bb_w;
+    let mut h = w / aspect;
+    if h < bb_h {
+        h = bb_h;
+        w = h * aspect;
+    }
+    ImageRectMm {
+        x_mm: x0 + (bb_w - w) / 2.0,
+        y_mm: y0 + (bb_h - h) / 2.0,
+        w_mm: w,
+        h_mm: h,
+    }
 }
 
 /// Synthesise placements from detected monitor positions. Used by the
@@ -278,23 +302,26 @@ mod tests {
         }
     }
 
-    fn placements_from(monitors: &[Monitor]) -> HashMap<String, MonitorPlacement> {
-        synthesise_placements(monitors)
-    }
-
     #[test]
-    fn single_monitor_no_gap_returns_full_image() {
+    fn single_monitor_image_covering_returns_full_image() {
         let monitors = vec![monitor(0, "DP-1", 1920, 1080, 0, 0, 480, 270)];
-        let placements = placements_from(&monitors);
-        let crops =
-            compute_crop_specs(&monitors, &placements, FitMode::Fill, (1920, 1080)).unwrap();
+        let mut placements = HashMap::new();
+        placements.insert(monitor_key(&monitors[0]), place(0.0, 0.0));
+        let rect = ImageRectMm {
+            x_mm: 0.0,
+            y_mm: 0.0,
+            w_mm: 480.0,
+            h_mm: 270.0,
+        };
+        let crops = compute_crop_specs(&monitors, &placements, (1920, 1080), rect).unwrap();
         assert_eq!(crops.len(), 1);
         assert_eq!(crops[0].src_rect.w, 1920);
         assert_eq!(crops[0].src_rect.h, 1080);
     }
 
     #[test]
-    fn two_monitors_with_explicit_gap_skip_gap_in_source() {
+    fn two_monitors_with_gap_skip_gap_in_source() {
+        // Two monitors spaced 8 mm apart; the image covers both at 1:1 mm.
         let monitors = vec![
             monitor(0, "DP-1", 1920, 1080, 0, 0, 527, 296),
             monitor(1, "DP-2", 1920, 1080, 1920, 0, 527, 296),
@@ -302,8 +329,13 @@ mod tests {
         let mut placements = HashMap::new();
         placements.insert(monitor_key(&monitors[0]), place(0.0, 0.0));
         placements.insert(monitor_key(&monitors[1]), place(527.0 + 8.0, 0.0));
-        let crops =
-            compute_crop_specs(&monitors, &placements, FitMode::Fill, (7680, 1080)).unwrap();
+        let rect = ImageRectMm {
+            x_mm: 0.0,
+            y_mm: 0.0,
+            w_mm: 527.0 + 8.0 + 527.0,
+            h_mm: 296.0,
+        };
+        let crops = compute_crop_specs(&monitors, &placements, (7680, 1080), rect).unwrap();
         let m1_end = crops[0].src_rect.x + crops[0].src_rect.w;
         let gap = crops[1].src_rect.x.saturating_sub(m1_end);
         assert!(gap > 0, "expected non-zero gap, got {gap}");
@@ -311,9 +343,55 @@ mod tests {
     }
 
     #[test]
+    fn monitor_off_image_letterboxes_black() {
+        // Monitor sits entirely above the image rect — its slice is empty.
+        let monitors = vec![monitor(0, "DP-1", 1920, 1080, 0, 0, 480, 270)];
+        let mut placements = HashMap::new();
+        placements.insert(monitor_key(&monitors[0]), place(0.0, -1000.0));
+        let rect = ImageRectMm {
+            x_mm: 0.0,
+            y_mm: 0.0,
+            w_mm: 480.0,
+            h_mm: 270.0,
+        };
+        let crops = compute_crop_specs(&monitors, &placements, (1920, 1080), rect).unwrap();
+        assert_eq!(crops[0].src_rect.w, 0);
+        assert_eq!(crops[0].src_rect.h, 0);
+        assert_eq!(crops[0].slice_dst_size, (0, 0));
+        assert!(crops[0].needs_letterbox());
+    }
+
+    #[test]
+    fn monitor_partly_off_image_clips_top() {
+        // Monitor straddles the image's top edge: half the monitor is off.
+        let monitors = vec![monitor(0, "DP-1", 1920, 1080, 0, 0, 480, 270)];
+        let mut placements = HashMap::new();
+        placements.insert(monitor_key(&monitors[0]), place(0.0, -135.0));
+        let rect = ImageRectMm {
+            x_mm: 0.0,
+            y_mm: 0.0,
+            w_mm: 480.0,
+            h_mm: 270.0,
+        };
+        let crops = compute_crop_specs(&monitors, &placements, (1920, 1080), rect).unwrap();
+        assert_eq!(crops[0].src_rect.x, 0);
+        assert_eq!(crops[0].src_rect.y, 0);
+        assert_eq!(crops[0].src_rect.w, 1920);
+        assert!(crops[0].src_rect.h <= 540 + 1 && crops[0].src_rect.h >= 540 - 1);
+        assert!(crops[0].dst_offset.1 > 0);
+        assert!(crops[0].needs_letterbox());
+    }
+
+    #[test]
     fn empty_monitor_list_returns_error() {
         let placements = HashMap::new();
-        let result = compute_crop_specs(&[], &placements, FitMode::Fill, (1920, 1080));
+        let rect = ImageRectMm {
+            x_mm: 0.0,
+            y_mm: 0.0,
+            w_mm: 100.0,
+            h_mm: 100.0,
+        };
+        let result = compute_crop_specs(&[], &placements, (1920, 1080), rect);
         assert!(matches!(result, Err(LayoutError::EmptyMonitorList)));
     }
 
@@ -321,8 +399,32 @@ mod tests {
     fn missing_placement_returns_error() {
         let monitors = vec![monitor(0, "DP-1", 1920, 1080, 0, 0, 480, 270)];
         let placements = HashMap::new();
-        let result = compute_crop_specs(&monitors, &placements, FitMode::Fill, (1920, 1080));
+        let rect = ImageRectMm {
+            x_mm: 0.0,
+            y_mm: 0.0,
+            w_mm: 480.0,
+            h_mm: 270.0,
+        };
+        let result = compute_crop_specs(&monitors, &placements, (1920, 1080), rect);
         assert!(matches!(result, Err(LayoutError::PlacementMissing { .. })));
+    }
+
+    #[test]
+    fn degenerate_image_rect_is_rejected() {
+        let monitors = vec![monitor(0, "DP-1", 1920, 1080, 0, 0, 480, 270)];
+        let mut placements = HashMap::new();
+        placements.insert(monitor_key(&monitors[0]), place(0.0, 0.0));
+        let rect = ImageRectMm {
+            x_mm: 0.0,
+            y_mm: 0.0,
+            w_mm: 0.0,
+            h_mm: 270.0,
+        };
+        let result = compute_crop_specs(&monitors, &placements, (1920, 1080), rect);
+        assert!(matches!(
+            result,
+            Err(LayoutError::ImageRectDegenerate { .. })
+        ));
     }
 
     #[test]

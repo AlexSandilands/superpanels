@@ -19,7 +19,7 @@ use superpanels_core::detect;
 use superpanels_core::display::{Monitor, MonitorRef};
 use superpanels_core::image::{clear_temp_dir, load, render_slice, rotate, save_temp};
 use superpanels_core::layout::{
-    CropSpec, FitMode as LayoutFitMode, compute_crop_specs_with_offset, synthesise_placements,
+    CropSpec, compute_crop_specs, cover_image_rect_mm, synthesise_placements,
 };
 use superpanels_core::schedule::TopologyFingerprint;
 use tracing::{debug, info};
@@ -28,8 +28,6 @@ use tracing::{debug, info};
 pub(crate) struct SetArgs {
     pub image: PathBuf,
     pub extra_images: Vec<PathBuf>,
-    pub fit: LayoutFitMode,
-    pub offset: Option<(i32, i32)>,
     pub backend: Option<String>,
     pub monitors: Option<String>,
     pub pins: Vec<String>,
@@ -47,8 +45,6 @@ pub(crate) fn run_via_ipc(
     }
     let params = json!({
         "image": args.image,
-        "fit": args.fit,
-        "offset_px": args.offset.map_or([0, 0], |(x, y)| [x, y]),
     });
     let resp = crate::ipc_client::call(stream, "set", params)?;
     if !resp.is_ok() {
@@ -105,9 +101,8 @@ pub(crate) fn run(
     let source = load(&args.image)?;
     let image_size = (source.width(), source.height());
 
-    let offset = args.offset.map_or([0, 0], |(x, y)| [x, y]);
-    let specs =
-        compute_crop_specs_with_offset(&monitors, &placements, args.fit, image_size, offset, None)?;
+    let image_rect_mm = cover_image_rect_mm(&monitors, image_size);
+    let specs = compute_crop_specs(&monitors, &placements, image_size, image_rect_mm)?;
 
     if args.dry_run {
         return print_dry_run(&specs, &monitors, image_size);
@@ -180,6 +175,9 @@ fn save_profile(args: &SetArgs, name: &str, config_path: Option<&Path>) -> Resul
     let placements = synthesise_placements(&merged);
     let topology = TopologyFingerprint::from_monitors(&merged);
 
+    let image_size = superpanels_core::image::read_dimensions(&args.image).unwrap_or((1, 1));
+    let image_rect_mm = cover_image_rect_mm(&merged, image_size);
+
     let now = superpanels_core::config::now_timestamp();
     let profile = Profile {
         name: name.to_owned(),
@@ -187,9 +185,7 @@ fn save_profile(args: &SetArgs, name: &str, config_path: Option<&Path>) -> Resul
             source: SpanSource::Single {
                 path: args.image.clone(),
             },
-            fit: args.fit,
-            offset: args.offset.map_or([0, 0], |(x, y)| [x, y]),
-            image_size_px: None,
+            image_rect_mm,
         }),
         monitor_state: placements,
         topology,

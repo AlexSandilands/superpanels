@@ -14,14 +14,14 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 use superpanels_core::backends::BackendError;
 use superpanels_core::config::{Config, ConfigError};
 use superpanels_core::display::kscreen::KscreenDoctorDetector;
 use superpanels_core::image::ImageError;
 pub(crate) use superpanels_core::ipc::client as ipc_client;
 use superpanels_core::ipc::{IpcResponse, socket_path};
-use superpanels_core::layout::{FitMode, LayoutError};
+use superpanels_core::layout::LayoutError;
 use superpanels_core::{DetectError, DisplayDetector, Monitor, Rotation, VERSION, detect};
 use tracing_subscriber::EnvFilter;
 
@@ -59,15 +59,13 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Command {
     /// Set wallpaper from one or more image paths (`SPEC.md` §11.1).
+    ///
+    /// The image rectangle is auto-fit to cover the detected monitor union.
+    /// For free placement, use the GUI's canvas instead.
     Set {
         /// One or more source image paths. Phase 1 takes a single image.
         #[arg(value_name = "IMAGE", required = true, num_args = 1..)]
         images: Vec<PathBuf>,
-        #[arg(long, value_enum, default_value_t = FitArg::Fill)]
-        fit: FitArg,
-        /// Accepted but not yet honoured.
-        #[arg(long, value_name = "X,Y", value_parser = parse_offset)]
-        offset: Option<(i32, i32)>,
         #[arg(long, value_name = "NAME")]
         backend: Option<String>,
         /// Manual monitor spec (`SPEC.md` §6.2).
@@ -193,38 +191,10 @@ enum MonitorAction {
     },
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
-enum FitArg {
-    Fill,
-    Fit,
-    Stretch,
-    Center,
-}
-
-impl From<FitArg> for FitMode {
-    fn from(v: FitArg) -> Self {
-        match v {
-            FitArg::Fill => Self::Fill,
-            FitArg::Fit => Self::Fit,
-            FitArg::Stretch => Self::Stretch,
-            FitArg::Center => Self::Center,
-        }
-    }
-}
-
 /// Sentinel for IPC/daemon errors — maps to exit code 7 (`SPEC.md` §11.6).
 #[derive(Debug, thiserror::Error)]
 #[error("{0}")]
 pub(crate) struct IpcError(pub String);
-
-fn parse_offset(s: &str) -> Result<(i32, i32), String> {
-    let (x, y) = s
-        .split_once(',')
-        .ok_or_else(|| format!("expected `X,Y`, got `{s}`"))?;
-    let x: i32 = x.trim().parse().map_err(|e| format!("bad X: {e}"))?;
-    let y: i32 = y.trim().parse().map_err(|e| format!("bad Y: {e}"))?;
-    Ok((x, y))
-}
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -321,8 +291,6 @@ fn run(cli: &Cli) -> Result<()> {
     match &cli.command {
         Command::Set {
             images,
-            fit,
-            offset,
             backend,
             monitors,
             monitor,
@@ -334,8 +302,6 @@ fn run(cli: &Cli) -> Result<()> {
             let args = SetArgs {
                 image: first,
                 extra_images: images,
-                fit: (*fit).into(),
-                offset: *offset,
                 backend: backend.clone(),
                 monitors: monitors.clone(),
                 pins: monitor.clone(),
@@ -514,35 +480,6 @@ fn write_table<W: Write>(out: &mut W, monitors: &[Monitor]) -> std::io::Result<(
 mod tests {
     use super::*;
     use superpanels_core::backends::BackendError;
-
-    // parse_offset
-
-    #[test]
-    fn parse_offset_happy_path_returns_pair() {
-        // Act
-        let got = parse_offset("100,-50").unwrap();
-
-        // Assert
-        assert_eq!(got, (100, -50));
-    }
-
-    #[test]
-    fn parse_offset_missing_comma_is_rejected() {
-        // Act
-        let result = parse_offset("100 50");
-
-        // Assert
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn parse_offset_non_numeric_is_rejected() {
-        // Act
-        let result = parse_offset("a,b");
-
-        // Assert
-        assert!(result.is_err());
-    }
 
     // map_exit_code
 

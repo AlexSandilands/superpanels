@@ -12,15 +12,13 @@ use ts_rs::TS;
 use crate::bridge;
 use crate::errors::IpcError;
 use crate::state::AppState;
+use superpanels_core::layout::ImageRectMm;
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../ui/src/lib/types/")]
 pub(crate) struct PreviewArgs {
     pub(crate) image: String,
-    pub(crate) offset_px: [i32; 2],
-    pub(crate) bezel_h_mm: f32,
-    pub(crate) bezel_v_mm: f32,
-    pub(crate) fit: String,
+    pub(crate) image_rect_mm: Option<ImageRectMm>,
 }
 
 #[tauri::command]

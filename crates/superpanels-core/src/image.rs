@@ -468,7 +468,6 @@ mod tests {
         slice_dst_size: (u32, u32),
     ) -> CropSpec {
         use crate::display::MonitorId;
-        use crate::layout::FitMode as LFitMode;
         CropSpec {
             monitor_id: MonitorId(0),
             src_rect,
@@ -476,7 +475,6 @@ mod tests {
             dst_size,
             slice_dst_size,
             rotation: Rotation::None,
-            fit: LFitMode::Fill,
         }
     }
 

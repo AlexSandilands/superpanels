@@ -16,8 +16,8 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
 use superpanels_core::display::MonitorId;
-use superpanels_core::layout::synthesise_placements;
-use superpanels_core::{FitMode, Monitor, Rotation, compute_crop_specs};
+use superpanels_core::layout::{cover_image_rect_mm, synthesise_placements};
+use superpanels_core::{Monitor, Rotation, compute_crop_specs};
 
 /// A wide panoramic source matching what a real spanned-wallpaper input looks
 /// like (8K-ish across, ultrawide aspect).
@@ -90,50 +90,54 @@ fn bench_compute_crop_specs(c: &mut Criterion) {
     let p3 = synthesise_placements(&m3);
     let p6 = synthesise_placements(&m6);
     let p9 = synthesise_placements(&m9);
+    let r1 = cover_image_rect_mm(&m1, IMAGE_SIZE);
+    let r3 = cover_image_rect_mm(&m3, IMAGE_SIZE);
+    let r6 = cover_image_rect_mm(&m6, IMAGE_SIZE);
+    let r9 = cover_image_rect_mm(&m9, IMAGE_SIZE);
 
-    c.bench_function("1_monitor_fill", |b| {
+    c.bench_function("1_monitor_cover", |b| {
         b.iter(|| {
             compute_crop_specs(
                 black_box(&m1),
                 black_box(&p1),
-                black_box(FitMode::Fill),
                 black_box(IMAGE_SIZE),
+                black_box(r1),
             )
             .unwrap()
         });
     });
 
-    c.bench_function("3_monitors_fill", |b| {
+    c.bench_function("3_monitors_cover", |b| {
         b.iter(|| {
             compute_crop_specs(
                 black_box(&m3),
                 black_box(&p3),
-                black_box(FitMode::Fill),
                 black_box(IMAGE_SIZE),
+                black_box(r3),
             )
             .unwrap()
         });
     });
 
-    c.bench_function("6_monitors_fill", |b| {
+    c.bench_function("6_monitors_cover", |b| {
         b.iter(|| {
             compute_crop_specs(
                 black_box(&m6),
                 black_box(&p6),
-                black_box(FitMode::Fill),
                 black_box(IMAGE_SIZE),
+                black_box(r6),
             )
             .unwrap()
         });
     });
 
-    c.bench_function("9_monitors_fill", |b| {
+    c.bench_function("9_monitors_cover", |b| {
         b.iter(|| {
             compute_crop_specs(
                 black_box(&m9),
                 black_box(&p9),
-                black_box(FitMode::Fill),
                 black_box(IMAGE_SIZE),
+                black_box(r9),
             )
             .unwrap()
         });

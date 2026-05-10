@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::display::MonitorRef;
-use crate::layout::FitMode;
+use crate::layout::{FitMode, ImageRectMm};
 
 /// `body` of a [`super::Profile`]. The `body`/`source` two-enum split makes
 /// "per-monitor + slideshow" unrepresentable.
@@ -25,14 +25,9 @@ pub enum ProfileBody {
 #[ts(export, export_to = "../../../ui/src/lib/types/")]
 pub struct SpanProfile {
     pub source: SpanSource,
-    #[serde(default)]
-    pub fit: FitMode,
-    /// Image-position offset in canvas px.
-    #[serde(default)]
-    pub offset: [i32; 2],
-    /// Explicit image rectangle in canvas px (`docs/spec/12-gui.md` §12.3).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub image_size_px: Option<[u32; 2]>,
+    /// The image's rectangle in canvas mm-space — the canvas is the source
+    /// of truth: monitors crop whatever they overlap with this rectangle.
+    pub image_rect_mm: ImageRectMm,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]

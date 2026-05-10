@@ -19,7 +19,8 @@ use superpanels_core::image::{
     FitMode as ImageFitMode, clear_temp_dir, load, render_slice, rotate, save_temp, scale_to_fit,
 };
 use superpanels_core::layout::{
-    FitMode as LayoutFitMode, compute_crop_specs_with_offset, synthesise_placements,
+    FitMode as LayoutFitMode, ImageRectMm, compute_crop_specs, cover_image_rect_mm,
+    synthesise_placements,
 };
 use superpanels_core::schedule::MonitorPlacement;
 use tracing::{info, warn};
@@ -104,9 +105,7 @@ pub(crate) fn apply_cmd(
                 &image_path,
                 &monitors,
                 &profile.monitor_state,
-                span.fit,
-                span.offset,
-                span.image_size_px,
+                Some(span.image_rect_mm),
                 backend_kind,
                 &custom_cmd,
             )?;
@@ -244,14 +243,11 @@ pub(crate) fn import_cmd(file: &Path, config_path: Option<&Path>) -> Result<()> 
 
 // --- in-process apply helpers ---
 
-#[allow(clippy::too_many_arguments)] // reason: each arg is independent profile state; bundling into a struct reads worse
 fn run_span_apply(
     image_path: &Path,
     monitors: &[Monitor],
     placements: &HashMap<String, MonitorPlacement>,
-    fit: LayoutFitMode,
-    offset_px: [i32; 2],
-    image_size_px: Option<[u32; 2]>,
+    image_rect_mm: Option<ImageRectMm>,
     backend_kind: BackendKind,
     custom_cmd: &str,
 ) -> Result<()> {
@@ -264,8 +260,8 @@ fn run_span_apply(
     } else {
         placements
     };
-    let specs =
-        compute_crop_specs_with_offset(monitors, p, fit, image_size, offset_px, image_size_px)?;
+    let rect = image_rect_mm.unwrap_or_else(|| cover_image_rect_mm(monitors, image_size));
+    let specs = compute_crop_specs(monitors, p, image_size, rect)?;
     let backend = detect_backend(backend_kind, custom_cmd);
     clear_temp_dir()?;
     let token = apply_token();
@@ -375,7 +371,6 @@ fn resolve_config_path(path: Option<&Path>) -> Result<PathBuf> {
 mod tests {
     use super::*;
     use superpanels_core::config::{SpanProfile, SpanSource};
-    use superpanels_core::layout::FitMode;
     use superpanels_core::{ProfileColour, TopologyFingerprint};
     use tempfile::tempdir;
 
@@ -387,9 +382,7 @@ mod tests {
                 source: SpanSource::Single {
                     path: PathBuf::from("/walls/sample.jpg"),
                 },
-                fit: FitMode::Fill,
-                offset: [0, 0],
-                image_size_px: None,
+                image_rect_mm: ImageRectMm::default(),
             }),
             monitor_state: HashMap::new(),
             topology: TopologyFingerprint(String::new()),

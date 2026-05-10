@@ -1,8 +1,8 @@
-// Pure dirty-diff between the live canvas overrides and the active profile's
-// persisted `monitor_state` (§4e.11.3 dirty detection). Image transform
-// tracking is deferred until we have a mm↔px converter; see followups.
+// Pure dirty-diff between the live canvas state (monitor overrides + image
+// transform) and the active profile's persisted state.
 
 import type { MonitorOverride } from '$lib/stores/canvas-view.svelte';
+import type { ImageTransform } from '$lib/stores/image-transform.svelte';
 import type { Profile } from '$lib/api';
 
 const POSITION_TOLERANCE_MM = 0.5;
@@ -38,4 +38,18 @@ export function canvasOverridesDirty(
     if (live.rotation !== rotationDegrees(persisted.rotation)) return true;
   }
   return false;
+}
+
+/** Returns `true` when the live image transform differs (beyond the slop
+ *  tolerance) from the active span profile's `image_rect_mm`. Per-monitor
+ *  bodies have no image rect — they're always clean from this lens. */
+export function imageTransformDirty(transform: ImageTransform, profile: Profile): boolean {
+  if (profile.body.type !== 'span') return false;
+  const r = profile.body.image_rect_mm;
+  return (
+    Math.abs(transform.offsetMmX - r.x_mm) > POSITION_TOLERANCE_MM ||
+    Math.abs(transform.offsetMmY - r.y_mm) > POSITION_TOLERANCE_MM ||
+    Math.abs(transform.widthMm - r.w_mm) > POSITION_TOLERANCE_MM ||
+    Math.abs(transform.heightMm - r.h_mm) > POSITION_TOLERANCE_MM
+  );
 }

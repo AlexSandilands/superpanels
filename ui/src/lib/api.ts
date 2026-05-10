@@ -108,8 +108,8 @@ export const api = {
     call<void>('update_profile_monitor_state', { profile, stableId, placement }),
   updateProfileImageTransform: (
     profile: string,
-    payload: { offset?: [number, number]; image_size_px?: [number, number] | null },
-  ) => call<void>('update_profile_image_transform', { profile, ...payload }),
+    imageRectMm: { x_mm: number; y_mm: number; w_mm: number; h_mm: number } | null,
+  ) => call<void>('update_profile_image_transform', { profile, image_rect_mm: imageRectMm }),
   updateProfileSource: (profile: string, source: SpanSource) =>
     call<void>('update_profile_source', { profile, source }),
   listSchedules: () =>

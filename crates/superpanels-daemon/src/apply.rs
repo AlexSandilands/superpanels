@@ -15,7 +15,9 @@ use superpanels_core::display::{Monitor, MonitorRef};
 use superpanels_core::image::{
     FitMode as ImageFitMode, clear_temp_dir, load, render_slice, rotate, save_temp, scale_to_fit,
 };
-use superpanels_core::layout::{FitMode, compute_crop_specs_with_offset, synthesise_placements};
+use superpanels_core::layout::{
+    FitMode, ImageRectMm, compute_crop_specs, cover_image_rect_mm, synthesise_placements,
+};
 use superpanels_core::schedule::MonitorPlacement;
 use superpanels_core::slideshow::{
     SlideshowConfig as PickerSlideshowConfig, SlideshowSort as PickerSort,
@@ -56,38 +58,29 @@ pub(crate) fn run_span_apply(
     backend_kind: BackendKind,
     custom_cmd: &str,
 ) -> Result<AppliedReport> {
-    let fit = match &profile.body {
-        ProfileBody::Span(s) => s.fit,
-        ProfileBody::PerMonitor(pm) => pm.fit,
-    };
-    let offset = match &profile.body {
-        ProfileBody::Span(s) => s.offset,
-        ProfileBody::PerMonitor(_) => [0, 0],
-    };
-    let image_size_px = match &profile.body {
-        ProfileBody::Span(s) => s.image_size_px,
+    let image_rect_mm = match &profile.body {
+        ProfileBody::Span(s) => Some(s.image_rect_mm),
         ProfileBody::PerMonitor(_) => None,
     };
-    run_immediate_set_with_offset(
+    run_immediate_span_apply(
         image_path,
         monitors,
         &profile.monitor_state,
-        fit,
-        offset,
-        image_size_px,
+        image_rect_mm,
         backend_kind,
         custom_cmd,
     )
 }
 
-#[allow(clippy::too_many_arguments)] // reason: each arg is independent profile state; bundling into a struct reads worse
-pub(crate) fn run_immediate_set_with_offset(
+/// Crop a single source image across the canvas and push it to a backend.
+/// Empty `placements` and missing `image_rect_mm` are filled in via the
+/// transient cover-fit fallback used by CLI `set --image` and the daemon's
+/// `cmd_set` path.
+pub(crate) fn run_immediate_span_apply(
     image_path: &Path,
     monitors: &[Monitor],
     placements: &HashMap<String, MonitorPlacement>,
-    fit: FitMode,
-    offset_px: [i32; 2],
-    image_size_px: Option<[u32; 2]>,
+    image_rect_mm: Option<ImageRectMm>,
     backend_kind: BackendKind,
     custom_cmd: &str,
 ) -> Result<AppliedReport> {
@@ -105,15 +98,9 @@ pub(crate) fn run_immediate_set_with_offset(
         placements
     };
 
-    let specs = compute_crop_specs_with_offset(
-        monitors,
-        resolved_placements,
-        fit,
-        image_size,
-        offset_px,
-        image_size_px,
-    )
-    .context("computing crop specs")?;
+    let rect = image_rect_mm.unwrap_or_else(|| cover_image_rect_mm(monitors, image_size));
+    let specs = compute_crop_specs(monitors, resolved_placements, image_size, rect)
+        .context("computing crop specs")?;
 
     let backend: Box<dyn WallpaperBackend> = detect_backend(backend_kind, custom_cmd);
     if backend.availability() != superpanels_core::Availability::Available
@@ -153,7 +140,8 @@ pub(crate) fn run_immediate_set_with_offset(
     Ok(report)
 }
 
-/// Apply a per-monitor profile. Each monitor gets its configured image.
+/// Apply a per-monitor profile. Each monitor gets its configured image,
+/// scaled to the monitor's resolution under `fit`.
 pub(crate) fn run_per_monitor_apply(
     assignments: &[PerMonitorAssignment],
     monitors: &[Monitor],

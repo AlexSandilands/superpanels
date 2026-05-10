@@ -6,11 +6,13 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { api, errorMessage, type Profile } from '$lib/api';
 import { buildPreviewMonitors, stableId } from '$lib/canvas/preview-layout';
 import { canvasView, type MonitorOverride } from '$lib/stores/canvas-view.svelte';
+import { imageTransform } from '$lib/stores/image-transform.svelte';
 import { monitorStore } from '$lib/stores/monitors.svelte';
 import { preemption } from '$lib/stores/preemption.svelte';
 import { profileStore } from '$lib/stores/profile.svelte';
 import { runtime } from '$lib/stores/runtime.svelte';
 import { toast } from '$lib/stores/toast.svelte';
+import type { ImageRectMm } from '$lib/types/ImageRectMm';
 import type { MonitorPlacement } from '$lib/types/MonitorPlacement';
 import type { Rotation } from '$lib/types/Rotation';
 import {
@@ -45,27 +47,38 @@ function rotationToDeg(r: Rotation): 0 | 90 | 180 | 270 {
   }
 }
 
-// Fold the current canvas (detected monitors + canvasView overrides) into the
-// active draft so a fresh untitled profile actually carries placements when it
-// gets persisted on Apply. Topology is left empty here — the daemon recomputes
-// the canonical SHA-256 fingerprint when `recompute_topology` is set on save.
-function syncDraftMonitorStateFromCanvas(): void {
+function imageRectFromTransform(): ImageRectMm {
+  const t = imageTransform.value;
+  return { x_mm: t.offsetMmX, y_mm: t.offsetMmY, w_mm: t.widthMm, h_mm: t.heightMm };
+}
+
+// Fold the current canvas (detected monitors + canvasView overrides + image
+// transform) into the active draft so a fresh untitled profile actually
+// carries placements when it gets persisted on Apply. Topology is left empty
+// here — the daemon recomputes the canonical SHA-256 fingerprint when
+// `recompute_topology` is set on save.
+function syncDraftFromCanvas(): void {
   if (!profileStore.draft) return;
   const previews = buildPreviewMonitors(monitorStore.monitors, canvasView.overrides);
   if (previews.length === 0) return;
-  const next: Record<string, MonitorPlacement> = {};
+  const nextPlacements: Record<string, MonitorPlacement> = {};
   for (const m of previews) {
-    next[m.id] = { x_mm: m.xMm, y_mm: m.yMm, rotation: rotationFromDeg(m.rotation) };
+    nextPlacements[m.id] = { x_mm: m.xMm, y_mm: m.yMm, rotation: rotationFromDeg(m.rotation) };
   }
+  const rect = imageRectFromTransform();
   profileStore.patchDraft((d) => {
-    d.monitor_state = next;
+    d.monitor_state = nextPlacements;
     d.topology = '';
+    if (isSpanBody(d.body)) {
+      d.body.image_rect_mm = rect;
+    }
   });
 }
 
-// Push a profile's authored placements into `canvasView.overrides` so the
-// canvas reflects what was just applied. Existing entries for monitors not in
-// the profile are preserved.
+// Push a profile's authored placements into `canvasView.overrides` and
+// (when the body is a Span) its `image_rect_mm` into the live image
+// transform, so the canvas reflects what was just applied. Existing entries
+// for monitors not in the profile are preserved.
 export function applyMonitorStateToCanvas(p: Profile): void {
   const next: Record<string, MonitorOverride> = { ...canvasView.overrides };
   for (const [id, placement] of Object.entries(p.monitor_state)) {
@@ -76,6 +89,15 @@ export function applyMonitorStateToCanvas(p: Profile): void {
     };
   }
   canvasView.setOverrides(next);
+  if (isSpanBody(p.body)) {
+    const r = p.body.image_rect_mm;
+    imageTransform.set({
+      offsetMmX: r.x_mm,
+      offsetMmY: r.y_mm,
+      widthMm: r.w_mm,
+      heightMm: r.h_mm,
+    });
+  }
 }
 
 function recordAndToast(r: Awaited<ReturnType<typeof api.applyProfile>>, t0: number): number {
@@ -96,7 +118,7 @@ function recordAndToast(r: Awaited<ReturnType<typeof api.applyProfile>>, t0: num
 export async function applyDraftProfile(): Promise<void> {
   const draft = profileStore.draft;
   if (!draft) return;
-  syncDraftMonitorStateFromCanvas();
+  syncDraftFromCanvas();
   const refreshed = profileStore.draft;
   if (!refreshed) return;
   preemption.claimSwitchTo(profileStore.activeName);
@@ -117,7 +139,7 @@ export async function saveActiveProfile(): Promise<boolean> {
   const draft = profileStore.draft;
   const active = profileStore.activeName;
   if (!draft || !active) return false;
-  syncDraftMonitorStateFromCanvas();
+  syncDraftFromCanvas();
   const refreshed = profileStore.draft;
   if (!refreshed) return false;
   const payload: Profile = { ...refreshed, name: active };
@@ -203,9 +225,7 @@ export function setSpanImage(path: string): void {
       d.body = {
         type: 'span',
         source: { type: 'single', path },
-        fit: 'fill',
-        offset: [0, 0],
-        image_size_px: null,
+        image_rect_mm: imageRectFromTransform(),
       };
       return;
     }
