@@ -14,6 +14,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use futures_util::StreamExt;
+use superpanels_core::display::Monitor;
 use tokio::sync::{Mutex, broadcast};
 use tokio::time::{Instant, sleep_until};
 use tracing::{debug, info, warn};
@@ -109,25 +110,58 @@ async fn redetect_and_publish(
     state: &Arc<Mutex<DaemonState>>,
     monitors_tx: &broadcast::Sender<()>,
 ) {
-    let mut guard = state.lock().await;
-    match superpanels_core::detect(None) {
-        Ok(mut monitors) => {
-            guard.config.merge_into_monitors(&mut monitors);
-            let count = monitors.len();
-            guard.monitors = monitors;
-            drop(guard);
-            debug!(monitors = count, "OS-driven re-detect after kscreen signal");
-            // `send` errors when no subscribers exist — that's fine.
-            let _ = monitors_tx.send(());
+    let detected = match superpanels_core::detect(None) {
+        Ok(monitors) => monitors,
+        Err(e) => {
+            warn!(error = %e, "OS-driven redetect failed");
+            return;
         }
-        Err(e) => warn!(error = %e, "OS-driven redetect failed"),
-    }
+    };
+    publish(detected, state, monitors_tx).await;
+}
+
+/// Swap `state.monitors` for `detected` (after merging per-monitor config) and
+/// broadcast a tick. Split out so tests can drive the publish path with a
+/// synthetic monitor list, without spawning real detector subprocesses.
+async fn publish(
+    mut detected: Vec<Monitor>,
+    state: &Arc<Mutex<DaemonState>>,
+    monitors_tx: &broadcast::Sender<()>,
+) {
+    let count = {
+        let mut guard = state.lock().await;
+        guard.config.merge_into_monitors(&mut detected);
+        let n = detected.len();
+        guard.monitors = detected;
+        n
+    };
+    debug!(monitors = count, "OS-driven monitor snapshot updated");
+    // `send` errors when no subscribers exist — that's fine.
+    let _ = monitors_tx.send(());
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)] // reason: tests fail loudly on unexpected errors
 mod tests {
     use super::*;
+    use superpanels_core::config::Config;
+    use superpanels_core::display::{MonitorId, Rotation};
+
+    fn synth_monitor(name: &str) -> Monitor {
+        Monitor {
+            id: MonitorId(0),
+            name: name.to_owned(),
+            stable_id: Some(format!("synth-{name}")),
+            position: (0, 0),
+            resolution: (1920, 1080),
+            physical_size_mm: Some((527.0, 296.0)),
+            scale: 1.0,
+            rotation: Rotation::None,
+            refresh_hz: None,
+            primary: true,
+            ppi: None,
+        }
+    }
 
     #[test]
     fn build_match_rule_targets_kscreen_signals() {
@@ -141,20 +175,35 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn redetect_publishes_when_subscribers_exist() {
-        // No KDE session in test; detect() will still return Ok or Err
-        // depending on environment, but the broadcast channel mechanics are
-        // independent of detection success.
-        use superpanels_core::config::Config;
+    async fn publish_delivers_tick_to_live_subscriber() {
         let state = Arc::new(Mutex::new(DaemonState::for_tests(Config::default())));
         let (tx, mut rx) = broadcast::channel::<()>(4);
-        // Send a tick directly to verify subscriber receives it; the inner
-        // detect call is a no-op for this assertion's purposes.
-        tx.send(()).unwrap();
-        assert!(rx.try_recv().is_ok());
-        // Cover the typical "no subscribers" path: drop receiver and confirm
-        // redetect_and_publish doesn't panic when send returns an error.
+
+        publish(vec![synth_monitor("DP-1")], &state, &tx).await;
+
+        assert!(
+            rx.try_recv().is_ok(),
+            "live subscriber must receive a tick after publish"
+        );
+        let guard = state.lock().await;
+        assert_eq!(guard.monitors.len(), 1);
+        assert_eq!(guard.monitors[0].name, "DP-1");
+    }
+
+    #[tokio::test]
+    async fn publish_is_a_noop_when_no_subscribers() {
+        let state = Arc::new(Mutex::new(DaemonState::for_tests(Config::default())));
+        let (tx, rx) = broadcast::channel::<()>(4);
         drop(rx);
-        redetect_and_publish(&state, &tx).await;
+
+        // Must not panic when send returns the no-subscribers error.
+        publish(vec![synth_monitor("HDMI-A-1")], &state, &tx).await;
+
+        let guard = state.lock().await;
+        assert_eq!(
+            guard.monitors.len(),
+            1,
+            "monitors snapshot is updated regardless of subscriber count"
+        );
     }
 }

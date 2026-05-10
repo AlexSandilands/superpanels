@@ -51,9 +51,11 @@ pub(crate) struct DaemonState {
     /// (canonicalised path, mtime). See [`ThumbnailCache`] for the bounds.
     pub thumbnail_cache: ThumbnailCache,
     /// Broadcast sender fired when the OS pushes a display-config change
-    /// (KDE kscreen kded `configChanged`). Subscribers — currently just any
-    /// future GUI bridge — receive `()` ticks; the channel is detached from
-    /// monitor data so listeners pull state via `current_state` IPC.
+    /// (KDE kscreen kded `configChanged`). Subscribers receive `()` ticks
+    /// and are expected to pull a fresh snapshot via `current_state` IPC —
+    /// the channel deliberately doesn't carry monitor data so a slow reader
+    /// can't observe a stale list. No live subscribers today; the daemon→GUI
+    /// relay is a tracked follow-up (see `docs/followups.md`).
     pub monitors_tx: Option<broadcast::Sender<()>>,
 }
 

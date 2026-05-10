@@ -40,6 +40,16 @@ daemon) doesn't run `display_watch` at all.
 a separate socket) that emits Tauri events; or run a thin zbus subscriber
 inside the GUI process for KDE sessions when no daemon is present.
 
+## Cover `debounce_and_redetect` with a hermetic test
+
+`crates/superpanels-daemon/src/display_watch.rs` `debounce_and_redetect`
+collapses bursts of kscreen signals into a single re-detect (~250 ms
+window). It currently has no unit test because zbus's `MessageStream` is
+concrete and ties into a real `Connection`. Worth introducing a small
+trait abstraction (e.g. `trait SignalSource: Stream<Item = ...>`) so a
+test can drive coalescing under `tokio::time::pause()` and assert that
+N signals within DEBOUNCE produce exactly one publish.
+
 ## Fix transforms/cropping from canvas
   - Should be pixel perfect according to canvas
   - Align with the preview in the profile manager

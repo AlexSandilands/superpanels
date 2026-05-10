@@ -475,6 +475,19 @@ mod tests {
         let portrait_crop = crops.iter().find(|c| c.monitor_id == MonitorId(1)).unwrap();
         assert_eq!(portrait_crop.dst_size, (1080, 1920));
         assert_eq!(portrait_crop.rotation, Rotation::Right);
+        // Slice fully covers the rotated framebuffer — no letterbox margin —
+        // so the apply pipeline can save `composed` as-is without a second
+        // rotate (the property that justifies dropping rotate() in apply.rs).
+        assert_eq!(portrait_crop.slice_dst_size, portrait_crop.dst_size);
+        assert_eq!(portrait_crop.dst_offset, (0, 0));
+        // The portrait monitor's mm width is 296 mm (its native short side
+        // after rotation); at 3000 px / 823 mm ≈ 3.645 px/mm, that's roughly
+        // 1079 px of source. Allow ±2 px for rounding.
+        assert!(
+            (1077..=1081).contains(&portrait_crop.src_rect.w),
+            "expected ≈1079-px-wide src_rect, got {}",
+            portrait_crop.src_rect.w
+        );
     }
 
     #[test]
