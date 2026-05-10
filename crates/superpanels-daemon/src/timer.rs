@@ -173,7 +173,7 @@ mod tests {
         BackendKind, Config, ImageSet, Profile, ProfileBody, SlideshowConfig as SlideshowCfg,
         SlideshowSort, SlideshowStart, SpanProfile, SpanSource,
     };
-    use superpanels_core::layout::FitMode;
+    use superpanels_core::layout::ImageRectMm;
     use superpanels_core::slideshow::{
         SlideshowConfig as PickerCfg, SlideshowPicker, SlideshowSort as PickerSort,
         SlideshowStart as PickerStart,
@@ -213,9 +213,7 @@ mod tests {
                         skip_on_unavailable: false,
                     },
                 },
-                fit: FitMode::Fill,
-                offset: [0, 0],
-                image_size_px: None,
+                image_rect_mm: ImageRectMm::default(),
             }),
             monitor_state: HashMap::new(),
             topology: TopologyFingerprint(String::new()),

@@ -28,7 +28,7 @@
     setSpanImage,
     switchAndApply,
   } from '$lib/actions';
-  import { canvasOverridesDirty } from '$lib/canvas/dirty';
+  import { canvasOverridesDirty, imageTransformDirty } from '$lib/canvas/dirty';
   import { buildPreviewMonitors } from '$lib/canvas/preview-layout';
   import { rotateSelected } from '$lib/canvas/select';
   import {
@@ -100,18 +100,30 @@
           rotation: rotationName(m.rotation),
         };
       }
+      const t = imageTransform.value;
       const now = new Date().toISOString();
       const profile = {
         name,
-        body: span ?? {
-          type: 'span' as const,
-          source: { type: 'single' as const, path: sourcePath ?? '' },
-          fit: 'fill' as const,
-          offset: [0, 0] as [number, number],
-          image_size_px: imageNaturalDims
-            ? ([imageNaturalDims.w, imageNaturalDims.h] as [number, number])
-            : null,
-        },
+        body: span
+          ? {
+              ...span,
+              image_rect_mm: {
+                x_mm: t.offsetMmX,
+                y_mm: t.offsetMmY,
+                w_mm: t.widthMm,
+                h_mm: t.heightMm,
+              },
+            }
+          : {
+              type: 'span' as const,
+              source: { type: 'single' as const, path: sourcePath ?? '' },
+              image_rect_mm: {
+                x_mm: t.offsetMmX,
+                y_mm: t.offsetMmY,
+                w_mm: t.widthMm,
+                h_mm: t.heightMm,
+              },
+            },
         monitor_state,
         // Topology is recomputed by the daemon against live monitors.
         topology: '',
@@ -167,16 +179,15 @@
   const canApply = $derived(Boolean(draft && draft.name.trim() && !profileStore.saving));
 
   // Dirty detection (§4e.11.3). The store's own `dirty` flag covers
-  // explicit `patchDraft` calls (image source, body shape); we additionally
-  // compare the canvas-view overrides against the active profile's
-  // `monitor_state` so drag / rotate edits show up here too. Image transform
-  // diffing isn't included yet — it lives in mm-space while the profile
-  // stores pixels; tracking it needs a converter pass (see followups).
+  // explicit `patchDraft` calls (image source, body shape); on top of that we
+  // diff the live canvas state — monitor overrides + image transform — against
+  // the active profile so drag / rotate / image-resize edits show up here too.
   const canvasDirty = $derived.by(() => {
     if (profileStore.dirty) return true;
     const active = profileStore.activeProfile;
     if (!active) return false;
-    return canvasOverridesDirty(canvasView.overrides, active);
+    if (canvasOverridesDirty(canvasView.overrides, active)) return true;
+    return imageTransformDirty(imageTransform.value, active);
   });
   const canSave = $derived(Boolean(profileStore.activeName) && !profileStore.saving);
   const canRevert = $derived(canvasDirty && Boolean(profileStore.activeName));

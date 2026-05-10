@@ -116,16 +116,14 @@ pub(crate) fn update_profile_monitor_state(
 #[tauri::command]
 pub(crate) fn update_profile_image_transform(
     profile: String,
-    offset: Option<Value>,
-    image_size_px: Option<Value>,
+    image_rect_mm: Option<Value>,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
     bridge::call(
         "update_profile_image_transform",
         json!({
             "profile": profile,
-            "offset": offset,
-            "image_size_px": image_size_px,
+            "image_rect_mm": image_rect_mm,
         }),
         state.config_path().as_deref(),
     )

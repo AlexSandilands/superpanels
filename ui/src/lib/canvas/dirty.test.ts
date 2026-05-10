@@ -8,9 +8,7 @@ function profile(monitorState: Profile['monitor_state']): Profile {
     body: {
       type: 'span',
       source: { type: 'single', path: '/img.png' },
-      fit: 'fill',
-      offset: [0, 0],
-      image_size_px: null,
+      image_rect_mm: { x_mm: 0, y_mm: 0, w_mm: 1000, h_mm: 600 },
     },
     monitor_state: monitorState,
     topology: 'topo-1',

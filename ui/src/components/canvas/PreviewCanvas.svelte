@@ -403,12 +403,6 @@
       style:animation={isFlashing ? 'applyFlash 380ms ease-out' : 'none'}
     >
       <div
-        class="pointer-events-none absolute"
-        style:inset="4px"
-        style:border="1px solid oklch(0 0 0 / 0.4)"
-        style:border-radius="1px"
-      ></div>
-      <div
         class="pointer-events-none mono absolute font-semibold"
         style:top="6px"
         style:left="8px"

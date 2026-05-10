@@ -9,7 +9,9 @@ use serde_json::{Value, json};
 use superpanels_core::config::{Config, write_monitor_block};
 use superpanels_core::ipc::validate as v;
 use superpanels_core::ipc::{IpcRequest, IpcResponse};
-use superpanels_core::layout::{FitMode, compute_crop_specs_with_offset, synthesise_placements};
+use superpanels_core::layout::{
+    ImageRectMm, compute_crop_specs, cover_image_rect_mm, synthesise_placements,
+};
 use tokio::sync::Mutex;
 use tracing::info;
 
@@ -156,13 +158,9 @@ pub(super) async fn cmd_update_profile_image_transform(
     let Some(name) = req.params.get("profile").and_then(Value::as_str) else {
         return IpcResponse::failure("params.profile (string) required");
     };
-    let offset: Option<[i32; 2]> = req
+    let image_rect_mm: Option<ImageRectMm> = req
         .params
-        .get("offset")
-        .and_then(|v| serde_json::from_value(v.clone()).ok());
-    let image_size_px: Option<[u32; 2]> = req
-        .params
-        .get("image_size_px")
+        .get("image_rect_mm")
         .and_then(|v| serde_json::from_value(v.clone()).ok());
     let mut guard = state.lock().await;
     let path = match guard.config_save_path() {
@@ -173,10 +171,9 @@ pub(super) async fn cmd_update_profile_image_transform(
         return IpcResponse::failure(format!("profile '{name}' not found"));
     };
     if let superpanels_core::config::ProfileBody::Span(span) = &mut profile.body {
-        if let Some(o) = offset {
-            span.offset = o;
+        if let Some(rect) = image_rect_mm {
+            span.image_rect_mm = rect;
         }
-        span.image_size_px = image_size_px.or(span.image_size_px);
     }
     profile.touch();
     if let Err(e) = guard.config.save_to(&path) {
@@ -435,38 +432,10 @@ pub(super) async fn cmd_preview_crop(
     let Some(image) = req.params.get("image").and_then(Value::as_str) else {
         return IpcResponse::failure("params.image (string) required");
     };
-    let fit = match req
+    let image_rect_mm: Option<ImageRectMm> = req
         .params
-        .get("fit")
-        .and_then(Value::as_str)
-        .unwrap_or("fill")
-    {
-        "fill" => FitMode::Fill,
-        "fit" => FitMode::Fit,
-        "stretch" => FitMode::Stretch,
-        "center" => FitMode::Center,
-        other => return IpcResponse::failure(format!("unknown fit `{other}`")),
-    };
-    let offset_px = req
-        .params
-        .get("offset_px")
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .unwrap_or([0, 0]);
-    let offset_px = match v::validate_preview_offset(offset_px) {
-        Ok(o) => o,
-        Err(e) => return IpcResponse::failure(e.0),
-    };
-    let image_size_px: Option<[u32; 2]> = req
-        .params
-        .get("image_size_px")
+        .get("image_rect_mm")
         .and_then(|v| serde_json::from_value(v.clone()).ok());
-    let image_size_px = match image_size_px
-        .map(v::validate_preview_image_size)
-        .transpose()
-    {
-        Ok(s) => s,
-        Err(e) => return IpcResponse::failure(e.0),
-    };
 
     let roots = {
         let guard = state.lock().await;
@@ -489,14 +458,8 @@ pub(super) async fn cmd_preview_crop(
 
     let monitors = state.lock().await.monitors.clone();
     let placements = synthesise_placements(&monitors);
-    match compute_crop_specs_with_offset(
-        &monitors,
-        &placements,
-        fit,
-        dims,
-        offset_px,
-        image_size_px,
-    ) {
+    let rect = image_rect_mm.unwrap_or_else(|| cover_image_rect_mm(&monitors, dims));
+    match compute_crop_specs(&monitors, &placements, dims, rect) {
         Ok(specs) => IpcResponse::success(&specs),
         Err(e) => IpcResponse::failure(e.to_string()),
     }
@@ -699,34 +662,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn preview_crop_rejects_unknown_fit() {
-        let state = make_state(Config::default());
-        let resp = cmd_preview_crop(
-            req(
-                "preview_crop",
-                json!({"image": "/never/exists.png", "fit": "magic"}),
-            ),
-            state,
-        )
-        .await;
-        assert!(!resp.is_ok());
-        assert!(resp.error.unwrap().contains("unknown fit"));
-    }
-
-    #[tokio::test]
     async fn preview_crop_rejects_path_outside_roots() {
         let dir = tempdir().unwrap();
         let mut cfg = Config::default();
         cfg.library.roots = vec![dir.path().to_path_buf()];
         let state = make_state(cfg);
-        let resp = cmd_preview_crop(
-            req(
-                "preview_crop",
-                json!({"image": "/etc/passwd", "fit": "fill"}),
-            ),
-            state,
-        )
-        .await;
+        let resp =
+            cmd_preview_crop(req("preview_crop", json!({"image": "/etc/passwd"})), state).await;
         assert!(!resp.is_ok());
     }
 
@@ -795,28 +737,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn preview_crop_offset_px_falls_back_to_zero_for_malformed_input() {
-        // Mirrors the in-process handler test: malformed `offset_px` must
-        // silently default to `[0, 0]` rather than surface as the request
-        // failure. The path-outside-roots check below the parser will fire
-        // first either way; what we're locking in is that the failure isn't
-        // attributed to `offset_px` parsing.
+    async fn preview_crop_malformed_image_rect_falls_back_to_cover_fit() {
+        // Malformed `image_rect_mm` should not surface as a parser failure;
+        // the handler silently falls through to a cover-fit rect. The
+        // path-outside-roots check below fires first either way — what we
+        // pin is that the error message doesn't mention `image_rect_mm`.
         let dir = tempdir().unwrap();
         let mut cfg = Config::default();
         cfg.library.roots = vec![dir.path().to_path_buf()];
         let state = make_state(cfg);
 
         for malformed in [
-            json!({"image": "/etc/passwd", "fit": "fill", "offset_px": "junk"}),
-            json!({"image": "/etc/passwd", "fit": "fill", "offset_px": [1, 2, 3]}),
-            json!({"image": "/etc/passwd", "fit": "fill", "offset_px": null}),
+            json!({"image": "/etc/passwd", "image_rect_mm": "junk"}),
+            json!({"image": "/etc/passwd", "image_rect_mm": [1, 2, 3]}),
+            json!({"image": "/etc/passwd", "image_rect_mm": null}),
         ] {
             let resp = cmd_preview_crop(req("preview_crop", malformed), Arc::clone(&state)).await;
             assert!(!resp.is_ok());
             let err = resp.error.unwrap_or_default();
             assert!(
-                !err.contains("offset_px"),
-                "expected silent fall-through to [0,0] but got: {err}"
+                !err.contains("image_rect_mm"),
+                "expected silent fall-through to cover-fit but got: {err}"
             );
         }
     }
@@ -826,7 +767,7 @@ mod tests {
         use std::collections::HashMap;
         use std::path::PathBuf;
         use superpanels_core::config::{ProfileBody, SpanProfile, SpanSource};
-        use superpanels_core::layout::FitMode;
+        use superpanels_core::layout::ImageRectMm;
         use superpanels_core::{ProfileColour, TopologyFingerprint};
         let now = superpanels_core::config::now_timestamp();
         Profile {
@@ -835,9 +776,7 @@ mod tests {
                 source: SpanSource::Single {
                     path: PathBuf::from("/img.png"),
                 },
-                fit: FitMode::Fill,
-                offset: [0, 0],
-                image_size_px: None,
+                image_rect_mm: ImageRectMm::default(),
             }),
             monitor_state: HashMap::new(),
             topology: TopologyFingerprint(String::new()),

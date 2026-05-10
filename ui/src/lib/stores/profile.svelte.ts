@@ -119,9 +119,7 @@ export const profileStore = {
       body: {
         type: 'span',
         source: { type: 'single', path: '' },
-        fit: 'fill',
-        offset: [0, 0],
-        image_size_px: null,
+        image_rect_mm: { x_mm: 0, y_mm: 0, w_mm: 0, h_mm: 0 },
       },
       monitor_state: {},
       topology: '',

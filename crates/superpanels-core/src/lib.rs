@@ -25,7 +25,7 @@ pub use display::{
     Availability, DetectError, DisplayDetector, Monitor, MonitorRef, Rotation, detect,
 };
 pub use layout::{
-    CropSpec, FitMode, LayoutError, Rect, compute_crop_specs, compute_crop_specs_with_offset,
+    CropSpec, FitMode, ImageRectMm, LayoutError, Rect, compute_crop_specs, cover_image_rect_mm,
     synthesise_placements,
 };
 pub use library::{

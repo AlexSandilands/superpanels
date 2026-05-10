@@ -143,33 +143,16 @@ fn delete_profile(params: &Value, config_path: Option<&Path>) -> CallResult {
 
 fn preview_crop(params: &Value, config_path: Option<&Path>) -> CallResult {
     use superpanels_core::layout::{
-        FitMode, compute_crop_specs_with_offset, synthesise_placements,
+        ImageRectMm, compute_crop_specs, cover_image_rect_mm, synthesise_placements,
     };
 
     let image = params
         .get("image")
         .and_then(Value::as_str)
         .ok_or_else(|| IpcError::invalid("params.image required"))?;
-    let fit_str = params.get("fit").and_then(Value::as_str).unwrap_or("fill");
-    let fit = match fit_str {
-        "fill" => FitMode::Fill,
-        "fit" => FitMode::Fit,
-        "stretch" => FitMode::Stretch,
-        "center" => FitMode::Center,
-        other => return Err(IpcError::invalid(format!("unknown fit `{other}`"))),
-    };
-    let offset_px = params
-        .get("offset_px")
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .unwrap_or([0, 0]);
-    let offset_px = v::validate_preview_offset(offset_px).map_err(|e| IpcError::invalid(e.0))?;
-    let image_size_px: Option<[u32; 2]> = params
-        .get("image_size_px")
+    let image_rect_mm: Option<ImageRectMm> = params
+        .get("image_rect_mm")
         .and_then(|v| serde_json::from_value(v.clone()).ok());
-    let image_size_px = image_size_px
-        .map(v::validate_preview_image_size)
-        .transpose()
-        .map_err(|e| IpcError::invalid(e.0))?;
 
     let cfg = load_config(config_path)?;
     let canonical = canonicalise_inside_roots(Path::new(image), &cfg.library.roots)?;
@@ -178,14 +161,8 @@ fn preview_crop(params: &Value, config_path: Option<&Path>) -> CallResult {
     let mut monitors = detect(None)?;
     cfg.merge_into_monitors(&mut monitors);
     let placements = synthesise_placements(&monitors);
-    let specs = compute_crop_specs_with_offset(
-        &monitors,
-        &placements,
-        fit,
-        dims,
-        offset_px,
-        image_size_px,
-    )?;
+    let rect = image_rect_mm.unwrap_or_else(|| cover_image_rect_mm(&monitors, dims));
+    let specs = compute_crop_specs(&monitors, &placements, dims, rect)?;
     Ok(ok_payload(specs))
 }
 
@@ -344,36 +321,20 @@ mod tests {
     }
 
     #[test]
-    fn preview_crop_rejects_unknown_fit() {
-        let err = preview_crop(
-            &json!({
-                "image": "/nope/never.png",
-                "fit": "magic"
-            }),
-            None,
-        )
-        .unwrap_err();
-        assert!(matches!(err, IpcError::InvalidArgument(_)));
-    }
-
-    #[test]
-    fn preview_crop_offset_px_falls_back_to_zero_for_malformed_input() {
-        // The daemon and in-process handlers both treat an unparsable
-        // `offset_px` as `[0, 0]` — that fallback is exactly the silent-data
-        // path that bit Phase 2's set_cmd, so it's worth pinning. We don't
-        // need a real image: the failure mode reaches us long before
-        // `compute_crop_specs_*`. What we're asserting is "the parser
-        // doesn't fail with an `unknown fit`-style InvalidArgument purely
-        // because offset_px was junk."
+    fn preview_crop_malformed_image_rect_falls_back_to_cover_fit() {
+        // A malformed `image_rect_mm` should not surface as an InvalidArgument
+        // from the parser — the handler silently falls back to a cover-fit
+        // rect over the detected monitors. Failure modes (missing image, no
+        // monitors) still surface as their own errors after that point.
         for malformed in [
-            json!({"image": "/nope.png", "fit": "fill", "offset_px": "junk"}),
-            json!({"image": "/nope.png", "fit": "fill", "offset_px": [1, 2, 3]}),
-            json!({"image": "/nope.png", "fit": "fill", "offset_px": null}),
+            json!({"image": "/nope.png", "image_rect_mm": "junk"}),
+            json!({"image": "/nope.png", "image_rect_mm": [1, 2, 3]}),
+            json!({"image": "/nope.png", "image_rect_mm": null}),
         ] {
             let err = preview_crop(&malformed, None).unwrap_err();
             assert!(
-                !matches!(&err, IpcError::InvalidArgument(m) if m.contains("offset_px")),
-                "expected the parser to silently fall back to [0,0] but got: {err:?}"
+                !matches!(&err, IpcError::InvalidArgument(m) if m.contains("image_rect_mm")),
+                "expected silent fall-back to cover-fit but got: {err:?}"
             );
         }
     }
