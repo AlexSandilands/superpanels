@@ -16,9 +16,8 @@
     imageTransform: ImageTransform;
     onClose: () => void;
     onSetPrimary: () => void;
-    onRotate: (delta: number) => void;
   };
-  let { monitor, imageUrl, imageTransform, onClose, onSetPrimary, onRotate }: Props = $props();
+  let { monitor, imageUrl, imageTransform, onClose, onSetPrimary }: Props = $props();
 
   const cropInner = $derived({
     leftPct: ((imageTransform.offsetMmX - monitor.xMm) / monitor.wMm) * 100,
@@ -137,13 +136,11 @@
     </div>
   </div>
 
-  <div class="flex" style:gap="6px" style:margin-top="14px">
-    <button class="btn sm" onclick={() => onRotate(-90)} title="[ rotate CCW">↺</button>
-    <button class="btn sm" onclick={() => onRotate(90)} title="] rotate CW">↻</button>
-    {#if !monitor.primary}
+  {#if !monitor.primary}
+    <div class="flex" style:gap="6px" style:margin-top="14px">
       <button class="btn sm" style:margin-left="auto" onclick={onSetPrimary}>Set as primary</button>
-    {/if}
-  </div>
+    </div>
+  {/if}
 </div>
 
 <style>

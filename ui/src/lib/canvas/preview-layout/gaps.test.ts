@@ -115,9 +115,8 @@ describe('normaliseAxis', () => {
   it('preserves_existing_overrides_for_axes_it_does_not_touch', () => {
     const a = pm({ id: 'A', xMm: 0, yMm: 100, wMm: 500, hMm: 300 });
     const b = pm({ id: 'B', xMm: 600, yMm: 100, wMm: 500, hMm: 300 });
-    const before = { B: { xMm: 600, yMm: 100, rotation: 90 as const } };
+    const before = { B: { xMm: 600, yMm: 100 } };
     const out = normaliseAxis([a, b], before, 0, hNeighbourPairs, 'x');
-    expect(out['B']?.rotation).toBe(90);
     expect(out['B']?.yMm).toBe(100);
     expect(out['B']?.xMm).toBe(500);
   });

@@ -103,7 +103,6 @@
 
   type Hit =
     | { type: 'monitor'; id: string }
-    | { type: 'rotate'; id: string }
     | { type: 'image' }
     | { type: 'image-resize' }
     | { type: 'stage' };
@@ -113,15 +112,6 @@
     const r = stageEl.getBoundingClientRect();
     const px = clientX - r.left;
     const py = clientY - r.top;
-    if (canvasView.selectId) {
-      const sel = previewMonitors.find((m) => m.id === canvasView.selectId);
-      if (sel) {
-        const b = mm2px(sel.xMm + sel.wMm, sel.yMm);
-        const cx = b.x - 4;
-        const cy = b.y - 13;
-        if (Math.hypot(px - cx, py - cy) < 12) return { type: 'rotate', id: sel.id };
-      }
-    }
     for (let i = previewMonitors.length - 1; i >= 0; i -= 1) {
       const m = previewMonitors[i];
       if (!m) continue;
@@ -146,20 +136,9 @@
     return { type: 'stage' };
   }
 
-  function rotateMonitor(id: string, delta: number) {
-    const cur = canvasView.overrides[id];
-    if (!cur) return;
-    const next = (((cur.rotation + delta) % 360) + 360) % 360;
-    canvasView.override(id, { rotation: next as 0 | 90 | 180 | 270 });
-  }
-
   function onPointerDown(ev: PointerEvent) {
     if (ev.button !== 0) return;
     const hit = hitTest(ev.clientX, ev.clientY);
-    if (hit.type === 'rotate') {
-      rotateMonitor(hit.id, 90);
-      return;
-    }
     if (hit.type === 'monitor') {
       const m = previewMonitors.find((x) => x.id === hit.id);
       if (!m) return;
@@ -210,11 +189,7 @@
 
     if (!dragController.drag) {
       const hit = hitTest(ev.clientX, ev.clientY);
-      if (hit.type === 'rotate') {
-        canvasView.setHoverId(null);
-        tip = null;
-        stageEl.style.cursor = 'pointer';
-      } else if (hit.type === 'monitor') {
+      if (hit.type === 'monitor') {
         const m = previewMonitors.find((x) => x.id === hit.id) ?? null;
         canvasView.setHoverId(hit.id);
         tip = m ? { x: px + 14, y: py + 14, m } : null;
@@ -436,27 +411,6 @@
         </div>
       {/if}
     </div>
-    {#if isSel}
-      <div
-        class="pointer-events-none absolute"
-        style:left="{b.x - 4 - 18}px"
-        style:top="{a.y - 22}px"
-        style:width="18px"
-        style:height="18px"
-        style:border-radius="50%"
-        style:background="var(--accent)"
-        style:display="flex"
-        style:align-items="center"
-        style:justify-content="center"
-        style:color="oklch(0.16 0.01 250)"
-        style:font-size="11px"
-        style:font-weight="700"
-        style:box-shadow="0 2px 6px oklch(0 0 0 / 0.4)"
-        title="Rotate 90°"
-      >
-        ↻
-      </div>
-    {/if}
   {/each}
 
   <DimensionLines lines={dimLines} />

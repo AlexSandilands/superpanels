@@ -5,7 +5,7 @@
 
 import { canvasView } from '$lib/stores/canvas-view.svelte';
 import { profileStore } from '$lib/stores/profile.svelte';
-import { nudgeSelected, rotateSelected } from '$lib/canvas/select';
+import { nudgeSelected } from '$lib/canvas/select';
 import { applyDraftProfile, redetectMonitorsWithToast, switchAndApply } from '$lib/actions';
 import { slideshowController } from '$lib/slideshow-controller.svelte';
 
@@ -72,9 +72,6 @@ export function dispatchKey(e: KeyboardEvent, deps: KeymapDeps): void {
   if (e.key === 'F5') {
     e.preventDefault();
     void redetectMonitorsWithToast();
-  }
-  if (canvasView.selectId && (e.key === '[' || e.key === ']')) {
-    rotateSelected(e.key === ']' ? 90 : -90);
   }
   if (canvasView.selectId && /^Arrow/.test(e.key)) {
     const step = e.shiftKey ? 10 : 1;

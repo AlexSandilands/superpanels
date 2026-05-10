@@ -253,11 +253,7 @@ fn synthesise_one(m: &Monitor) -> MonitorPlacement {
     let scale = if m.scale > 0.0 { m.scale } else { 1.0 };
     let x_mm = (f64::from(m.position.0) * scale * mm_per_px) as f32;
     let y_mm = (f64::from(m.position.1) * scale * mm_per_px) as f32;
-    MonitorPlacement {
-        x_mm,
-        y_mm,
-        rotation: m.rotation,
-    }
+    MonitorPlacement { x_mm, y_mm }
 }
 
 #[cfg(test)]
@@ -295,11 +291,7 @@ mod tests {
     }
 
     fn place(x_mm: f32, y_mm: f32) -> MonitorPlacement {
-        MonitorPlacement {
-            x_mm,
-            y_mm,
-            rotation: Rotation::None,
-        }
+        MonitorPlacement { x_mm, y_mm }
     }
 
     #[test]
@@ -436,6 +428,53 @@ mod tests {
             .expect("placement");
         assert!((p.x_mm - 0.0).abs() < 1e-3);
         assert!((p.y_mm - 0.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn portrait_monitor_dst_size_uses_rotated_framebuffer() {
+        // 1080×1920 panel rotated right (90 CW): the canvas-as-truth math
+        // must hand back dst_size = (1080, 1920) — the framebuffer the
+        // compositor draws into post-rotation. SPEC §4.3.
+        let landscape = Monitor {
+            id: MonitorId(0),
+            name: "DP-1".to_owned(),
+            stable_id: Some("uuid-l".to_owned()),
+            position: (0, 0),
+            resolution: (1920, 1080),
+            physical_size_mm: Some((527.0, 296.0)),
+            scale: 1.0,
+            rotation: Rotation::None,
+            refresh_hz: None,
+            primary: true,
+            ppi: None,
+        };
+        let portrait = Monitor {
+            id: MonitorId(1),
+            name: "DP-2".to_owned(),
+            stable_id: Some("uuid-p".to_owned()),
+            position: (1920, 0),
+            resolution: (1920, 1080),
+            physical_size_mm: Some((527.0, 296.0)),
+            scale: 1.0,
+            rotation: Rotation::Right,
+            refresh_hz: None,
+            primary: false,
+            ppi: None,
+        };
+        let monitors = vec![landscape, portrait];
+        let mut placements = HashMap::new();
+        placements.insert(monitor_key(&monitors[0]), place(0.0, 0.0));
+        placements.insert(monitor_key(&monitors[1]), place(527.0, 0.0));
+        let rect = ImageRectMm {
+            x_mm: 0.0,
+            y_mm: 0.0,
+            w_mm: 527.0 + 296.0,
+            h_mm: 527.0,
+        };
+        let crops = compute_crop_specs(&monitors, &placements, (3000, 1920), rect).unwrap();
+        let portrait_crop = crops.iter().find(|c| c.monitor_id == MonitorId(1)).unwrap();
+        assert_eq!(portrait_crop.dst_size, (1080, 1920));
+        assert_eq!(portrait_crop.rotation, Rotation::Right);
     }
 
     #[test]

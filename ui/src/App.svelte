@@ -30,7 +30,6 @@
   } from '$lib/actions';
   import { canvasOverridesDirty, imageTransformDirty } from '$lib/canvas/dirty';
   import { buildPreviewMonitors } from '$lib/canvas/preview-layout';
-  import { rotateSelected } from '$lib/canvas/select';
   import {
     resetLayout as runResetLayout,
     resetTransform as runResetTransform,
@@ -76,27 +75,11 @@
   async function saveAsNew(name: string, description: string | null) {
     saveDialogOpen = false;
     try {
-      const rotationName = (deg: 0 | 90 | 180 | 270): 'none' | 'right' | 'inverted' | 'left' => {
-        switch (deg) {
-          case 90:
-            return 'right';
-          case 180:
-            return 'inverted';
-          case 270:
-            return 'left';
-          default:
-            return 'none';
-        }
-      };
-      const monitor_state: Record<
-        string,
-        { x_mm: number; y_mm: number; rotation: 'none' | 'right' | 'inverted' | 'left' }
-      > = {};
+      const monitor_state: Record<string, { x_mm: number; y_mm: number }> = {};
       for (const m of previewMonitors) {
         monitor_state[m.id] = {
           x_mm: m.xMm,
           y_mm: m.yMm,
-          rotation: rotationName(m.rotation),
         };
       }
       const t = imageTransform.value;
@@ -303,6 +286,7 @@
       onDragOver: () => (dragOverlay = true),
       onDragLeave: () => (dragOverlay = false),
       onDrop: (path) => setSpanImage(path),
+      onMonitorsChanged: () => void monitorStore.refresh(),
     });
 
     // Window-close interception (§4e.11.5). When the canvas is dirty we
@@ -457,7 +441,6 @@
       imageTransform={imageTransform.value}
       onClose={() => canvasView.setSelectId(null)}
       onSetPrimary={setPrimary}
-      onRotate={rotateSelected}
     />
   {/if}
 

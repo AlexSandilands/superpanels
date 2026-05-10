@@ -475,7 +475,6 @@ mod tests {
             superpanels_core::MonitorPlacement {
                 x_mm: 0.0,
                 y_mm: 0.0,
-                rotation: superpanels_core::Rotation::None,
             },
         );
         config.profiles.push(profile.clone());
@@ -489,7 +488,6 @@ mod tests {
             superpanels_core::MonitorPlacement {
                 x_mm: 999.0,
                 y_mm: 0.0,
-                rotation: superpanels_core::Rotation::None,
             },
         );
 

@@ -14,38 +14,11 @@ import { runtime } from '$lib/stores/runtime.svelte';
 import { toast } from '$lib/stores/toast.svelte';
 import type { ImageRectMm } from '$lib/types/ImageRectMm';
 import type { MonitorPlacement } from '$lib/types/MonitorPlacement';
-import type { Rotation } from '$lib/types/Rotation';
 import {
   isPerMonitorBody,
   isSpanBody,
   type PerMonitorAssignment,
 } from '$lib/types/profile-helpers';
-
-function rotationFromDeg(d: 0 | 90 | 180 | 270): Rotation {
-  switch (d) {
-    case 90:
-      return 'right';
-    case 180:
-      return 'inverted';
-    case 270:
-      return 'left';
-    default:
-      return 'none';
-  }
-}
-
-function rotationToDeg(r: Rotation): 0 | 90 | 180 | 270 {
-  switch (r) {
-    case 'right':
-      return 90;
-    case 'inverted':
-      return 180;
-    case 'left':
-      return 270;
-    default:
-      return 0;
-  }
-}
 
 function imageRectFromTransform(): ImageRectMm {
   const t = imageTransform.value;
@@ -63,7 +36,7 @@ function syncDraftFromCanvas(): void {
   if (previews.length === 0) return;
   const nextPlacements: Record<string, MonitorPlacement> = {};
   for (const m of previews) {
-    nextPlacements[m.id] = { x_mm: m.xMm, y_mm: m.yMm, rotation: rotationFromDeg(m.rotation) };
+    nextPlacements[m.id] = { x_mm: m.xMm, y_mm: m.yMm };
   }
   const rect = imageRectFromTransform();
   profileStore.patchDraft((d) => {
@@ -85,7 +58,6 @@ export function applyMonitorStateToCanvas(p: Profile): void {
     next[id] = {
       xMm: placement.x_mm,
       yMm: placement.y_mm,
-      rotation: rotationToDeg(placement.rotation),
     };
   }
   canvasView.setOverrides(next);

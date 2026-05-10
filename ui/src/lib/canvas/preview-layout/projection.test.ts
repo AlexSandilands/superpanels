@@ -63,8 +63,8 @@ describe('defaultOverrides', () => {
       physical_size_mm: [500, 300],
     });
     const out = defaultOverrides([m1, m2], 10);
-    expect(out['a']).toEqual({ xMm: 0, yMm: 0, rotation: 0 });
-    expect(out['b']).toEqual({ xMm: 510, yMm: 0, rotation: 0 });
+    expect(out['a']).toEqual({ xMm: 0, yMm: 0 });
+    expect(out['b']).toEqual({ xMm: 510, yMm: 0 });
   });
 
   it('uses_dpi_fallback_when_physical_size_missing', () => {
@@ -76,8 +76,6 @@ describe('defaultOverrides', () => {
     const out = defaultOverrides([m], 0);
     // 1920 px / 96 dpi * 25.4 = 508 mm — next monitor (none) lands at 508+0
     expect(out['a']?.xMm).toBe(0);
-    // The width feeds the cursor; with one monitor we just verify the rotation default.
-    expect(out['a']?.rotation).toBe(0);
   });
 
   it('rotated_monitors_use_swapped_dimensions_for_cursor_advance', () => {
@@ -95,7 +93,6 @@ describe('defaultOverrides', () => {
     const out = defaultOverrides([portrait, next], 0);
     // Rotated: width becomes 300 (was-h), so 'n' lands at xMm=300.
     expect(out['n']?.xMm).toBe(300);
-    expect(out['p']?.rotation).toBe(90);
   });
 
   it('sorts_by_position_y_then_x', () => {
@@ -123,8 +120,8 @@ describe('buildPreviewMonitors', () => {
       rotation: 'right',
     });
     const out = buildPreviewMonitors([land, port], {
-      L: { xMm: 0, yMm: 0, rotation: 0 },
-      P: { xMm: 600, yMm: 0, rotation: 90 },
+      L: { xMm: 0, yMm: 0 },
+      P: { xMm: 600, yMm: 0 },
     });
     expect(out[0]?.wMm).toBe(500);
     expect(out[0]?.hMm).toBe(300);
@@ -136,7 +133,7 @@ describe('buildPreviewMonitors', () => {
 
   it('flags_missing_physical_size_with_dpi_fallback', () => {
     const m = monitor({ stable_id: 'a', physical_size_mm: null, resolution: [1920, 1080] });
-    const out = buildPreviewMonitors([m], { a: { xMm: 0, yMm: 0, rotation: 0 } });
+    const out = buildPreviewMonitors([m], { a: { xMm: 0, yMm: 0 } });
     expect(out[0]?.missing).toBe(true);
   });
 });

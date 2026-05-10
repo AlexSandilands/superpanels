@@ -61,7 +61,8 @@ export function nativeMm(m: Monitor): { w: number; h: number; missing: boolean }
 }
 
 // Default mm positions — lay monitors out in compositor-reported order along
-// rows, separated by bezel gaps. Returns one override per monitor.
+// rows, separated by bezel gaps. Returns one override per monitor. Rotation
+// comes from `Monitor.rotation` (compositor) and is not part of the override.
 export function defaultOverrides(
   monitors: Monitor[],
   bezelHmm: number,
@@ -77,7 +78,7 @@ export function defaultOverrides(
     const nm = nativeMm(m);
     const rotated = rot === 90 || rot === 270;
     const wMm = rotated ? nm.h : nm.w;
-    out[stableId(m)] = { xMm: cursorX, yMm: 0, rotation: rot };
+    out[stableId(m)] = { xMm: cursorX, yMm: 0 };
     cursorX += wMm + bezelHmm;
   }
   return out;
@@ -90,15 +91,16 @@ export function buildPreviewMonitors(
   return monitors.map((m) => {
     const id = stableId(m);
     const nm = nativeMm(m);
-    const ov = overrides[id] ?? { xMm: 0, yMm: 0, rotation: rotationDeg(m) };
-    const rotated = ov.rotation === 90 || ov.rotation === 270;
+    const ov = overrides[id] ?? { xMm: 0, yMm: 0 };
+    const rot = rotationDeg(m);
+    const rotated = rot === 90 || rot === 270;
     return {
       id,
       name: m.name,
       model: '',
       refreshHz: m.refresh_hz,
       primary: m.primary,
-      rotation: ov.rotation,
+      rotation: rot,
       nativeWmm: nm.w,
       nativeHmm: nm.h,
       nativePxW: m.resolution[0],
