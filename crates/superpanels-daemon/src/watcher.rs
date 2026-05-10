@@ -7,7 +7,7 @@ use std::time::Duration;
 use superpanels_core::library::{FolderWatcher, LibraryError};
 use tokio::sync::Mutex;
 use tokio::sync::mpsc::UnboundedReceiver;
-use tracing::{debug, info};
+use tracing::{info, trace};
 
 use crate::state::DaemonState;
 
@@ -39,7 +39,7 @@ pub(crate) async fn run_watcher(
             }
         }
 
-        debug!("FS quiet period over; triggering library rescan");
+        trace!("FS quiet period over; triggering library rescan");
         let state_clone = Arc::clone(&state);
         tokio::task::spawn_blocking(move || {
             do_rescan(&state_clone);
@@ -69,16 +69,32 @@ pub(crate) fn make_watcher(
     let (std_tx, std_rx) = std::sync::mpsc::channel::<notify::Event>();
     let watcher = FolderWatcher::new(roots, std_tx)?;
 
-    // Forward thread: transfers events from the std channel to the tokio channel.
     std::thread::spawn(move || {
         while let Ok(event) = std_rx.recv() {
+            if !affects_library(event.kind) {
+                continue;
+            }
             if tx.send(event).is_err() {
-                break; // receiver dropped
+                break;
             }
         }
     });
 
     Ok(watcher)
+}
+
+/// Whether an FS event can change the set of files `scan_folder` would emit.
+///
+/// `Access` and `Modify(Metadata)` are excluded so that the rescan itself —
+/// which opens every file for a header read and may bump atime under
+/// `relatime` — cannot feed the watcher and trigger a rescan loop.
+fn affects_library(kind: notify::EventKind) -> bool {
+    use notify::EventKind as K;
+    use notify::event::ModifyKind;
+    match kind {
+        K::Create(_) | K::Remove(_) | K::Modify(ModifyKind::Data(_) | ModifyKind::Name(_)) => true,
+        K::Access(_) | K::Modify(_) | K::Any | K::Other => false,
+    }
 }
 
 #[cfg(test)]
@@ -91,6 +107,37 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
+
+    #[test]
+    fn affects_library_drops_access_and_metadata_events() {
+        use notify::EventKind as K;
+        use notify::event::{
+            AccessKind, AccessMode, CreateKind, DataChange, MetadataKind, ModifyKind, RemoveKind,
+            RenameMode,
+        };
+        assert!(affects_library(K::Create(CreateKind::File)));
+        assert!(affects_library(K::Remove(RemoveKind::File)));
+        assert!(affects_library(K::Modify(ModifyKind::Data(
+            DataChange::Content
+        ))));
+        assert!(affects_library(K::Modify(ModifyKind::Name(
+            RenameMode::Both
+        ))));
+        // The feedback-loop offenders: a rescan reads files (atime under
+        // relatime → Modify(Metadata)) and may emit Access events.
+        assert!(!affects_library(K::Access(AccessKind::Read)));
+        assert!(!affects_library(K::Access(AccessKind::Open(
+            AccessMode::Read
+        ))));
+        assert!(!affects_library(K::Access(AccessKind::Close(
+            AccessMode::Read
+        ))));
+        assert!(!affects_library(K::Modify(ModifyKind::Metadata(
+            MetadataKind::AccessTime
+        ))));
+        assert!(!affects_library(K::Any));
+        assert!(!affects_library(K::Other));
+    }
 
     fn write_dummy_image(path: &Path) {
         let img = image::RgbaImage::from_pixel(2, 2, image::Rgba([0, 0, 0, 255]));

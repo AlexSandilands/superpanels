@@ -7,7 +7,7 @@ use anyhow::Result;
 use superpanels_core::ipc::{IpcRequest, IpcResponse, PROTOCOL_VERSION};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{Mutex, watch};
-use tracing::{debug, error};
+use tracing::{debug, error, trace};
 
 use crate::state::DaemonState;
 
@@ -69,7 +69,7 @@ async fn handle_connection(
             frame::write_frame(&mut stream, &serde_json::to_vec(&resp)?).await?;
             continue;
         }
-        debug!(method = %req.method, "IPC request");
+        trace!(method = %req.method, "IPC request");
         let resp = dispatch(req, Arc::clone(&state), timer_tx.clone()).await;
         frame::write_frame(&mut stream, &serde_json::to_vec(&resp)?).await?;
     }

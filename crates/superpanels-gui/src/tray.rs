@@ -1,6 +1,6 @@
 //! System tray (`SPEC.md` §13). Builds an initial menu, polls daemon state
-//! once per second to keep the active-profile tick mark in sync, and routes
-//! menu events to the right Tauri command (or quits the app).
+//! to keep the active-profile tick mark in sync, and routes menu events to
+//! the right Tauri command (or quits the app).
 
 // reason: the tray needs to keep `Arc<AppState>` alive inside long-lived
 // closures and a background thread. The `needless_pass_by_value` lint is
@@ -18,7 +18,11 @@ use tauri::{App, AppHandle, Emitter, Manager, Wry};
 use crate::bridge;
 use crate::state::{AppState, RuntimeSnapshot};
 
-const POLL_INTERVAL: Duration = Duration::from_secs(1);
+// Tray sync runs on a background thread; the user only feels this cadence on
+// slideshow advance / pause label updates, and `menu_signature` already
+// suppresses no-op rebuilds. 5s matches the App.svelte refresh cadence so
+// tray and main window stay loosely in step.
+const POLL_INTERVAL: Duration = Duration::from_secs(5);
 
 const ID_NEXT: &str = "tray.slideshow.next";
 const ID_PREV: &str = "tray.slideshow.prev";
