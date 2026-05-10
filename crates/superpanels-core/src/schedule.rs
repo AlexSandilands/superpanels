@@ -2,9 +2,9 @@
 //! (`docs/spec/09-profiles-schedules.md`).
 //!
 //! Schedules are independent of profiles: each rule names a profile by string
-//! and fires on a clock trigger. `MonitorPlacement`, `TopologyFingerprint`,
-//! and `ProfileColour` also live here because they're referenced from both
-//! `Profile` and the validity machinery.
+//! and fires on a clock trigger. `MonitorPlacement` and `TopologyFingerprint`
+//! also live here because they're referenced from both `Profile` and the
+//! validity machinery.
 
 use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
@@ -16,46 +16,6 @@ use thiserror::Error;
 use ts_rs::TS;
 
 use crate::display::{Monitor, Rotation};
-
-/// Curated 12-swatch palette used for tray pills, manager rows, and dialog
-/// pickers. Values map 1:1 to the mockup's `SWATCHES` list.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../ui/src/lib/types/")]
-#[serde(rename_all = "snake_case")]
-pub enum ProfileColour {
-    #[default]
-    Slate,
-    Stone,
-    Red,
-    Orange,
-    Amber,
-    Yellow,
-    Lime,
-    Emerald,
-    Teal,
-    Sky,
-    Indigo,
-    Violet,
-}
-
-impl ProfileColour {
-    /// Stable palette order, used by the GUI's "next unused swatch" picker
-    /// and by tests that pin the palette length.
-    pub const ALL: [Self; 12] = [
-        Self::Slate,
-        Self::Stone,
-        Self::Red,
-        Self::Orange,
-        Self::Amber,
-        Self::Yellow,
-        Self::Lime,
-        Self::Emerald,
-        Self::Teal,
-        Self::Sky,
-        Self::Indigo,
-        Self::Violet,
-    ];
-}
 
 /// Authored monitor canvas state lifted out of the transient
 /// `MonitorOverride` from `ui/src/lib/stores/canvas-view.svelte.ts`. The

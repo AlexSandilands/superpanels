@@ -20,7 +20,6 @@ export type { PerMonitorAssignment } from './PerMonitorAssignment';
 export type { MonitorRef } from './MonitorRef';
 export type { MonitorPlacement } from './MonitorPlacement';
 export type { TopologyFingerprint } from './TopologyFingerprint';
-export type { ProfileColour } from './ProfileColour';
 export type { Schedule } from './Schedule';
 export type { Trigger } from './Trigger';
 export type { ProfileValidity } from './ProfileValidity';

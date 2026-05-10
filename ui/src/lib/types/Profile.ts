@@ -2,13 +2,11 @@
 import type { BackendKind } from "./BackendKind";
 import type { MonitorPlacement } from "./MonitorPlacement";
 import type { ProfileBody } from "./ProfileBody";
-import type { ProfileColour } from "./ProfileColour";
 import type { TopologyFingerprint } from "./TopologyFingerprint";
 
 /**
  * One `[[profile]]` block. Profiles are *modes the user is in*, not
- * one-shot apply requests: monitor placements, image transform, and colour
- * swatch all live here.
+ * one-shot apply requests: monitor placements and image transform live here.
  */
 export type Profile = { name: string, body: ProfileBody, 
 /**
@@ -20,4 +18,4 @@ monitor_state: { [key in string]: MonitorPlacement },
  * Topology fingerprint at authoring time; compared for equality at
  * apply time. Persisted as opaque hash hex.
  */
-topology: TopologyFingerprint, colour: ProfileColour, description?: string | null, created_at: string, updated_at: string, last_applied_at?: string | null, backend_override?: BackendKind | null, };
+topology: TopologyFingerprint, description?: string | null, created_at: string, updated_at: string, last_applied_at?: string | null, backend_override?: BackendKind | null, };

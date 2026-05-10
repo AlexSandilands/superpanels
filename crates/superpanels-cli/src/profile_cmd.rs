@@ -370,8 +370,8 @@ fn resolve_config_path(path: Option<&Path>) -> Result<PathBuf> {
 #[allow(clippy::unwrap_used)] // reason: tests fail loudly on unexpected errors
 mod tests {
     use super::*;
+    use superpanels_core::TopologyFingerprint;
     use superpanels_core::config::{SpanProfile, SpanSource};
-    use superpanels_core::{ProfileColour, TopologyFingerprint};
     use tempfile::tempdir;
 
     fn sample_profile(name: &str) -> Profile {
@@ -386,7 +386,6 @@ mod tests {
             }),
             monitor_state: HashMap::new(),
             topology: TopologyFingerprint(String::new()),
-            colour: ProfileColour::default(),
             description: None,
             created_at: now,
             updated_at: now,

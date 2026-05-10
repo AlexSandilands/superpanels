@@ -1,7 +1,8 @@
 <script lang="ts">
   import { api, type Profile } from '$lib/api';
-  import { profileColourCss } from '$lib/profile-colours';
   import Icon from '../widgets/Icon.svelte';
+
+  const PROFILE_BG = 'oklch(0.22 0 0)';
 
   type Props = {
     profiles: Profile[];
@@ -136,8 +137,8 @@
       <span
         class="swatch"
         style:background={thumb
-          ? `center/cover no-repeat url("${thumb}"), ${profileColourCss(p.colour)}`
-          : profileColourCss(p.colour)}
+          ? `center/cover no-repeat url("${thumb}"), ${PROFILE_BG}`
+          : PROFILE_BG}
       ></span>
       <div style:flex="1" style:min-width="0">
         <div class="name" style:font-weight={isActive ? '600' : '500'}>

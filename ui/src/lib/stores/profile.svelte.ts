@@ -123,7 +123,6 @@ export const profileStore = {
       },
       monitor_state: {},
       topology: '',
-      colour: 'slate',
       description: null,
       created_at: now,
       updated_at: now,

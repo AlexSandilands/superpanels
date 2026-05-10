@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use ts_rs::TS;
 
-use crate::schedule::{MonitorPlacement, ProfileColour, Schedule, TopologyFingerprint};
+use crate::schedule::{MonitorPlacement, Schedule, TopologyFingerprint};
 
 mod default;
 mod io;
@@ -172,8 +172,7 @@ impl std::str::FromStr for BackendKind {
 }
 
 /// One `[[profile]]` block. Profiles are *modes the user is in*, not
-/// one-shot apply requests: monitor placements, image transform, and colour
-/// swatch all live here.
+/// one-shot apply requests: monitor placements and image transform live here.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../ui/src/lib/types/")]
 pub struct Profile {
@@ -186,8 +185,6 @@ pub struct Profile {
     /// Topology fingerprint at authoring time; compared for equality at
     /// apply time. Persisted as opaque hash hex.
     pub topology: TopologyFingerprint,
-    #[serde(default)]
-    pub colour: ProfileColour,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(default = "now_timestamp")]
