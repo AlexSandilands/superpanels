@@ -12,6 +12,7 @@ use superpanels_core::library::{
 };
 use superpanels_core::slideshow::{SlideshowPicker, load_state};
 use superpanels_core::{detect, ipc};
+use tokio::sync::broadcast;
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, info, warn};
 
@@ -49,6 +50,11 @@ pub(crate) struct DaemonState {
     /// LRU cache of `cmd_library_thumbnail` outputs, keyed on
     /// (canonicalised path, mtime). See [`ThumbnailCache`] for the bounds.
     pub thumbnail_cache: ThumbnailCache,
+    /// Broadcast sender fired when the OS pushes a display-config change
+    /// (KDE kscreen kded `configChanged`). Subscribers — currently just any
+    /// future GUI bridge — receive `()` ticks; the channel is detached from
+    /// monitor data so listeners pull state via `current_state` IPC.
+    pub monitors_tx: Option<broadcast::Sender<()>>,
 }
 
 impl DaemonState {
@@ -80,6 +86,7 @@ impl DaemonState {
             watcher: None,
             watcher_tx: None,
             thumbnail_cache: ThumbnailCache::new(),
+            monitors_tx: None,
         })
     }
 
@@ -254,6 +261,7 @@ impl DaemonState {
             watcher: None,
             watcher_tx: None,
             thumbnail_cache: ThumbnailCache::new(),
+            monitors_tx: None,
         }
     }
 

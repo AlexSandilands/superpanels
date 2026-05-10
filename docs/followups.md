@@ -22,6 +22,24 @@ affected stacks (track upstream WebKit / `webkit2gtk` Arch package).
 `desktop_body_includes_webkit_dmabuf_workaround` test assertions in
 `autostart.rs`.
 
+## OS-driven rotation push to GUI
+
+The daemon subscribes to KDE's `org.kde.KScreen` `configChanged` D-Bus
+signal (see `crates/superpanels-daemon/src/display_watch.rs`) and updates
+its in-memory `monitors` and broadcasts `()` on `state.monitors_tx`. The
+GUI listens for a Tauri event named `monitors://changed`
+(`ui/src/lib/events/window.ts`) and calls `monitorStore.refresh()`.
+
+What's missing: no plumbing relays the daemon's broadcast tick out over
+the IPC socket as a Tauri event. Until that's wired, an OS-driven rotation
+updates the daemon's view but not the running GUI — the user can hit F5
+(`redetectMonitorsWithToast`) as a manual fallback. In-process mode (no
+daemon) doesn't run `display_watch` at all.
+
+**Action:** add a daemon→GUI push channel (e.g. a long-poll IPC method or
+a separate socket) that emits Tauri events; or run a thin zbus subscriber
+inside the GUI process for KDE sessions when no daemon is present.
+
 ## Fix transforms/cropping from canvas
   - Should be pixel perfect according to canvas
   - Align with the preview in the profile manager

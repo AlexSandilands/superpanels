@@ -74,6 +74,7 @@ tokio              = { version = "1", features = ["rt-multi-thread", "net", "tim
 tracing            = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 zbus               = "5.11.0"
+futures-util       = { version = "0.3", default-features = false }
 
 # GUI (Phase 3) — Tauri shell + tray + notifications + TS type bindings.
 tauri                     = { version = "2.10", default-features = false, features = ["custom-protocol", "tray-icon", "wry", "image-png", "config-json5"] }
