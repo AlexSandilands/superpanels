@@ -9,7 +9,6 @@ import type { Profile } from './types/profile-helpers';
 import type { MonitorPlacement } from './types/MonitorPlacement';
 import type { ProfileValidity } from './types/ProfileValidity';
 import type { Schedule } from './types/Schedule';
-import type { LatLong } from './types/LatLong';
 import type { SpanSource } from './types/SpanSource';
 
 export type { Profile };
@@ -96,7 +95,11 @@ export const api = {
   applyProfile: (name: string) => call<AppliedReport>('apply_profile', { name }),
   applyCanvas: (profile: Profile, activeName: string | null) =>
     call<AppliedReport>('apply_canvas', { profile, activeName }),
-  saveProfile: (profile: Profile) => call<void>('save_profile', { profile }),
+  saveProfile: (profile: Profile, opts?: { recomputeTopology?: boolean }) =>
+    call<void>('save_profile', {
+      profile,
+      recomputeTopology: opts?.recomputeTopology ?? false,
+    }),
   deleteProfile: (name: string) => call<void>('delete_profile', { name }),
   duplicateProfile: (name: string, newName: string) =>
     call<void>('duplicate_profile', { name, newName }),
@@ -113,7 +116,6 @@ export const api = {
     call<{
       schedules: Schedule[];
       paused: boolean;
-      location: LatLong | null;
     }>('list_schedules'),
   saveSchedules: (schedules: Schedule[]) => call<void>('save_schedules', { schedules }),
   setSchedulesPaused: (paused: boolean) =>

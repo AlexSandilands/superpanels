@@ -32,7 +32,7 @@ Slots in between Phase 4d and Phase 5 (packaging shifts to v0.9). Design doc: `d
 - [x] New `MonitorPlacement { x_mm: f32, y_mm: f32, rotation: Rotation }`. Mirrors the existing transient `MonitorOverride` from `ui/src/lib/stores/canvas-view.svelte.ts`.
 - [x] New `TopologyFingerprint(String)` — opaque hash over (sorted `stable_id`s ∥ rotations). Hash function and stability rules documented; deterministic across processes.
 - [x] New `ProfileColour` — enum over a curated palette (~12 swatches).
-- [x] `Config` gains: `schedules: Vec<Schedule>`, `schedules_paused: bool`, `location: Option<LatLong>`.
+- [x] `Config` gains: `schedules: Vec<Schedule>`, `schedules_paused: bool`. (Sun-event triggers + lat/long dropped in §4e.12.)
 - [x] `Schedule` enum lifted out of profile body, gains `enabled: bool`, optional `display_name: String`, target `profile: String`.
 - [x] Bezel-math layout step (`compute_crop_specs` and friends) consumes profile `monitor_state` instead of detected positions + `BezelConfig`. Live OS arrangement is consulted only for: connected set, pixel resolutions, OS rotation (for fingerprint comparison).
 - [x] Unit tests: round-trip TOML for the new shape; topology hash determinism; placement round-trip with rotation.
@@ -75,13 +75,13 @@ Wiring:
 
 - [x] `superpanels-daemon` reads `Config.schedules` on start and on config reload (already watching).
 - [x] One Tokio timer per enabled rule. Recompute next-fire on reload, on system clock change, and after a fire.
-- [x] Sunset/sunrise: hand-roll an approximation using `Config.location`. Document the approximation's accuracy bounds. Rule is disabled (with a `tracing::warn`) if location is missing.
+- [~] Sunset/sunrise: dropped in §4e.12 — daily + cron only.
 - [x] Cron rules: pull in `cron` or `croner` crate (decide in 4e.4 review). Validate cron expressions on save; reject invalid ones at the IPC boundary.
 - [x] **Boot catch-up:** on daemon start, find the most recent past fire-time today across all enabled rules; apply that rule's profile if the active profile differs.
 - [x] Schedule preempts manual choice unless `schedules_paused` is true.
 - [x] If a schedule targets a disabled profile, log + skip; do not switch.
 - [x] Persist `active_profile` and `schedules_paused` in `state.toml`.
-- [x] Tests: integration test for boot catch-up; pause toggle observed; sunset rule fires within tolerance for known coordinates.
+- [x] Tests: integration test for boot catch-up; pause toggle observed.
 
 ## 4e.5 Schedules — settings UI
 
@@ -89,8 +89,7 @@ Mockup reference: `docs/design/mockup/superpanels-claude/overlays.jsx` — `Sche
 
 - [x] Settings → Schedules tab populated. Currently empty.
 - [x] Rule list. Each row: enabled toggle, trigger summary, target profile, "next fires at HH:MM" hint, edit/delete.
-- [x] Add-rule form: trigger type (daily / sunset±offset / cron), parameters, target profile dropdown (existing profiles only).
-- [x] Lat/long input field. Required when any sunset rule exists; otherwise optional.
+- [x] Add-rule form: trigger type (daily / cron), parameters, target profile dropdown (existing profiles only). (Sun-event triggers dropped in §4e.12.)
 - [x] **Conflict prevention:** save is blocked when a new/edited rule would fire at the same minute as another enabled rule. Inline error names the conflicting rule. Two rules at the same minute is unrepresentable in saved state.
 - [x] Master "pause all schedules" toggle (mirrored in tray).
 - [x] Tests: vitest covers conflict-detection logic; e2e (or component-level) covers add → list → next-fire formatting.
@@ -146,7 +145,7 @@ The auto-save model in 4e.3 means the active profile silently mutates as the use
 
 - [x] `superpanels profile` subcommand: ensure `list, show, apply, create, edit, delete, rename, duplicate, export, import` all exist and go through the same core operations as the GUI. Fill gaps.
 - [x] New `superpanels schedule` subcommand: `list, add, remove, enable, disable, pause, resume`.
-- [x] All new core types (`MonitorPlacement`, `TopologyFingerprint`, `ProfileColour`, `Schedule`, `LatLong`, `ProfileValidity`, `DisableReason`) exported via `ts-rs`. Drop the hand-mirrored types in `ui/src/lib/types/profile.ts` once `ts-rs` covers everything; until then update by hand to match.
+- [x] All new core types (`MonitorPlacement`, `TopologyFingerprint`, `ProfileColour`, `Schedule`, `ProfileValidity`, `DisableReason`) exported via `ts-rs`. Drop the hand-mirrored types in `ui/src/lib/types/profile.ts` once `ts-rs` covers everything; until then update by hand to match.
 - [x] Tests: CLI integration tests for each new verb hitting an in-process core (no daemon).
 
 ## 4e.9 Spec fold & doc cleanup
@@ -219,3 +218,18 @@ Visibility / enable rules:
 - [x] When a schedule fires while the canvas is dirty, do not pop the modal. Instead, the frontend tracks a `userActiveSentinel`; when polling sees `active_profile` differ from the sentinel and a dirty canvas snapshot is buffered, surface a toast: "Schedule switched to {profile}; unsaved changes to {prev} were discarded" with an "Undo" action button.
 - [x] The Undo action re-applies the snapshotted previous canvas state via `apply_canvas` and restores it as the local canvas. Ephemeral — it does not save.
 - [x] Tests: vitest covers `canvasOverridesDirty` (the dirty-diff helper); a focused vitest for the schedule preemption sentinel→toast wiring is deferred to follow-up because the sentinel logic lives inside `App.svelte` `$effect`s and the most useful test target is the helper. Track a follow-up to extract it for direct testing.
+
+## 4e.12 Sun-event removal (post-launch amendment)
+
+Sunset / sunrise triggers were specced and shipped in §4e.4 / §4e.5, but they brought non-trivial weight (LatLong type, hand-rolled almanac approximation, location config field, lat/long input UI requirement) for marginal value. Removed entirely on 2026-05-10 — `Trigger` is now `Daily | Cron` only.
+
+Removed surface:
+
+- [x] `Trigger::Sunset`, `Trigger::Sunrise` variants (core).
+- [x] `LatLong` type and ts-rs binding.
+- [x] `Config.location` field.
+- [x] `sun_event_utc_minutes` and `ScheduleError::LocationMissing`.
+- [x] Daemon `sun_should_fire` / `sun_fire_local` helpers.
+- [x] UI sun-trigger segment in `ScheduleEditor.svelte` and the corresponding row formatter in `ScheduleRow.svelte`.
+- [x] CLI sun-trigger description branch.
+- [x] Spec §9.3.4 and the lat/long line in §12.4.4.

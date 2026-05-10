@@ -35,11 +35,15 @@ pub(crate) fn apply_profile(
 #[tauri::command]
 pub(crate) fn save_profile(
     profile: Value,
+    recompute_topology: Option<bool>,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
     bridge::call(
         "save_profile",
-        json!({ "profile": profile }),
+        json!({
+            "profile": profile,
+            "recompute_topology": recompute_topology.unwrap_or(false),
+        }),
         state.config_path().as_deref(),
     )
 }

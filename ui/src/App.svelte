@@ -6,6 +6,7 @@
   import { daemonStatus } from '$lib/stores/daemon-status.svelte';
   import { libraryStore } from '$lib/stores/library.svelte';
   import { monitorStore } from '$lib/stores/monitors.svelte';
+  import { preemption } from '$lib/stores/preemption.svelte';
   import { profileStore } from '$lib/stores/profile.svelte';
   import { runtime } from '$lib/stores/runtime.svelte';
   import { toast } from '$lib/stores/toast.svelte';
@@ -64,7 +65,6 @@
   import TrayPopover from './components/overlays/TrayPopover.svelte';
   import type { ProfileColour } from '$lib/types/ProfileColour';
   import { api, errorMessage } from '$lib/api';
-  import { TopologyFingerprintFor } from '$lib/topology';
 
   let libraryOpen = $state(false);
   let settingsOpen = $state(false);
@@ -77,7 +77,6 @@
   async function saveAsNew(name: string, colour: ProfileColour, description: string | null) {
     saveDialogOpen = false;
     try {
-      const topology = TopologyFingerprintFor(monitorStore.monitors);
       const rotationName = (deg: 0 | 90 | 180 | 270): 'none' | 'right' | 'inverted' | 'left' => {
         switch (deg) {
           case 90:
@@ -114,7 +113,8 @@
             : null,
         },
         monitor_state,
-        topology,
+        // Topology is recomputed by the daemon against live monitors.
+        topology: '',
         colour,
         description,
         created_at: now,
@@ -122,7 +122,7 @@
         last_applied_at: null,
         backend_override: null,
       };
-      await api.saveProfile(profile);
+      await api.saveProfile(profile, { recomputeTopology: true });
       await profileStore.refresh();
       toast.success(`Saved '${name}'`);
       const saved = profileStore.profiles.find((p) => p.name === name);
@@ -199,52 +199,46 @@
     void perform();
   }
 
-  // Schedule-preemption tracking (§4e.11.6). `userActiveSentinel` is the
-  // last active-profile name we know the user (or our own apply path)
-  // intended. When the polling refresh observes a different
-  // `runtime.active_profile`, that change came from outside this window —
-  // most likely a schedule fire — so if the canvas is dirty we surface a
-  // toast with Undo instead of silently discarding the edits.
-  let userActiveSentinel = $state<string | null>(null);
-  let lastDirtyCanvasSnapshot: Profile | null = null;
-
+  // Schedule-preemption tracking (§4e.11.6). The sentinel + dirty-canvas
+  // snapshot live in `lib/stores/preemption.svelte` so user-driven actions
+  // (`applyDraftProfile`, `saveActiveProfile`, `switchAndApply`) can claim
+  // an upcoming switch and avoid being misread as a schedule fire.
   $effect(() => {
-    // Keep the sentinel in lockstep with the runtime view *unless* the
-    // change is a candidate schedule preemption (active changed while
-    // we have a dirty canvas snapshot ready to undo).
     const seen = profileStore.activeName;
-    if (seen === userActiveSentinel) return;
-    const externalChange = userActiveSentinel !== null && seen !== userActiveSentinel;
-    if (externalChange && lastDirtyCanvasSnapshot !== null) {
-      const snapshot = lastDirtyCanvasSnapshot;
-      const prev = userActiveSentinel;
-      lastDirtyCanvasSnapshot = null;
-      toast.info(`Schedule switched to '${seen ?? 'unknown'}'`, {
-        detail: `Unsaved changes to '${prev}' were discarded`,
-        action: {
-          label: 'Undo',
-          onClick: () => {
-            void api
-              .applyCanvas(snapshot, prev)
-              .then(() => {
-                toast.success(`Restored canvas for '${prev}'`);
-              })
-              .catch((err) => {
-                toast.error('Undo failed', errorMessage(err));
-              });
+    const sentinel = preemption.sentinel;
+    if (seen === sentinel) return;
+    const externalChange = sentinel !== null && seen !== sentinel;
+    if (externalChange) {
+      const snapshot = preemption.consumeSnapshot();
+      const prev = sentinel;
+      if (snapshot !== null) {
+        toast.info(`Schedule switched to '${seen ?? 'unknown'}'`, {
+          detail: `Unsaved changes to '${prev}' were discarded`,
+          action: {
+            label: 'Undo',
+            onClick: () => {
+              void api
+                .applyCanvas(snapshot, prev)
+                .then(() => {
+                  toast.success(`Restored canvas for '${prev}'`);
+                })
+                .catch((err) => {
+                  toast.error('Undo failed', errorMessage(err));
+                });
+            },
           },
-        },
-      });
-    } else if (externalChange && seen !== null && profileStore.selectedName !== seen) {
-      // Clean canvas, external active swap (schedule fire) — pull the
-      // canvas across so it reflects what's now on the desktop.
-      const next = profileStore.profiles.find((p) => p.name === seen);
-      if (next) {
-        profileStore.select(seen);
-        applyMonitorStateToCanvas(next);
+        });
+      } else if (seen !== null && profileStore.selectedName !== seen) {
+        // Clean canvas, external active swap (schedule fire) — pull the
+        // canvas across so it reflects what's now on the desktop.
+        const next = profileStore.profiles.find((p) => p.name === seen);
+        if (next) {
+          profileStore.select(seen);
+          applyMonitorStateToCanvas(next);
+        }
       }
     }
-    userActiveSentinel = seen;
+    preemption.setSentinel(seen);
   });
 
   // Snapshot the dirty canvas state so the Undo action above has
@@ -252,9 +246,9 @@
   // when the canvas is clean.
   $effect(() => {
     if (canvasDirty && draft) {
-      lastDirtyCanvasSnapshot = $state.snapshot(draft) as Profile;
+      preemption.setSnapshot($state.snapshot(draft) as Profile);
     } else if (!canvasDirty) {
-      lastDirtyCanvasSnapshot = null;
+      preemption.setSnapshot(null);
     }
   });
 

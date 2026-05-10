@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use ts_rs::TS;
 
-use crate::schedule::{LatLong, MonitorPlacement, ProfileColour, Schedule, TopologyFingerprint};
+use crate::schedule::{MonitorPlacement, ProfileColour, Schedule, TopologyFingerprint};
 
 mod default;
 mod io;
@@ -45,9 +45,6 @@ pub struct Config {
     /// Master pause for all schedules; mirrored in the tray menu.
     #[serde(default)]
     pub schedules_paused: bool,
-    /// Lat/long for sunset/sunrise triggers; rules are disabled when absent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub location: Option<LatLong>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]

@@ -71,10 +71,8 @@ struct Schedule {
 }
 
 enum Trigger {
-    Daily   { hour: u8, minute: u8 },
-    Sunset  { offset_minutes: i32 },     // requires Config.location
-    Sunrise { offset_minutes: i32 },     // requires Config.location
-    Cron    { expr: String },             // power-user escape hatch
+    Daily { hour: u8, minute: u8 },
+    Cron  { expr: String },          // power-user escape hatch
 }
 ```
 
@@ -93,10 +91,6 @@ On daemon start, the schedule checker finds the most recent past fire-time today
 Schedule fires preempt manual choice. The escape is the master `schedules_paused` toggle (§9.5).
 
 When a schedule fire arrives while the canvas is dirty (§9.1.2), the GUI does **not** pop the confirm-discard modal — that would block the schedule's intent. Instead, the GUI snapshots the previous canvas state into a transient buffer and surfaces a toast naming the prior profile, with an "Undo" action that re-applies the snapshotted canvas via `apply_canvas` (ephemeral; the schedule-applied profile remains the persisted active one).
-
-### 9.3.4 Sunset / sunrise approximation
-
-Sun events are computed in-process using the Almanac approximation; accurate to ~±2 minutes at temperate latitudes, degrading near the polar day/night cutoff. Rules with `Sunset` / `Sunrise` triggers are disabled (with a `tracing::warn`) when `Config.location` is `None`.
 
 ## 9.4 Manual controls
 

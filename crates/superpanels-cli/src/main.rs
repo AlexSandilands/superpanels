@@ -153,11 +153,13 @@ enum ScheduleAction {
         #[arg(long)]
         json: bool,
     },
-    /// Add a daily rule. Time is `HH:MM` 24-hour.
+    /// Add a rule. Pass exactly one of `--daily HH:MM` or `--cron EXPR`.
     Add {
         profile: String,
         #[arg(long, value_name = "HH:MM")]
         daily: Option<String>,
+        #[arg(long, value_name = "EXPR")]
+        cron: Option<String>,
     },
     /// Remove a rule by 1-based index.
     Remove { index: usize },
@@ -424,9 +426,11 @@ fn schedule_action(action: &ScheduleAction, cli: &Cli) -> Result<()> {
     let cfg_path = cli.config.as_deref();
     match action {
         ScheduleAction::List { json } => schedule_cmd::list(*json, cfg_path),
-        ScheduleAction::Add { profile, daily } => {
-            schedule_cmd::add(profile, daily.as_deref(), cfg_path)
-        }
+        ScheduleAction::Add {
+            profile,
+            daily,
+            cron,
+        } => schedule_cmd::add(profile, daily.as_deref(), cron.as_deref(), cfg_path),
         ScheduleAction::Remove { index } => schedule_cmd::remove(*index, cfg_path),
         ScheduleAction::Enable { index } => schedule_cmd::set_enabled(*index, true, cfg_path),
         ScheduleAction::Disable { index } => schedule_cmd::set_enabled(*index, false, cfg_path),

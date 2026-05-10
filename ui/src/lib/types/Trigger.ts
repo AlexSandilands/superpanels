@@ -4,4 +4,4 @@
  * Trigger half of a [`Schedule`]. Promoted out of profile bodies so a
  * rule can reference any profile by name.
  */
-export type Trigger = { "type": "daily", hour: number, minute: number, } | { "type": "sunset", offset_minutes: number, } | { "type": "sunrise", offset_minutes: number, } | { "type": "cron", expr: string, };
+export type Trigger = { "type": "daily", hour: number, minute: number, } | { "type": "cron", expr: string, };

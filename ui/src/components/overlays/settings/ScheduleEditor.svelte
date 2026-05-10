@@ -3,7 +3,7 @@
   import type { Trigger } from '$lib/types/Trigger';
   import Select from '../../widgets/Select.svelte';
 
-  type TriggerKind = 'daily' | 'sun' | 'cron';
+  type TriggerKind = 'daily' | 'cron';
   type Props = {
     rule: Schedule;
     profileNames: string[];
@@ -17,26 +17,16 @@
 
   function kindOf(t: Trigger): TriggerKind {
     if (t.type === 'daily') return 'daily';
-    if (t.type === 'sunset' || t.type === 'sunrise') return 'sun';
     return 'cron';
   }
 
   function setKind(k: TriggerKind) {
     if (k === kindOf(rule.trigger)) return;
-    let next: Trigger;
-    if (k === 'daily') next = { type: 'daily', hour: 18, minute: 0 };
-    else if (k === 'sun') next = { type: 'sunset', offset_minutes: 0 };
-    else next = { type: 'cron', expr: '0 0 * * * *' };
+    const next: Trigger =
+      k === 'daily'
+        ? { type: 'daily', hour: 18, minute: 0 }
+        : { type: 'cron', expr: '0 0 * * * *' };
     onChange({ ...rule, trigger: next });
-  }
-
-  function setEvent(v: string) {
-    const event = v === 'sunrise' ? 'sunrise' : 'sunset';
-    const offset =
-      rule.trigger.type === 'sunset' || rule.trigger.type === 'sunrise'
-        ? rule.trigger.offset_minutes
-        : 0;
-    onChange({ ...rule, trigger: { type: event, offset_minutes: offset } });
   }
 
   function setHour(e: Event) {
@@ -50,14 +40,6 @@
     const v = parseInt((e.target as HTMLInputElement).value, 10);
     const minute = Number.isFinite(v) ? Math.max(0, Math.min(59, v)) : 0;
     onChange({ ...rule, trigger: { ...rule.trigger, minute } });
-  }
-  function setOffset(e: Event) {
-    if (rule.trigger.type !== 'sunset' && rule.trigger.type !== 'sunrise') return;
-    const v = parseInt((e.target as HTMLInputElement).value, 10);
-    onChange({
-      ...rule,
-      trigger: { ...rule.trigger, offset_minutes: Number.isFinite(v) ? v : 0 },
-    });
   }
   function setCron(e: Event) {
     if (rule.trigger.type !== 'cron') return;
@@ -75,12 +57,6 @@
 
   let kind = $derived(kindOf(rule.trigger));
   let profileOptions = $derived(profileNames.map((n) => ({ value: n, label: n })));
-  let eventValue = $derived(rule.trigger.type === 'sunrise' ? 'sunrise' : 'sunset');
-  let offsetValue = $derived(
-    rule.trigger.type === 'sunset' || rule.trigger.type === 'sunrise'
-      ? rule.trigger.offset_minutes
-      : 0,
-  );
 </script>
 
 <div class="editor panel">
@@ -89,7 +65,7 @@
   <div class="grid">
     <span class="lbl">Trigger</span>
     <div class="seg" role="tablist">
-      {#each [['daily', 'Daily'], ['sun', 'Sunset/Sunrise'], ['cron', 'Cron']] as [k, l] (k)}
+      {#each [['daily', 'Daily'], ['cron', 'Cron']] as [k, l] (k)}
         <button
           type="button"
           class="seg-btn"
@@ -125,27 +101,6 @@
           value={rule.trigger.minute}
           oninput={setMinute}
         />
-      </div>
-    {:else if rule.trigger.type === 'sunset' || rule.trigger.type === 'sunrise'}
-      <span class="lbl">Event</span>
-      <div class="event">
-        <Select
-          value={eventValue}
-          options={[
-            { value: 'sunset', label: 'Sunset' },
-            { value: 'sunrise', label: 'Sunrise' },
-          ]}
-          onChange={setEvent}
-          minWidth={120}
-        />
-        <input
-          type="number"
-          class="field mono"
-          style:width="80px"
-          value={offsetValue}
-          oninput={setOffset}
-        />
-        <span class="hint">min offset</span>
       </div>
     {:else}
       <span class="lbl">Expression</span>
@@ -240,8 +195,7 @@
     background: var(--accent);
     color: oklch(0.16 0.01 250);
   }
-  .time,
-  .event {
+  .time {
     display: inline-flex;
     align-items: center;
     gap: 6px;

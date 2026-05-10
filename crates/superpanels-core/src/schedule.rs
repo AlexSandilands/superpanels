@@ -2,13 +2,14 @@
 //! (`docs/spec/09-profiles-schedules.md`).
 //!
 //! Schedules are independent of profiles: each rule names a profile by string
-//! and fires on a clock trigger. `LatLong` is needed for sunset/sunrise
-//! triggers. `MonitorPlacement`, `TopologyFingerprint`, and `ProfileColour`
-//! also live here because they're referenced from both `Profile` and the
-//! validity machinery.
+//! and fires on a clock trigger. `MonitorPlacement`, `TopologyFingerprint`,
+//! and `ProfileColour` also live here because they're referenced from both
+//! `Profile` and the validity machinery.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use std::str::FromStr;
 
+use chrono::{Local, NaiveDate, TimeZone, Timelike, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -127,15 +128,6 @@ fn hex(bytes: &[u8]) -> String {
     out
 }
 
-/// Decimal degrees lat/long for sunset/sunrise scheduling
-/// (`docs/spec/09-profiles-schedules.md` §9.3).
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../ui/src/lib/types/")]
-pub struct LatLong {
-    pub lat: f64,
-    pub lon: f64,
-}
-
 /// Trigger half of a [`Schedule`]. Promoted out of profile bodies so a
 /// rule can reference any profile by name.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -145,13 +137,6 @@ pub enum Trigger {
     Daily {
         hour: u8,
         minute: u8,
-    },
-    /// Sunset / sunrise with an offset in minutes (negative = before, positive = after).
-    Sunset {
-        offset_minutes: i32,
-    },
-    Sunrise {
-        offset_minutes: i32,
     },
     /// Cron expression validated at the IPC boundary against the `cron` crate.
     Cron {
@@ -187,12 +172,10 @@ pub enum ScheduleError {
     SameMinuteCollision { a: String, b: String, when: String },
     #[error("schedule references unknown profile `{name}`")]
     UnknownProfile { name: String },
-    #[error("sunset/sunrise rule requires `location` in config")]
-    LocationMissing,
 }
 
 /// Validate one rule's trigger shape (range, cron parseability). Conflict
-/// detection across rules lives separately in `detect_same_minute_collision`.
+/// detection across rules lives separately in [`detect_same_minute_collision`].
 pub fn validate_trigger(t: &Trigger) -> Result<(), ScheduleError> {
     match t {
         Trigger::Daily { hour, minute } => {
@@ -205,9 +188,7 @@ pub fn validate_trigger(t: &Trigger) -> Result<(), ScheduleError> {
                 Ok(())
             }
         }
-        Trigger::Sunset { .. } | Trigger::Sunrise { .. } => Ok(()),
         Trigger::Cron { expr } => {
-            use std::str::FromStr as _;
             cron::Schedule::from_str(expr)
                 .map(|_| ())
                 .map_err(|e| ScheduleError::InvalidCron {
@@ -218,51 +199,50 @@ pub fn validate_trigger(t: &Trigger) -> Result<(), ScheduleError> {
     }
 }
 
-/// Hand-rolled sunrise/sunset approximation per Almanac §"Sunrise equation"
-/// — accurate to ~±2 minutes at temperate latitudes, degrading at high
-/// latitudes near the polar day/night cutoff. `kind` selects sunrise vs
-/// sunset; `date_utc_days` is days since 1970-01-01 (`chrono::NaiveDate`).
-/// Returns minutes after UTC midnight on that date, or `None` if the sun
-/// doesn't rise/set on that date at that latitude.
+/// `Some((idx_a, idx_b))` for the first pair of enabled rules that fire at
+/// the same wall-clock minute on a representative day. Today's date is used
+/// as the probe; cron rules that don't fire today fall through.
 #[must_use]
-#[allow(clippy::cast_precision_loss)] // reason: jd minute is ±2 min already
-pub fn sun_event_utc_minutes(
-    location: LatLong,
-    date_utc_days: i64,
-    is_sunrise: bool,
-) -> Option<i32> {
-    // Reference: en.wikipedia.org/wiki/Sunrise_equation, Almanac approximation.
-    // Inputs are radians for trig math; we work in degrees externally.
-    let n_days = date_utc_days as f64 - (date_utc_days as f64 / 36_525.0).floor() + 2_440_588.0
-        - 2_451_545.0
-        + 0.0008;
-    let j_star = n_days - location.lon / 360.0;
-    let mean_anomaly_deg = (357.5291 + 0.985_600_28 * j_star) % 360.0;
-    let m = mean_anomaly_deg.to_radians();
-    let centre = 1.9148 * m.sin() + 0.02 * (2.0 * m).sin() + 0.000_3 * (3.0 * m).sin();
-    let lambda_deg = (mean_anomaly_deg + centre + 180.0 + 102.9372) % 360.0;
-    let lambda = lambda_deg.to_radians();
-    let j_transit = 2_451_545.0 + j_star + 0.0053 * m.sin() - 0.0069 * (2.0 * lambda).sin();
-    let sin_decl = lambda.sin() * 23.44_f64.to_radians().sin();
-    let cos_decl = (1.0 - sin_decl * sin_decl).sqrt();
-    let lat = location.lat.to_radians();
-    let cos_h = ((-0.83_f64.to_radians()).sin() - lat.sin() * sin_decl) / (lat.cos() * cos_decl);
-    if !cos_h.is_finite() || !(-1.0..=1.0).contains(&cos_h) {
-        return None;
+pub fn detect_same_minute_collision(rules: &[Schedule]) -> Option<(usize, usize)> {
+    let probe = Local::now().date_naive();
+    let mut seen: HashMap<(u8, u8), usize> = HashMap::new();
+    for (i, rule) in rules.iter().enumerate() {
+        if !rule.enabled {
+            continue;
+        }
+        let Some(hm) = representative_minute(rule, probe) else {
+            continue;
+        };
+        if let Some(&j) = seen.get(&hm) {
+            return Some((j, i));
+        }
+        seen.insert(hm, i);
     }
-    let h_deg = cos_h.acos().to_degrees();
-    let event_jd = if is_sunrise {
-        j_transit - h_deg / 360.0
-    } else {
-        j_transit + h_deg / 360.0
-    };
-    let date_jd_midnight = 2_440_587.5 + date_utc_days as f64;
-    let minutes = ((event_jd - date_jd_midnight) * 24.0 * 60.0).round();
-    if !minutes.is_finite() || !(-1_440.0..=2_880.0).contains(&minutes) {
-        return None;
+    None
+}
+
+/// First wall-clock (h, m) the rule would fire on the probe day. `Daily`
+/// returns its configured time directly; `Cron` resolves the next fire after
+/// midnight local. Public for use from the daemon's per-tick check and the
+/// CLI's pre-save validation.
+#[must_use]
+pub fn representative_minute(rule: &Schedule, today: NaiveDate) -> Option<(u8, u8)> {
+    match &rule.trigger {
+        Trigger::Daily { hour, minute } => Some((*hour, *minute)),
+        Trigger::Cron { expr } => {
+            let sched = cron::Schedule::from_str(expr).ok()?;
+            let day_start_local = Local
+                .from_local_datetime(&today.and_hms_opt(0, 0, 0)?)
+                .single()?;
+            let next = sched.after(&day_start_local.with_timezone(&Utc)).next()?;
+            let local = next.with_timezone(&Local);
+            #[allow(clippy::cast_possible_truncation)] // reason: bounded 0..=23 / 0..=59
+            let h = local.hour() as u8;
+            #[allow(clippy::cast_possible_truncation)] // reason: bounded 0..=59
+            let m = local.minute() as u8;
+            Some((h, m))
+        }
     }
-    #[allow(clippy::cast_possible_truncation)] // reason: bounded above
-    Some(minutes as i32)
 }
 
 #[cfg(test)]

@@ -8,10 +8,12 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::{DateTime, Local, NaiveDate, TimeZone, Timelike, Utc};
+#[cfg(test)]
+use chrono::NaiveDate;
+use chrono::{DateTime, Local, TimeZone, Timelike, Utc};
 use superpanels_core::config::Config;
 use superpanels_core::ipc::{IpcRequest, PROTOCOL_VERSION};
-use superpanels_core::schedule::{LatLong, Schedule, Trigger, sun_event_utc_minutes};
+use superpanels_core::schedule::{Schedule, Trigger};
 use tokio::sync::{Mutex, watch};
 use tracing::{debug, warn};
 
@@ -49,7 +51,7 @@ impl ScheduleChecker {
             }
             let key = rule_key(rule, i);
             let last = self.last_fire.get(&key).copied();
-            if rule_should_fire(rule, cfg.location, now, last) {
+            if rule_should_fire(rule, now, last) {
                 debug!(profile = %rule.profile, "schedule firing");
                 to_apply.push(rule.profile.clone());
                 self.last_fire.insert(key, now.timestamp());
@@ -75,7 +77,7 @@ impl ScheduleChecker {
             if !rule.enabled {
                 continue;
             }
-            let Some(fire_at) = last_fire_today(rule, cfg.location, now) else {
+            let Some(fire_at) = last_fire_today(rule, now) else {
                 continue;
             };
             if fire_at > now {
@@ -138,39 +140,14 @@ fn sleep_to_next_minute<Tz: TimeZone>(now: &DateTime<Tz>) -> Duration {
 
 // --- predicates ---
 
-fn rule_should_fire(
-    rule: &Schedule,
-    location: Option<LatLong>,
-    now: DateTime<Local>,
-    last_secs: Option<i64>,
-) -> bool {
+fn rule_should_fire(rule: &Schedule, now: DateTime<Local>, last_secs: Option<i64>) -> bool {
     match &rule.trigger {
         Trigger::Daily { hour, minute } => daily_should_fire(*hour, *minute, now, last_secs),
-        Trigger::Sunset { offset_minutes } => sun_should_fire(
-            *offset_minutes,
-            location,
-            false,
-            now,
-            last_secs,
-            &rule.profile,
-        ),
-        Trigger::Sunrise { offset_minutes } => sun_should_fire(
-            *offset_minutes,
-            location,
-            true,
-            now,
-            last_secs,
-            &rule.profile,
-        ),
         Trigger::Cron { expr } => cron_should_fire(expr, now.with_timezone(&Utc), last_secs),
     }
 }
 
-fn last_fire_today(
-    rule: &Schedule,
-    location: Option<LatLong>,
-    now: DateTime<Local>,
-) -> Option<DateTime<Local>> {
+fn last_fire_today(rule: &Schedule, now: DateTime<Local>) -> Option<DateTime<Local>> {
     if !rule.enabled {
         return None;
     }
@@ -180,12 +157,6 @@ fn last_fire_today(
             let naive = today.and_hms_opt(u32::from(*hour), u32::from(*minute), 0)?;
             Local.from_local_datetime(&naive).single()
         }
-        Trigger::Sunset { offset_minutes } | Trigger::Sunrise { offset_minutes } => sun_fire_local(
-            *offset_minutes,
-            location,
-            matches!(rule.trigger, Trigger::Sunrise { .. }),
-            today,
-        ),
         Trigger::Cron { expr } => {
             let sched = cron::Schedule::from_str(expr).ok()?;
             let day_start_local = Local
@@ -212,49 +183,6 @@ fn daily_should_fire(hour: u8, minute: u8, now: DateTime<Local>, last_secs: Opti
     }
 }
 
-fn sun_should_fire(
-    offset_min: i32,
-    location: Option<LatLong>,
-    is_sunrise: bool,
-    now: DateTime<Local>,
-    last_secs: Option<i64>,
-    profile: &str,
-) -> bool {
-    let Some(loc) = location else {
-        warn!(
-            profile,
-            "sun-event schedule skipped: no `location` configured at top level"
-        );
-        return false;
-    };
-    let today = now.date_naive();
-    let Some(fire_local) = sun_fire_local(offset_min, Some(loc), is_sunrise, today) else {
-        return false;
-    };
-    if fire_local.hour() != now.hour() || fire_local.minute() != now.minute() {
-        return false;
-    }
-    match last_secs {
-        None => true,
-        Some(t) => now.timestamp() - t > 60,
-    }
-}
-
-fn sun_fire_local(
-    offset_min: i32,
-    location: Option<LatLong>,
-    is_sunrise: bool,
-    today: NaiveDate,
-) -> Option<DateTime<Local>> {
-    let loc = location?;
-    let epoch = NaiveDate::from_ymd_opt(1970, 1, 1)?;
-    let date_days = today.signed_duration_since(epoch).num_days();
-    let event_min = sun_event_utc_minutes(loc, date_days, is_sunrise)?;
-    let fire_min = i64::from(event_min) + i64::from(offset_min);
-    let fire_naive_utc = today.and_hms_opt(0, 0, 0)? + chrono::TimeDelta::minutes(fire_min);
-    Some(Utc.from_utc_datetime(&fire_naive_utc).with_timezone(&Local))
-}
-
 fn cron_should_fire(expr: &str, now: DateTime<Utc>, last_secs: Option<i64>) -> bool {
     let Ok(sched) = cron::Schedule::from_str(expr) else {
         warn!(%expr, "invalid cron expression; schedule will not fire");
@@ -267,64 +195,10 @@ fn cron_should_fire(expr: &str, now: DateTime<Utc>, last_secs: Option<i64>) -> b
     sched.after(&since).next().is_some_and(|t| t <= now)
 }
 
-// --- conflict detection ---
-
-/// `Some((idx_a, idx_b))` for the first pair of enabled schedules that fire at
-/// the same wall-clock minute on a representative day. Used by the settings
-/// UI to block save when two rules collide.
-#[must_use]
+// Conflict detection lives in `superpanels_core::schedule`. Re-exported as a
+// crate-private alias so handlers can keep their existing call site shape.
 pub(crate) fn detect_same_minute_collision(cfg: &Config) -> Option<(usize, usize)> {
-    let probe = Local::now().date_naive();
-    let mut seen: HashMap<(u8, u8), usize> = HashMap::new();
-    for (i, rule) in cfg.schedules.iter().enumerate() {
-        if !rule.enabled {
-            continue;
-        }
-        let Some(hm) = representative_minute(rule, cfg.location, probe) else {
-            continue;
-        };
-        if let Some(&j) = seen.get(&hm) {
-            return Some((j, i));
-        }
-        seen.insert(hm, i);
-    }
-    None
-}
-
-fn representative_minute(
-    rule: &Schedule,
-    location: Option<LatLong>,
-    today: NaiveDate,
-) -> Option<(u8, u8)> {
-    match &rule.trigger {
-        Trigger::Daily { hour, minute } => Some((*hour, *minute)),
-        Trigger::Sunset { offset_minutes } | Trigger::Sunrise { offset_minutes } => {
-            let fire = sun_fire_local(
-                *offset_minutes,
-                location,
-                matches!(rule.trigger, Trigger::Sunrise { .. }),
-                today,
-            )?;
-            #[allow(clippy::cast_possible_truncation)]
-            let h = fire.hour() as u8;
-            #[allow(clippy::cast_possible_truncation)]
-            let m = fire.minute() as u8;
-            Some((h, m))
-        }
-        Trigger::Cron { expr } => {
-            let sched = cron::Schedule::from_str(expr).ok()?;
-            let day_start_local = Local
-                .from_local_datetime(&today.and_hms_opt(0, 0, 0)?)
-                .single()?;
-            let next = sched.after(&day_start_local.with_timezone(&Utc)).next()?;
-            let local = next.with_timezone(&Local);
-            #[allow(clippy::cast_possible_truncation)]
-            let h = local.hour() as u8;
-            #[allow(clippy::cast_possible_truncation)]
-            let m = local.minute() as u8;
-            Some((h, m))
-        }
-    }
+    superpanels_core::schedule::detect_same_minute_collision(&cfg.schedules)
 }
 
 #[cfg(test)]

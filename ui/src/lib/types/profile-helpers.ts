@@ -25,7 +25,6 @@ export type { Schedule } from './Schedule';
 export type { Trigger } from './Trigger';
 export type { ProfileValidity } from './ProfileValidity';
 export type { DisableReason } from './DisableReason';
-export type { LatLong } from './LatLong';
 export type { FitMode } from './FitMode';
 
 export function isSpanBody(body: ProfileBody): body is { type: 'span' } & SpanProfile {

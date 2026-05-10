@@ -225,7 +225,6 @@ pub(super) async fn cmd_list_schedules(state: Arc<Mutex<DaemonState>>) -> IpcRes
     IpcResponse::success(json!({
         "schedules": &guard.config.schedules,
         "paused": guard.config.schedules_paused,
-        "location": &guard.config.location,
     }))
 }
 
@@ -293,11 +292,18 @@ pub(super) async fn cmd_save_profile(
         Ok(p) => p,
         Err(e) => return IpcResponse::failure(format!("profile is malformed: {e}")),
     };
+    let recompute_topology = req
+        .params
+        .get("recompute_topology")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
 
     let mut guard = state.lock().await;
-    // Recompute topology fingerprint from the live monitor set when the
-    // client sends an empty placeholder; lets the UI side stay simple.
-    if profile.topology.0.is_empty() || profile.topology.0.contains('|') {
+    // Empty topology is always a placeholder (the UI's "new profile" path
+    // ships `""`); otherwise the caller must explicitly opt in via
+    // `recompute_topology` so we don't silently rewrite a fingerprint the
+    // client meant to preserve.
+    if recompute_topology || profile.topology.0.is_empty() {
         profile.topology = superpanels_core::TopologyFingerprint::from_monitors(&guard.monitors);
     }
     let path = match guard.config_save_path() {

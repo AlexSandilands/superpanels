@@ -145,8 +145,7 @@ A confirm-discard modal (`ConfirmDiscardModal`) interposes whenever the user ini
 Populates the previously-empty Schedules tab.
 
 - Rule list. Each row: enabled toggle, trigger summary, target profile, "next fires at HH:MM" hint, edit/delete.
-- Add-rule form: trigger type (daily / sunset±offset / sunrise±offset / cron), parameters, target profile dropdown.
-- Lat/long input. Required when any sun-event rule exists.
+- Add-rule form: trigger type (daily / cron), parameters, target profile dropdown.
 - **Conflict prevention:** save is blocked when a new/edited rule would fire at the same minute as another enabled rule.
 - Master "pause all schedules" toggle (mirrored in tray).
 

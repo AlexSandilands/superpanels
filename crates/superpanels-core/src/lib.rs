@@ -34,7 +34,7 @@ pub use library::{
     load_index, migrate_json_to_sqlite, persist_index, scan_folder,
 };
 pub use schedule::{
-    LatLong, MonitorPlacement, ProfileColour, Schedule, ScheduleError, TopologyFingerprint, Trigger,
+    MonitorPlacement, ProfileColour, Schedule, ScheduleError, TopologyFingerprint, Trigger,
 };
 pub use slideshow::{
     SlideshowConfig, SlideshowError, SlideshowPicker, SlideshowSort, SlideshowStart, SlideshowState,

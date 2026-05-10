@@ -64,7 +64,6 @@
 
   function triggerKey(t: Trigger): string {
     if (t.type === 'daily') return `${t.hour}:${t.minute}`;
-    if (t.type === 'sunset' || t.type === 'sunrise') return `${t.type}:${t.offset_minutes}`;
     return `cron:${t.expr.trim()}`;
   }
 

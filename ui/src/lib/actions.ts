@@ -7,10 +7,10 @@ import { api, errorMessage, type Profile } from '$lib/api';
 import { buildPreviewMonitors, stableId } from '$lib/canvas/preview-layout';
 import { canvasView, type MonitorOverride } from '$lib/stores/canvas-view.svelte';
 import { monitorStore } from '$lib/stores/monitors.svelte';
+import { preemption } from '$lib/stores/preemption.svelte';
 import { profileStore } from '$lib/stores/profile.svelte';
 import { runtime } from '$lib/stores/runtime.svelte';
 import { toast } from '$lib/stores/toast.svelte';
-import { TopologyFingerprintFor } from '$lib/topology';
 import type { MonitorPlacement } from '$lib/types/MonitorPlacement';
 import type { Rotation } from '$lib/types/Rotation';
 import {
@@ -47,7 +47,8 @@ function rotationToDeg(r: Rotation): 0 | 90 | 180 | 270 {
 
 // Fold the current canvas (detected monitors + canvasView overrides) into the
 // active draft so a fresh untitled profile actually carries placements when it
-// gets persisted on Apply.
+// gets persisted on Apply. Topology is left empty here — the daemon recomputes
+// the canonical SHA-256 fingerprint when `recompute_topology` is set on save.
 function syncDraftMonitorStateFromCanvas(): void {
   if (!profileStore.draft) return;
   const previews = buildPreviewMonitors(monitorStore.monitors, canvasView.overrides);
@@ -56,10 +57,9 @@ function syncDraftMonitorStateFromCanvas(): void {
   for (const m of previews) {
     next[m.id] = { x_mm: m.xMm, y_mm: m.yMm, rotation: rotationFromDeg(m.rotation) };
   }
-  const topology = TopologyFingerprintFor(monitorStore.monitors);
   profileStore.patchDraft((d) => {
     d.monitor_state = next;
-    d.topology = topology;
+    d.topology = '';
   });
 }
 
@@ -99,6 +99,7 @@ export async function applyDraftProfile(): Promise<void> {
   syncDraftMonitorStateFromCanvas();
   const refreshed = profileStore.draft;
   if (!refreshed) return;
+  preemption.claimSwitchTo(profileStore.activeName);
   try {
     const t0 = performance.now();
     const r = await api.applyCanvas(refreshed, profileStore.activeName);
@@ -120,8 +121,9 @@ export async function saveActiveProfile(): Promise<boolean> {
   const refreshed = profileStore.draft;
   if (!refreshed) return false;
   const payload: Profile = { ...refreshed, name: active };
+  preemption.claimSwitchTo(active);
   try {
-    await api.saveProfile(payload);
+    await api.saveProfile(payload, { recomputeTopology: true });
     void profileStore.refresh();
     profileStore.clearDirty();
     toast.success(`Saved '${active}'`);
@@ -147,6 +149,7 @@ export function revertCanvasToActive(): void {
 export async function switchAndApply(p: Profile): Promise<void> {
   profileStore.select(p.name);
   applyMonitorStateToCanvas(p);
+  preemption.claimSwitchTo(p.name);
   try {
     const t0 = performance.now();
     const r = await api.applyProfile(p.name);

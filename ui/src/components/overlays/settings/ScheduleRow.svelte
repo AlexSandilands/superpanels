@@ -15,14 +15,6 @@
   function summarise(t: Trigger): string {
     if (t.type === 'daily')
       return `Daily at ${String(t.hour).padStart(2, '0')}:${String(t.minute).padStart(2, '0')}`;
-    if (t.type === 'sunset') {
-      const sign = t.offset_minutes >= 0 ? '+' : '−';
-      return `Sunset ${sign}${Math.abs(t.offset_minutes)} min`;
-    }
-    if (t.type === 'sunrise') {
-      const sign = t.offset_minutes >= 0 ? '+' : '−';
-      return `Sunrise ${sign}${Math.abs(t.offset_minutes)} min`;
-    }
     return `cron: ${t.expr}`;
   }
 

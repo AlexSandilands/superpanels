@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use superpanels_core::config::Config;
-use superpanels_core::schedule::{Schedule, Trigger, validate_trigger};
+use superpanels_core::schedule::{
+    Schedule, Trigger, detect_same_minute_collision, validate_trigger,
+};
 
 fn resolve_path(path: Option<&Path>) -> Result<PathBuf> {
     Ok(match path {
@@ -45,17 +47,27 @@ pub(crate) fn list(json: bool, config_path: Option<&Path>) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn add(profile: &str, daily: Option<&str>, config_path: Option<&Path>) -> Result<()> {
-    let trigger = if let Some(s) = daily {
-        let (h, m) = s
-            .split_once(':')
-            .ok_or_else(|| anyhow::anyhow!("expected HH:MM"))?;
-        Trigger::Daily {
-            hour: h.trim().parse().context("parsing hour")?,
-            minute: m.trim().parse().context("parsing minute")?,
+pub(crate) fn add(
+    profile: &str,
+    daily: Option<&str>,
+    cron: Option<&str>,
+    config_path: Option<&Path>,
+) -> Result<()> {
+    let trigger = match (daily, cron) {
+        (Some(_), Some(_)) => bail!("pass either --daily or --cron, not both"),
+        (Some(s), None) => {
+            let (h, m) = s
+                .split_once(':')
+                .ok_or_else(|| anyhow::anyhow!("expected HH:MM"))?;
+            Trigger::Daily {
+                hour: h.trim().parse().context("parsing hour")?,
+                minute: m.trim().parse().context("parsing minute")?,
+            }
         }
-    } else {
-        bail!("at minimum, pass --daily HH:MM");
+        (None, Some(expr)) => Trigger::Cron {
+            expr: expr.to_owned(),
+        },
+        (None, None) => bail!("pass --daily HH:MM or --cron EXPR"),
     };
     validate_trigger(&trigger)?;
     let cfg_path = resolve_path(config_path)?;
@@ -69,6 +81,13 @@ pub(crate) fn add(profile: &str, daily: Option<&str>, config_path: Option<&Path>
         trigger,
         enabled: true,
     });
+    if let Some((a, b)) = detect_same_minute_collision(&cfg.schedules) {
+        bail!(
+            "rule {} would collide with rule {} (same wall-clock minute)",
+            b + 1,
+            a + 1
+        );
+    }
     cfg.save_to(&cfg_path)?;
     println!("Added rule. {} total.", cfg.schedules.len());
     Ok(())
@@ -113,8 +132,6 @@ pub(crate) fn set_paused(paused: bool, config_path: Option<&Path>) -> Result<()>
 fn describe(t: &Trigger) -> String {
     match t {
         Trigger::Daily { hour, minute } => format!("daily {hour:02}:{minute:02}"),
-        Trigger::Sunset { offset_minutes } => format!("sunset {offset_minutes:+}m"),
-        Trigger::Sunrise { offset_minutes } => format!("sunrise {offset_minutes:+}m"),
         Trigger::Cron { expr } => format!("cron `{expr}`"),
     }
 }
