@@ -189,7 +189,6 @@ fn save_profile(args: &SetArgs, name: &str, config_path: Option<&Path>) -> Resul
         }),
         monitor_state: placements,
         topology,
-        colour: superpanels_core::ProfileColour::default(),
         description: None,
         created_at: now,
         updated_at: now,

@@ -766,9 +766,9 @@ mod tests {
     fn sample_profile() -> Profile {
         use std::collections::HashMap;
         use std::path::PathBuf;
+        use superpanels_core::TopologyFingerprint;
         use superpanels_core::config::{ProfileBody, SpanProfile, SpanSource};
         use superpanels_core::layout::ImageRectMm;
-        use superpanels_core::{ProfileColour, TopologyFingerprint};
         let now = superpanels_core::config::now_timestamp();
         Profile {
             name: "sample".to_owned(),
@@ -780,7 +780,6 @@ mod tests {
             }),
             monitor_state: HashMap::new(),
             topology: TopologyFingerprint(String::new()),
-            colour: ProfileColour::default(),
             description: None,
             created_at: now,
             updated_at: now,

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api, type Profile } from '$lib/api';
-  import { profileColourCss } from '$lib/profile-colours';
+
+  const PROFILE_BG = 'oklch(0.22 0 0)';
 
   type Props = {
     profiles: Profile[];
@@ -122,8 +123,8 @@
         <span
           class="swatch"
           style:background={thumb
-            ? `center/cover no-repeat url("${thumb}"), ${profileColourCss(p.colour)}`
-            : profileColourCss(p.colour)}
+            ? `center/cover no-repeat url("${thumb}"), ${PROFILE_BG}`
+            : PROFILE_BG}
         ></span>
       </button>
     {/each}

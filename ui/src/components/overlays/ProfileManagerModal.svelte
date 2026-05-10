@@ -2,29 +2,24 @@
   import { onMount } from 'svelte';
   import { api, errorMessage } from '$lib/api';
   import type { Profile, Monitor } from '$lib/api';
-  import type { ProfileColour } from '$lib/types/ProfileColour';
   import type { ProfileValidity } from '$lib/types/ProfileValidity';
   import type { DisableReason } from '$lib/types/DisableReason';
   import { switchAndApply } from '$lib/actions';
   import { toast } from '$lib/stores/toast.svelte';
   import { profileStore } from '$lib/stores/profile.svelte';
-  import { profileColourCss } from '$lib/profile-colours';
   import { topologyRects } from '$lib/profile-topology';
   import { loadSourceImage, type SourceImage } from '$lib/library/source-image';
   import Backdrop from '../widgets/Backdrop.svelte';
   import ConfirmDialog from '../widgets/ConfirmDialog.svelte';
   import SaveProfileDialog from './SaveProfileDialog.svelte';
   import MonitorMini from './profiles/MonitorMini.svelte';
-  import ColorPopover from './profiles/ColorPopover.svelte';
   import ProfilePreview from './profiles/ProfilePreview.svelte';
+
+  const PROFILE_BG = 'oklch(0.22 0 0)';
 
   type Props = {
     onClose: () => void;
-    onCreateFromCanvas?: (
-      name: string,
-      colour: ProfileColour,
-      description: string | null,
-    ) => Promise<void> | void;
+    onCreateFromCanvas?: (name: string, description: string | null) => Promise<void> | void;
   };
   let { onClose, onCreateFromCanvas }: Props = $props();
 
@@ -38,7 +33,6 @@
   let showSave = $state(false);
   let confirmDel = $state<Profile | null>(null);
   let editingName = $state(false);
-  let colorPopover = $state(false);
   let previewWidth = $state(560);
 
   function profileImagePath(p: Profile): string | null {
@@ -212,15 +206,6 @@
     }
   }
 
-  async function updateColour(p: Profile, colour: ProfileColour) {
-    try {
-      await api.saveProfile({ ...p, colour, updated_at: new Date().toISOString() });
-      void refresh();
-    } catch (err) {
-      toast.error('Colour update failed', errorMessage(err));
-    }
-  }
-
   async function commitDescription(p: Profile, value: string) {
     const next = value.trim() || null;
     if (next === (p.description ?? null)) return;
@@ -255,10 +240,10 @@
     showSave = true;
   }
 
-  async function handleCreate(name: string, colour: ProfileColour, description: string | null) {
+  async function handleCreate(name: string, description: string | null) {
     showSave = false;
     if (!onCreateFromCanvas) return;
-    await onCreateFromCanvas(name, colour, description);
+    await onCreateFromCanvas(name, description);
     selectedName = name;
     void refresh();
   }
@@ -313,8 +298,8 @@
                       class="thumb"
                       class:has-image={!!thumb}
                       style:background={thumb
-                        ? `center/cover no-repeat url("${thumb.url}"), ${profileColourCss(p.colour)}`
-                        : profileColourCss(p.colour)}
+                        ? `center/cover no-repeat url("${thumb.url}"), ${PROFILE_BG}`
+                        : PROFILE_BG}
                     >
                       <div class="thumb-mini">
                         <MonitorMini
@@ -327,8 +312,6 @@
                     </div>
                     <div class="row-main">
                       <div class="row-name">
-                        <span class="dot-swatch" style:background={profileColourCss(p.colour)}
-                        ></span>
                         <span class="name" title={p.name}>{p.name}</span>
                         {#if p.name === activeName}
                           <span class="dot live" title="active"></span>
@@ -367,7 +350,7 @@
                   : null}
                 width={previewWidth}
                 height={240}
-                background={profileColourCss(detail.colour)}
+                background={PROFILE_BG}
                 disabled={detailDisabled}
               />
               <div class="preview-source mono">{sourceLabel(detail)}</div>
@@ -379,25 +362,6 @@
             </div>
 
             <div class="name-row">
-              <div class="swatch-wrap">
-                <button
-                  class="swatch-button"
-                  title="Change colour"
-                  style:background={profileColourCss(detail.colour)}
-                  onclick={() => (colorPopover = !colorPopover)}
-                  aria-label="Change colour"
-                ></button>
-                {#if colorPopover}
-                  <ColorPopover
-                    value={detail.colour}
-                    onPick={(c) => {
-                      colorPopover = false;
-                      void updateColour(detail, c);
-                    }}
-                    onClose={() => (colorPopover = false)}
-                  />
-                {/if}
-              </div>
               {#if editingName}
                 <input
                   class="field ui name-input"
@@ -487,7 +451,7 @@
     existingNames={profiles.map((p) => p.name)}
     defaultName={`untitled-${profiles.length + 1}`}
     onCancel={() => (showSave = false)}
-    onConfirm={(n, c, d) => void handleCreate(n, c, d)}
+    onConfirm={(n, d) => void handleCreate(n, d)}
   />
 {/if}
 
@@ -621,13 +585,6 @@
     gap: 6px;
     margin-bottom: 2px;
   }
-  .dot-swatch {
-    width: 10px;
-    height: 10px;
-    border-radius: 2px;
-    border: 1px solid var(--line);
-    flex-shrink: 0;
-  }
   .name {
     font-size: 13px;
     font-weight: 500;
@@ -718,17 +675,6 @@
     align-items: center;
     gap: 12px;
     margin-bottom: 12px;
-  }
-  .swatch-wrap {
-    position: relative;
-  }
-  .swatch-button {
-    width: 36px;
-    height: 24px;
-    border-radius: 4px;
-    border: 1px solid var(--line);
-    cursor: default;
-    padding: 0;
   }
   .name-input {
     flex: 1;

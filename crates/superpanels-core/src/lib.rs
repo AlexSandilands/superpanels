@@ -33,9 +33,7 @@ pub use library::{
     LibraryFilter, MAX_LIBRARY_PAGE, MigrationError, SCHEMA_VERSION, apply_library_filter,
     load_index, migrate_json_to_sqlite, persist_index, scan_folder,
 };
-pub use schedule::{
-    MonitorPlacement, ProfileColour, Schedule, ScheduleError, TopologyFingerprint, Trigger,
-};
+pub use schedule::{MonitorPlacement, Schedule, ScheduleError, TopologyFingerprint, Trigger};
 pub use slideshow::{
     SlideshowConfig, SlideshowError, SlideshowPicker, SlideshowSort, SlideshowStart, SlideshowState,
 };

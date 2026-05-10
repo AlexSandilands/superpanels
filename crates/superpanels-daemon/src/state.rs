@@ -358,6 +358,7 @@ mod tests {
     use std::time::Duration;
 
     use std::collections::HashMap;
+    use superpanels_core::TopologyFingerprint;
     use superpanels_core::config::{
         BackendKind, ImageSet, Profile, ProfileBody, SlideshowConfig as SlideshowCfg,
         SlideshowSort, SlideshowStart, SpanProfile, SpanSource,
@@ -367,7 +368,6 @@ mod tests {
         SlideshowConfig as PickerCfg, SlideshowPicker, SlideshowSort as PickerSort,
         SlideshowStart as PickerStart, persist_state,
     };
-    use superpanels_core::{ProfileColour, TopologyFingerprint};
     use tempfile::tempdir;
 
     use super::*;
@@ -395,7 +395,6 @@ mod tests {
             }),
             monitor_state: HashMap::new(),
             topology: TopologyFingerprint(String::new()),
-            colour: ProfileColour::default(),
             description: None,
             created_at: now,
             updated_at: now,

@@ -63,7 +63,6 @@
   import SettingsModal from './components/overlays/SettingsModal.svelte';
   import SaveProfileDialog from './components/overlays/SaveProfileDialog.svelte';
   import TrayPopover from './components/overlays/TrayPopover.svelte';
-  import type { ProfileColour } from '$lib/types/ProfileColour';
   import { api, errorMessage } from '$lib/api';
 
   let libraryOpen = $state(false);
@@ -74,7 +73,7 @@
   let saveDialogOpen = $state(false);
   let profileManagerOpen = $state(false);
 
-  async function saveAsNew(name: string, colour: ProfileColour, description: string | null) {
+  async function saveAsNew(name: string, description: string | null) {
     saveDialogOpen = false;
     try {
       const rotationName = (deg: 0 | 90 | 180 | 270): 'none' | 'right' | 'inverted' | 'left' => {
@@ -127,7 +126,6 @@
         monitor_state,
         // Topology is recomputed by the daemon against live monitors.
         topology: '',
-        colour,
         description,
         created_at: now,
         updated_at: now,
@@ -421,7 +419,7 @@
         ? `${profileStore.activeName}-copy`
         : `untitled-${profileStore.profiles.length + 1}`}
       onCancel={() => (saveDialogOpen = false)}
-      onConfirm={(n, c, d) => void saveAsNew(n, c, d)}
+      onConfirm={(n, d) => void saveAsNew(n, d)}
     />
   {/if}
 
@@ -512,7 +510,7 @@
   {#if profileManagerOpen}
     <ProfileManagerModal
       onClose={() => (profileManagerOpen = false)}
-      onCreateFromCanvas={(n, c, d) => saveAsNew(n, c, d)}
+      onCreateFromCanvas={(n, d) => saveAsNew(n, d)}
     />
   {/if}
 
