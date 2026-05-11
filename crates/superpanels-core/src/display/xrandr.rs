@@ -259,12 +259,20 @@ fn finalize(
         .as_ref()
         .and_then(|t| hash_edid_triple(Some(&t.0), Some(&t.1), Some(&t.2)));
 
+    // `xrandr --verbose` prints the header geometry in compositor (post-
+    // rotation) space. SPEC §3 requires `Monitor.resolution` in native panel
+    // orientation; swap back when rotated so the layout module's rotation
+    // re-application produces the right framebuffer size.
+    let resolution = match raw.rotation {
+        Rotation::Left | Rotation::Right => (raw.resolution.1, raw.resolution.0),
+        Rotation::None | Rotation::Inverted => raw.resolution,
+    };
     let monitor = Monitor {
         id: MonitorId(*next_id),
         name: raw.name,
         stable_id,
         position: raw.position,
-        resolution: raw.resolution,
+        resolution,
         physical_size_mm: raw.physical_size_mm,
         scale: 1.0,
         rotation: raw.rotation,
@@ -421,6 +429,9 @@ mod tests {
             DP-1 connected primary 1080x1920+0+0 left (0x12a) (normal left inverted right) 480mm x 270mm\n";
         let monitors = parse_xrandr_verbose(input, CMD).unwrap();
         assert_eq!(monitors.len(), 1);
-        assert_eq!(monitors[0].resolution, (1080, 1920));
+        assert_eq!(monitors[0].rotation, Rotation::Left);
+        // `xrandr` prints post-rotation geometry; the parser must swap back
+        // to native panel orientation per SPEC §3.
+        assert_eq!(monitors[0].resolution, (1920, 1080));
     }
 }

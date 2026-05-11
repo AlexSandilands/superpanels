@@ -296,10 +296,19 @@ fn finalize(
     if !(raw.enabled && raw.connected) {
         return Ok(None);
     }
-    let (position, resolution) = raw.geometry.ok_or_else(|| DetectError::Parse {
+    let (position, geom_resolution) = raw.geometry.ok_or_else(|| DetectError::Parse {
         cmd: cmd_name.to_owned(),
         message: format!("line {lineno}: output '{}' missing Geometry", raw.name),
     })?;
+    let rotation = raw.rotation.unwrap_or(Rotation::None);
+    // `kscreen-doctor` reports `Geometry` in compositor (post-rotation) space.
+    // SPEC §3 requires `Monitor.resolution` in native panel orientation; the
+    // layout module re-applies the rotation. Swap back when rotated so the
+    // invariant matches wlr-randr (which already reports native mode w/h).
+    let resolution = match rotation {
+        Rotation::Left | Rotation::Right => (geom_resolution.1, geom_resolution.0),
+        Rotation::None | Rotation::Inverted => geom_resolution,
+    };
     let monitor = Monitor {
         id: MonitorId(*next_id),
         name: raw.name,
@@ -308,7 +317,7 @@ fn finalize(
         resolution,
         physical_size_mm: None,
         scale: raw.scale.unwrap_or(1.0),
-        rotation: raw.rotation.unwrap_or(Rotation::None),
+        rotation,
         refresh_hz: raw.refresh_hz,
         primary: raw.priority == Some(1),
         ppi: None,
