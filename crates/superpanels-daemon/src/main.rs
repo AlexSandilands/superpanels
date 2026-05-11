@@ -17,7 +17,7 @@ use superpanels_core::ipc::socket_path;
 use superpanels_core::slideshow::persist_state as persist_slideshow;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{Mutex, watch};
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
 mod apply;
@@ -189,14 +189,9 @@ async fn run_daemon(cli: Cli) -> Result<()> {
     let sched_timer_tx = timer_tx.clone();
     tokio::spawn(async move { schedule::run_schedule_checker(sched_state, sched_timer_tx).await });
 
-    // KDE-only OS-rotation push. Other compositors use the existing IPC
-    // `redetect` path triggered from the GUI (see `docs/spec/06-detection.md`
-    // §6.3). The watch task self-disables on any setup failure.
-    if display_watch::kde_session_present() {
-        display_watch::spawn(Arc::clone(&state), monitors_tx.clone());
-    } else {
-        debug!("non-KDE session; skipping kscreen display-watch");
-    }
+    // OS-rotation push: KDE kscreen D-Bus signal (fast path, KDE only) plus
+    // a universal polling backstop. See `docs/spec/06-detection.md` §6.3.
+    display_watch::spawn(Arc::clone(&state), monitors_tx.clone());
 
     // Apply the default profile (if set) after a short delay to allow compositor readiness.
     if let Some(profile_name) = initial_profile {

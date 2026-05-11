@@ -50,6 +50,7 @@ fn build_app() -> tauri::App {
             crate::tray::install(app, Arc::clone(&state))?;
             crate::window_state::restore(app);
             crate::tray::spawn_poller(app.handle().clone(), Arc::clone(&state));
+            crate::commands::monitors::spawn_push_relay(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| {

@@ -254,6 +254,29 @@ pub(super) async fn cmd_apply_canvas(
     IpcResponse::success(applied_json(&report))
 }
 
+/// Long-poll: block until `display_watch` broadcasts a monitor-config change
+/// (or a 55 s safety timeout, well under the client's 120 s read timeout).
+/// Returns `{ "changed": bool }`; clients re-issue immediately to resume the
+/// subscription. The channel carries no payload — the GUI calls
+/// `detect_monitors` on a `true` response to pull the fresh snapshot.
+pub(super) async fn cmd_wait_for_monitor_change(state: Arc<Mutex<DaemonState>>) -> IpcResponse {
+    let tx_opt = {
+        let guard = state.lock().await;
+        guard.monitors_tx.clone()
+    };
+    let Some(tx) = tx_opt else {
+        return IpcResponse::failure("OS-rotation push channel not initialised");
+    };
+    let mut rx = tx.subscribe();
+    let timeout = std::time::Duration::from_secs(55);
+    match tokio::time::timeout(timeout, rx.recv()).await {
+        // Real tick OR a `Lagged`/`Closed` recv error — both mean we should
+        // re-check, so report `changed: true` and let the client refresh.
+        Ok(_) => IpcResponse::success(json!({ "changed": true })),
+        Err(_elapsed) => IpcResponse::success(json!({ "changed": false })),
+    }
+}
+
 pub(super) async fn cmd_redetect(state: Arc<Mutex<DaemonState>>) -> IpcResponse {
     let mut guard = state.lock().await;
     match superpanels_core::detect(None) {

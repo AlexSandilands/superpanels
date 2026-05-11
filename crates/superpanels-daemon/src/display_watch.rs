@@ -1,20 +1,25 @@
-//! KDE-only OS-rotation watch via the kscreen kded D-Bus signal.
+//! OS-rotation watch with two parallel paths feeding a single broadcast:
 //!
-//! KDE Plasma's kscreen kded module emits signals on the `org.kde.KScreen`
-//! interface whenever the display configuration changes (rotation, layout,
-//! resolution). We subscribe with a session-bus match rule, debounce bursts
-//! into a single re-detect (~250 ms), update `DaemonState.monitors`, and
-//! broadcast a `()` tick on `monitors_tx` so the GUI can refresh.
+//! 1. **KDE Plasma kscreen kded D-Bus signal** (best-effort, KDE only). The
+//!    kscreen kded module — when loaded and emitting — fires on the
+//!    `org.kde.KScreen` interface on display-config changes (rotation, layout,
+//!    resolution). On modern Plasma 6 Wayland this module is often not loaded
+//!    or doesn't emit, so we don't rely on it.
+//! 2. **Polling backstop** — every `POLL_INTERVAL` we run `detect()`, compare
+//!    a topology-relevant projection to the previous tick, and publish on
+//!    diff. Subprocess cost is small; this guarantees the GUI sees rotation
+//!    even when no D-Bus signal fires.
 //!
-//! Hyprland / Sway / wlroots / X11 keep relying on the existing IPC
-//! `redetect` request — they have no comparable session-bus signal.
+//! Both paths funnel through [`publish`], which updates `DaemonState.monitors`
+//! and broadcasts a `()` tick on `monitors_tx` so the GUI's
+//! `wait_for_monitor_change` long-poll can deliver a Tauri event.
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
 use futures_util::StreamExt;
-use superpanels_core::display::Monitor;
+use superpanels_core::display::{Monitor, Rotation};
 use tokio::sync::{Mutex, broadcast};
 use tokio::time::{Instant, sleep_until};
 use tracing::{debug, info, warn};
@@ -35,6 +40,11 @@ fn build_match_rule() -> Result<MatchRule<'static>> {
 
 const DEBOUNCE: Duration = Duration::from_millis(250);
 
+/// Cadence for the polling backstop. Short enough that a rotation feels
+/// responsive in the GUI, long enough that a wedged detector subprocess
+/// can't soak CPU.
+const POLL_INTERVAL: Duration = Duration::from_secs(2);
+
 /// True when the current session looks like KDE Plasma. Mirrors the env
 /// check in `KscreenDoctorDetector::availability`; we don't depend on the
 /// detector type because that lives in a private module in -core.
@@ -46,18 +56,29 @@ pub(crate) fn kde_session_present() -> bool {
         .is_ok_and(|d| d.split(':').any(|s| s.eq_ignore_ascii_case("KDE")))
 }
 
-/// Spawn the watch loop. Returns immediately; the task lives until the
-/// daemon exits. Any setup failure (no session bus, `AppArmor`, etc.) is
-/// logged once and the task exits — the daemon keeps running.
+/// Spawn the OS-rotation watch tasks. Always starts the polling backstop;
+/// also starts the KDE kscreen D-Bus subscriber on KDE sessions for fast-path
+/// notification when it works. Any setup failure is logged once and the
+/// affected task exits — the daemon keeps running.
 pub(crate) fn spawn(state: Arc<Mutex<DaemonState>>, monitors_tx: broadcast::Sender<()>) {
-    tokio::spawn(async move {
-        if let Err(e) = run(state, monitors_tx).await {
-            warn!(error = %e, "KDE display-watch exited; OS-rotation push disabled");
-        }
-    });
+    if kde_session_present() {
+        let dbus_state = Arc::clone(&state);
+        let dbus_tx = monitors_tx.clone();
+        tokio::spawn(async move {
+            if let Err(e) = run_dbus(dbus_state, dbus_tx).await {
+                warn!(error = %e, "KDE display-watch exited; falling back to polling backstop");
+            }
+        });
+    } else {
+        debug!("non-KDE session; skipping kscreen D-Bus subscription");
+    }
+    tokio::spawn(run_poll_backstop(state, monitors_tx));
 }
 
-async fn run(state: Arc<Mutex<DaemonState>>, monitors_tx: broadcast::Sender<()>) -> Result<()> {
+async fn run_dbus(
+    state: Arc<Mutex<DaemonState>>,
+    monitors_tx: broadcast::Sender<()>,
+) -> Result<()> {
     let conn = Connection::session().await?;
     let rule = build_match_rule()?;
     let mut stream = MessageStream::for_match_rule(rule, &conn, Some(8)).await?;
@@ -65,6 +86,70 @@ async fn run(state: Arc<Mutex<DaemonState>>, monitors_tx: broadcast::Sender<()>)
 
     drive_stream(&mut stream, &state, &monitors_tx).await;
     Ok(())
+}
+
+/// Topology projection used by the polling backstop: the fields that
+/// influence layout / crop output. `physical_size_mm` is excluded because
+/// it's user-config-driven and merged in by `publish`; `refresh_hz` and
+/// `ppi` are excluded because they don't affect bezel/crop math.
+type TopoKey = (
+    String,
+    Option<String>,
+    (i32, i32),
+    (u32, u32),
+    Rotation,
+    u32,
+);
+
+fn topo_projection(monitors: &[Monitor]) -> Vec<TopoKey> {
+    monitors
+        .iter()
+        .map(|m| {
+            // Quantise scale to a stable int so float jitter doesn't trip the
+            // diff (Plasma occasionally rounds 1.0 vs 1.00 differently).
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            // reason: scale * 1000 stays well inside u32 for any realistic value
+            let scale_q = (m.scale * 1000.0) as u32;
+            (
+                m.name.clone(),
+                m.stable_id.clone(),
+                m.position,
+                m.resolution,
+                m.rotation,
+                scale_q,
+            )
+        })
+        .collect()
+}
+
+async fn run_poll_backstop(state: Arc<Mutex<DaemonState>>, monitors_tx: broadcast::Sender<()>) {
+    info!(
+        interval_ms = u64::try_from(POLL_INTERVAL.as_millis()).unwrap_or(u64::MAX),
+        "starting OS-rotation polling backstop"
+    );
+    // Seed from the daemon's current snapshot so the first tick doesn't
+    // immediately republish unchanged state.
+    let mut last: Vec<TopoKey> = {
+        let guard = state.lock().await;
+        topo_projection(&guard.monitors)
+    };
+    loop {
+        tokio::time::sleep(POLL_INTERVAL).await;
+        let detected = match superpanels_core::detect(None) {
+            Ok(m) => m,
+            Err(e) => {
+                debug!(error = %e, "polling redetect failed; will retry next tick");
+                continue;
+            }
+        };
+        let next = topo_projection(&detected);
+        if next == last {
+            continue;
+        }
+        debug!("polling backstop detected display-config change");
+        publish(detected, &state, &monitors_tx).await;
+        last = next;
+    }
 }
 
 async fn drive_stream(

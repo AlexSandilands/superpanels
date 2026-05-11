@@ -97,6 +97,7 @@ async fn dispatch(
         "slideshow_prev" => slideshow::cmd_slideshow_prev(state).await,
         "slideshow_pause" => slideshow::cmd_slideshow_pause(req, state).await,
         "redetect" => apply::cmd_redetect(state).await,
+        "wait_for_monitor_change" => apply::cmd_wait_for_monitor_change(state).await,
         "current_state" => apply::cmd_current_state(state).await,
         "list_profiles" => handlers::cmd_list_profiles(state).await,
         "save_profile" => handlers::cmd_save_profile(req, state).await,
