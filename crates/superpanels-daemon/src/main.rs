@@ -189,8 +189,9 @@ async fn run_daemon(cli: Cli) -> Result<()> {
     let sched_timer_tx = timer_tx.clone();
     tokio::spawn(async move { schedule::run_schedule_checker(sched_state, sched_timer_tx).await });
 
-    // OS-rotation push: KDE kscreen D-Bus signal (fast path, KDE only) plus
-    // a universal polling backstop. See `docs/spec/06-detection.md` §6.3.
+    // OS-rotation push: KDE kscreen D-Bus signal (best-effort, KDE only).
+    // Manual refresh in Settings > Monitors covers stacks where the signal
+    // doesn't fire. See `docs/spec/06-detection.md` §6.3.
     display_watch::spawn(Arc::clone(&state), monitors_tx.clone());
 
     // Apply the default profile (if set) after a short delay to allow compositor readiness.

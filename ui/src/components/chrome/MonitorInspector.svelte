@@ -1,6 +1,9 @@
 <script lang="ts">
+  import { redetectMonitorsWithToast } from '$lib/actions';
   import type { PreviewMonitor } from '$lib/canvas/preview-layout';
   import { canvasView } from '$lib/stores/canvas-view.svelte';
+  import { monitorStore } from '$lib/stores/monitors.svelte';
+  import Icon from '../widgets/Icon.svelte';
   import StepperInput from '../widgets/StepperInput.svelte';
 
   type ImageTransform = {
@@ -51,9 +54,17 @@
     {#if monitor.primary}
       <span class="chip active">PRIMARY</span>
     {/if}
-    <button class="btn ghost icon sm" style:margin-left="auto" onclick={onClose} title="Close"
-      >×</button
+    <button
+      class="btn ghost icon sm"
+      style:margin-left="auto"
+      onclick={() => void redetectMonitorsWithToast()}
+      disabled={monitorStore.loading}
+      title="Re-detect monitors (F5)"
+      aria-label="Re-detect monitors"
     >
+      <Icon name="refresh" size={12} />
+    </button>
+    <button class="btn ghost icon sm" onclick={onClose} title="Close">×</button>
   </div>
 
   <div class="section">
