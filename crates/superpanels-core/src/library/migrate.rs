@@ -1,7 +1,6 @@
-//! One-shot migration of the legacy `library-index.json` (Phase 2) into the
-//! `SQLite` library DB (Phase 4b, `SPEC §14.5`). On a successful migration the
-//! original JSON is renamed to `library-index.json.v1.bak` so the user has a
-//! recoverable copy.
+//! One-shot migration of the legacy `library-index.json` into the
+//! `SQLite` library DB. On a successful migration the original JSON is
+//! renamed to `library-index.json.v1.bak` so the user has a recoverable copy.
 
 use std::path::Path;
 

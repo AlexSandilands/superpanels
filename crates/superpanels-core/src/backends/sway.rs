@@ -1,4 +1,4 @@
-//! Sway / wlroots backend (`SPEC.md` §10.4). Prefers `swww`; falls back to
+//! Sway / wlroots backend. Prefers `swww`; falls back to
 //! one detached `swaybg` per monitor.
 
 use std::ffi::{OsStr, OsString};

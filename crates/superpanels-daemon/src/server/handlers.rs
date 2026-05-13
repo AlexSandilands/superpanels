@@ -1,6 +1,6 @@
-//! Daemon-side IPC handlers for SPEC §12.4 commands that aren't tied to the
+//! Daemon-side IPC handlers for commands that aren't tied to the
 //! apply / slideshow pipelines. Library handlers live in the `library`
-//! submodule (`SPEC §17` path-validation + thumbnailing).
+//! submodule — path validation + thumbnailing.
 
 use std::path::Path;
 use std::sync::Arc;

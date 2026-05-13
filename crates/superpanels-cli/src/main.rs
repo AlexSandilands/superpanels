@@ -58,7 +58,7 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    /// Set wallpaper from one or more image paths (`SPEC.md` §11.1).
+    /// Set wallpaper from one or more image paths.
     ///
     /// The image rectangle is auto-fit to cover the detected monitor union.
     /// For free placement, use the GUI's canvas instead.
@@ -68,7 +68,7 @@ enum Command {
         images: Vec<PathBuf>,
         #[arg(long, value_name = "NAME")]
         backend: Option<String>,
-        /// Manual monitor spec (`SPEC.md` §6.2).
+        /// Manual monitor spec.
         #[arg(long, value_name = "SPEC")]
         monitors: Option<String>,
         /// Pin an image to a monitor.
@@ -89,7 +89,7 @@ enum Command {
     Pause,
     /// Resume the slideshow timer (requires a running daemon).
     Resume,
-    /// Manage wallpaper profiles (`SPEC.md` §11.2).
+    /// Manage wallpaper profiles.
     Profile {
         #[command(subcommand)]
         action: ProfileAction,
@@ -191,7 +191,7 @@ enum MonitorAction {
     },
 }
 
-/// Sentinel for IPC/daemon errors — maps to exit code 7 (`SPEC.md` §11.6).
+/// Sentinel for IPC/daemon errors — maps to exit code 7.
 #[derive(Debug, thiserror::Error)]
 #[error("{0}")]
 pub(crate) struct IpcError(pub String);
@@ -211,7 +211,7 @@ fn main() -> ExitCode {
 }
 
 fn init_tracing(verbose: u8, quiet: bool) {
-    // RUST_LOG wins when set; otherwise map -v / --quiet to a level (`SPEC.md` §11).
+    // RUST_LOG wins when set; otherwise map -v / --quiet to a level.
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         let level = if quiet {
             "error"
@@ -230,7 +230,7 @@ fn init_tracing(verbose: u8, quiet: bool) {
         .try_init();
 }
 
-/// Map an `anyhow::Error` to its `SPEC.md` §11.6 exit code. Clap argument
+/// Map an `anyhow::Error` to its exit code. Clap argument
 /// errors short-circuit in `Cli::parse()` and never reach here.
 fn map_exit_code(err: &anyhow::Error) -> u8 {
     for cause in err.chain() {

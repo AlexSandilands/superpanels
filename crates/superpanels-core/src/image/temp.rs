@@ -1,4 +1,4 @@
-//! Temp-dir helpers for the image pipeline (`SPEC.md` §8.5).
+//! Temp-dir helpers for the image pipeline.
 
 use std::fs;
 use std::io::{self, BufWriter};

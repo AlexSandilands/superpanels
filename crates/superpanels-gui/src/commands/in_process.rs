@@ -16,7 +16,7 @@ use superpanels_core::library::{LibraryFilter as CoreLibraryFilter, apply_librar
 use crate::bridge::{CallResult, ok_payload, ok_unit};
 use crate::errors::IpcError;
 
-/// Floor when `LibraryConfig::thumbnail_size` is misconfigured (`SPEC §14.1`).
+/// Floor when `LibraryConfig::thumbnail_size` is misconfigured.
 const THUMBNAIL_MIN_EDGE: u32 = 64;
 
 pub(crate) fn dispatch(method: &str, params: &Value, config_path: Option<&Path>) -> CallResult {
@@ -71,7 +71,7 @@ fn detect_monitors(config_path: Option<&Path>) -> CallResult {
 fn list_profiles(config_path: Option<&Path>) -> CallResult {
     let cfg = load_config(config_path)?;
     // Validity needs detected monitors merged with config-supplied physical
-    // sizes (`SPEC §6 / §10`). If detection fails (no compositor in scope —
+    // sizes. If detection fails (no compositor in scope —
     // e.g. CI, headless dev), fall through with an empty validity list so
     // the rest of the GUI keeps working; the daemon path is the source of
     // truth in production.
@@ -166,8 +166,8 @@ fn preview_crop(params: &Value, config_path: Option<&Path>) -> CallResult {
     Ok(ok_payload(specs))
 }
 
-/// In-process mirror of `daemon::handlers::library::canonicalise_inside_roots`
-/// (`SPEC §17`). Same fail-deny posture: empty roots reject; failure to
+/// In-process mirror of `daemon::handlers::library::canonicalise_inside_roots`.
+/// Same fail-deny posture: empty roots reject; failure to
 /// canonicalise `requested` rejects; a root that itself fails to canonicalise
 /// is *silently skipped* via `is_ok_and`, so misconfigured/unreadable roots
 /// shrink the allowlist instead of expanding it.

@@ -1,4 +1,4 @@
-//! On-disk config (`docs/spec/14-config-state.md`).
+//! On-disk config.
 
 use std::collections::HashMap;
 use std::path::PathBuf;

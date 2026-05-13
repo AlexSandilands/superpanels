@@ -1,4 +1,4 @@
-//! Field-level validation for [`super::Config`] (`SPEC.md` §14.2, §17).
+//! Field-level validation for [`super::Config`].
 
 use std::collections::HashSet;
 use std::path::Path;

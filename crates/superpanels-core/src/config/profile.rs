@@ -1,5 +1,4 @@
-//! Profile-body shape for `[[profile]]` blocks (`docs/spec/03-core-concepts.md`
-//! §3.4).
+//! Profile-body shape for `[[profile]]` blocks.
 
 use std::path::PathBuf;
 use std::time::Duration;

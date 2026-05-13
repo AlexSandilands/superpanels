@@ -1,5 +1,6 @@
 // Thin wrappers around `invoke` so the UI talks to typed commands and never
-// reaches into Tauri directly. Every command from SPEC §12.4 is here.
+// reaches into Tauri directly. Every Tauri command exposed by the backend
+// has a wrapper here.
 
 import { invoke } from '@tauri-apps/api/core';
 import type { IpcError } from './types/IpcError';
@@ -125,7 +126,7 @@ export const api = {
   libraryThumbnail: (path: string) =>
     call<{ data: string; mime: string }>('library_thumbnail', { path }),
   // Local-only render path used by the canvas preview for any selected /
-  // dropped source file — bypasses library-roots gating (`SPEC §12.4`).
+  // dropped source file — bypasses library-roots gating.
   sourceThumbnail: (path: string) =>
     call<{ data: string; mime: string }>('source_thumbnail', { path }),
   libraryTag: (path: string, tag: string, on: boolean) =>

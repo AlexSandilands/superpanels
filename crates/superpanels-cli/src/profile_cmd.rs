@@ -1,4 +1,4 @@
-//! `superpanels profile` subcommands (`SPEC.md` §11.2).
+//! `superpanels profile` subcommands.
 
 use std::io::Write as _;
 use std::os::unix::net::UnixStream;

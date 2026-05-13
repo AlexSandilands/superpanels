@@ -1,6 +1,6 @@
 // mm-space layout orchestrator. Re-exports projection (positions + cover-fit
 // rect) and gaps (neighbour detection + normalisation), plus geometry
-// primitives shared by both. SPEC §4.
+// primitives shared by both.
 
 export type {
   PreviewMonitor,

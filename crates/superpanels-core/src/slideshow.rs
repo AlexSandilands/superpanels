@@ -1,4 +1,4 @@
-//! Slideshow picker (`SPEC.md` §9.2). Pure synchronous logic — timing lives
+//! Slideshow picker. Pure synchronous logic — timing lives
 //! in the daemon so the picker stays trivial to test.
 
 use std::collections::VecDeque;

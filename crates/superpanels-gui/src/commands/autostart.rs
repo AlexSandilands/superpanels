@@ -1,5 +1,5 @@
 //! Autostart toggle `#[tauri::command]`s. Wraps `crate::autostart` with the
-//! IPC return-shape the frontend expects (`SPEC.md` §12.4 / §14).
+//! IPC return-shape the frontend expects.
 
 use serde_json::{Value, json};
 

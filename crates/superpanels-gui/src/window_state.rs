@@ -1,4 +1,4 @@
-//! Persist window position and size to `state.json` (`SPEC.md` §14).
+//! Persist window position and size to `state.json`.
 //!
 //! Tauri-side state lives next to the user's runtime files at
 //! `$XDG_STATE_HOME/superpanels/window.json` (or `~/.local/state/...`).

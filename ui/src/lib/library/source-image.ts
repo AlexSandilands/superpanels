@@ -1,6 +1,6 @@
 // Source-image cache for the preview canvas. Returns a `data:` URL plus the
 // natural pixel size so the canvas can reason about aspect ratio. Backed by
-// the `source_thumbnail` IPC command (`SPEC §12.4`) which renders any path,
+// the `source_thumbnail` IPC command which renders any path,
 // not just library-rooted files.
 
 import { api } from '$lib/api';

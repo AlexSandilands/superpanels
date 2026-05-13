@@ -1,4 +1,4 @@
-//! Display detection (`SPEC.md` §6).
+//! Display detection.
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -19,8 +19,7 @@ pub(crate) use subprocess::{run as run_subprocess, which};
 use wlr_randr::WlrRandrDetector;
 use xrandr::XrandrDetector;
 
-/// A physical display normalised into Superpanels' internal model
-/// (`SPEC.md` §3.1).
+/// A physical display normalised into Superpanels' internal model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../ui/src/lib/types/")]
 pub struct Monitor {
@@ -62,7 +61,7 @@ pub enum Rotation {
     Left,
 }
 
-/// Persistent monitor reference (`SPEC.md` §6.4). All persisted data —
+/// Persistent monitor reference. All persisted data —
 /// per-monitor config, profile assignments — keys on this rather than the
 /// runtime [`MonitorId`]. `name` is the fallback when the detector can't
 /// supply a `stable_id`.
@@ -74,7 +73,7 @@ pub struct MonitorRef {
 }
 
 /// A source of [`Monitor`] data — usually a thin wrapper around a compositor
-/// CLI. [`detect`] walks implementations in `SPEC.md` §6 priority order.
+/// CLI. [`detect`] walks implementations in priority order.
 pub trait DisplayDetector {
     fn name(&self) -> &str;
     /// Cheap check — env vars and `PATH` only, no subprocess spawn.
@@ -105,7 +104,7 @@ pub enum DetectError {
     EmptyResult,
 }
 
-/// Try detectors in `SPEC.md` §6 priority order; return the first non-empty
+/// Try detectors in priority order; return the first non-empty
 /// layout. `manual_override` (`--monitors`) wins unconditionally. Returned
 /// monitors have `physical_size_mm: None`; merging against `[[monitor]]`
 /// config happens in Phase 1.6.

@@ -1,4 +1,4 @@
-// Non-blocking toast queue (`SPEC.md` §12.7). Errors stay until dismissed;
+// Non-blocking toast queue. Errors stay until dismissed;
 // successes auto-fade after a few seconds. Expiry is driven by an `$effect`
 // in `Toast.svelte` so we don't leak ad-hoc timers from a module scope.
 

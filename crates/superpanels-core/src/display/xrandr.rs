@@ -1,4 +1,4 @@
-//! X11 display detector backed by `xrandr --verbose` (`SPEC.md` §6.4).
+//! X11 display detector backed by `xrandr --verbose`.
 
 use std::env;
 use std::time::Duration;
@@ -260,7 +260,7 @@ fn finalize(
         .and_then(|t| hash_edid_triple(Some(&t.0), Some(&t.1), Some(&t.2)));
 
     // `xrandr --verbose` prints the header geometry in compositor (post-
-    // rotation) space. SPEC §3 requires `Monitor.resolution` in native panel
+    // rotation) space. requires `Monitor.resolution` in native panel
     // orientation; swap back when rotated so the layout module's rotation
     // re-application produces the right framebuffer size.
     let resolution = match raw.rotation {
@@ -431,7 +431,7 @@ mod tests {
         assert_eq!(monitors.len(), 1);
         assert_eq!(monitors[0].rotation, Rotation::Left);
         // `xrandr` prints post-rotation geometry; the parser must swap back
-        // to native panel orientation per SPEC §3.
+        // to native panel orientation per
         assert_eq!(monitors[0].resolution, (1920, 1080));
     }
 }

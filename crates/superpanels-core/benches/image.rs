@@ -1,5 +1,4 @@
-//! Criterion benchmarks for the image pipeline (PLAN.md §6.2 "single-image
-//! apply (4K, 8K)" — the dominant cost in SPEC §19's
+//! Criterion benchmarks for the image pipeline" — the dominant cost in's
 //! `superpanels set <single image>` end-to-end < 500 ms (4K, 3-monitor)
 //! budget).
 //!

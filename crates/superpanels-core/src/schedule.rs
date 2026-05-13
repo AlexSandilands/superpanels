@@ -1,5 +1,4 @@
-//! Top-level schedule rules and shared time/profile-state types
-//! (`docs/spec/09-profiles-schedules.md`).
+//! Top-level schedule rules and shared time/profile-state types.
 //!
 //! Schedules are independent of profiles: each rule names a profile by string
 //! and fires on a clock trigger. `MonitorPlacement` and `TopologyFingerprint`

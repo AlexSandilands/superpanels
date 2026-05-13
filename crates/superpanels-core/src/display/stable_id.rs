@@ -1,4 +1,4 @@
-//! Synthesise `MonitorRef::stable_id` from EDID make/model/serial (`SPEC.md` §6.4).
+//! Synthesise `MonitorRef::stable_id` from EDID make/model/serial.
 
 use sha2::{Digest, Sha256};
 

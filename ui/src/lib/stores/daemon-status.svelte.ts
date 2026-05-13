@@ -41,7 +41,7 @@ export const daemonStatus = {
   /** Mark the daemon as unreachable in response to an IPC error from any
    *  call site (e.g. apply_canvas / slideshow_*). Only flips when the
    *  error is the structural `DaemonUnreachable` variant — never on
-   *  logical daemon rejections (`SPEC §17` confused-deputy rules). */
+   *  logical daemon rejections (` confused-deputy rules). */
   noteIpcError(err: unknown): void {
     if (isIpcError(err) && err.kind === 'DaemonUnreachable') {
       connected = false;

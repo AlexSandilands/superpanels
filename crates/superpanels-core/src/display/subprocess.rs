@@ -1,4 +1,4 @@
-//! Shared subprocess helper for display detectors (`SPEC.md` §6).
+//! Shared subprocess helper for display detectors.
 
 use std::ffi::OsStr;
 use std::path::PathBuf;

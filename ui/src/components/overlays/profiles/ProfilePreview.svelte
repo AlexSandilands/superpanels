@@ -3,7 +3,7 @@
   // the monitor union (mm-space) and overlays each monitor rectangle at its
   // authored physical position. All elements share a single mm→px scale so
   // the monitors visually sit on the image where they will physically crop
-  // it on apply (`docs/spec/12-gui.md` §12.3).
+  // it on apply.
 
   import type { TopologyRect } from '$lib/profile-topology';
 

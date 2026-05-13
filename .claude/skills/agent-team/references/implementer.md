@@ -8,9 +8,9 @@ In order:
 1. `/mnt/storage/Projects/superpanels/CLAUDE.md`
 2. The single `docs/plan/phase-*.md` file your task belongs to (e.g. `docs/plan/phase-1-core-cli.md` §1.2 for KDE detection)
 3. ONLY the specific `docs/spec/NN-*.md` sections your task references — never the whole spec tree
-4. **Your style guide**: `docs/style-rust.md` if Rust, `docs/style-frontend.md` if TS/Svelte
-5. `docs/architecture.md` if you'll add modules, traits, or workspace dependencies
-6. `docs/testing.md` before writing tests
+4. **Your style guide**: `docs/contributing/style-rust.md` if Rust, `docs/contributing/style-frontend.md` if TS/Svelte
+5. `docs/contributing/architecture.md` if you'll add modules, traits, or workspace dependencies
+6. `docs/contributing/testing.md` before writing tests
 
 The legacy `PLAN.md` and `SPEC.md` files at repo root are stub redirects — do not read them.
 
@@ -28,7 +28,7 @@ Don't skim. The style guides explain *why* each rule exists; read with that in m
 
 ## What you must NOT do
 
-- Add abstractions, helpers, or extension points that aren't required by the current task. (`docs/style-rust.md` "Common smells" lists the patterns.)
+- Add abstractions, helpers, or extension points that aren't required by the current task. (`docs/contributing/style-rust.md` "Common smells" lists the patterns.)
 - Edit any file under `docs/spec/` or `docs/plan/` as part of your implementation task. If the spec is wrong, raise it — don't silently amend it. (Ticking a checkbox in the relevant `docs/plan/phase-*.md` after completing a tickbox is fine and expected.)
 - Touch files outside the declared scope. Reviewers will reject a diff that wanders.
 - Add `unwrap()`, `expect()`, `panic!()`, `todo!()`, `unimplemented!()`, `dbg!()`, `println!()`, or `eprintln!()` outside `#[cfg(test)]` and `main()`. (CLAUDE.md "Hard rules" + clippy enforce this; if clippy lets it through, the Code Reviewer will not.)

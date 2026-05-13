@@ -1,4 +1,4 @@
-//! KDE Plasma backend via `org.kde.PlasmaShell.evaluateScript` (`SPEC.md` §10.4).
+//! KDE Plasma backend via `org.kde.PlasmaShell.evaluateScript`.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -161,7 +161,7 @@ pub(crate) fn parse_applied_count(output: &str) -> Result<usize, BackendError> {
 fn evaluate_script(script: &str) -> Result<String, BackendError> {
     let connection =
         zbus::blocking::Connection::session().map_err(|e| BackendError::DBus(e.to_string()))?;
-    // zbus's blocking call_method has no built-in timeout; enforce SPEC §10.3
+    // zbus's blocking call_method has no built-in timeout; enforce
     // by running the call on a worker thread and joining via recv_timeout.
     let (tx, rx) = std::sync::mpsc::channel();
     let conn = connection;

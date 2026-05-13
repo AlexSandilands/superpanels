@@ -1,4 +1,4 @@
-//! Profile-management `#[tauri::command]`s (`SPEC.md` §12.4).
+//! Profile-management `#[tauri::command]`s.
 
 // reason: Tauri requires owned types in `#[tauri::command]` signatures (see
 // `commands.rs` for the full rationale).

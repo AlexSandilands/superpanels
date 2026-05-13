@@ -1,5 +1,5 @@
 //! `IpcError` — the single shape returned to the frontend across all
-//! `#[tauri::command]`s (`SPEC.md` §12.4). Concrete typed errors from
+//! `#[tauri::command]`s. Concrete typed errors from
 //! `superpanels-core` flatten into this enum so the JS side gets a stable
 //! tagged union it can switch on.
 
@@ -17,7 +17,7 @@ pub(crate) enum IpcError {
     /// occurred mid-call. Distinct from [`Self::Daemon`] so callers can
     /// safely fall back to an in-process render without conflating
     /// transport failures with the daemon's own logical rejections — the
-    /// confused-deputy guard for `library_thumbnail` (`SPEC §17`).
+    /// confused-deputy guard for `library_thumbnail`.
     DaemonUnreachable(String),
     /// Configuration load / save / validation failed.
     Config(String),

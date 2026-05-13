@@ -1,5 +1,4 @@
-//! `preview_crop` `#[tauri::command]` and the `PreviewArgs` payload type
-//! (`SPEC.md` §12.4).
+//! `preview_crop` `#[tauri::command]` and the `PreviewArgs` payload type.
 
 #![allow(clippy::needless_pass_by_value)]
 

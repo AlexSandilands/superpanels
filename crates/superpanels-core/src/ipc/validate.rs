@@ -1,4 +1,4 @@
-//! Bounded validators for hostile-webview IPC inputs (`SPEC §17`).
+//! Bounded validators for hostile-webview IPC inputs.
 //!
 //! Daemon and in-process handlers share these helpers so neither path drifts
 //! from the contract. Bounds target *human plausibility, not perf*: hitting a

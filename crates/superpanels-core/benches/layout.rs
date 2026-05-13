@@ -1,5 +1,4 @@
-//! Criterion benchmarks for [`compute_crop_specs`] (PLAN.md Phase 1
-//! cross-cutting "Performance baselines").
+//! Criterion benchmarks for [`compute_crop_specs`].
 //!
 //! Captures end-to-end timings for representative monitor counts (1, 3, 6, 9)
 //! against a plausible panoramic source image. Numbers from these runs are

@@ -1,4 +1,4 @@
-//! Shared subprocess helper for non-D-Bus backends (`SPEC.md` §10.3).
+//! Shared subprocess helper for non-D-Bus backends.
 
 use std::ffi::OsStr;
 use std::process::{Command, Stdio};

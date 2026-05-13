@@ -1,5 +1,5 @@
 // Helper functions and re-exports for the ts-rs-generated Profile types
-// (`docs/spec/03-core-concepts.md`). The bare type definitions are now
+//. The bare type definitions are now
 // generated; this file only carries factories + type-narrowing helpers.
 
 import type { ProfileBody } from './ProfileBody';

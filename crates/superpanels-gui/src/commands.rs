@@ -1,4 +1,4 @@
-//! `#[tauri::command]` wrappers for the IPC surface in `SPEC.md` §12.4.
+//! `#[tauri::command]` wrappers for the IPC surface.
 //!
 //! Each command is a 3-line bridge: validate args → call [`crate::bridge`] →
 //! return `Result<T, IpcError>`. The bridge picks daemon-or-in-process, so

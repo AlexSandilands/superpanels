@@ -1,4 +1,4 @@
-//! Slideshow control `#[tauri::command]`s (`SPEC.md` §12.4 / §9).
+//! Slideshow control `#[tauri::command]`s.
 
 #![allow(clippy::needless_pass_by_value)]
 

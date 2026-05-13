@@ -35,8 +35,6 @@ superpanels/
 ├── .pre-commit-config.yaml
 ├── .editorconfig
 ├── .gitignore
-├── SPEC.md                          ← redirect stub → docs/spec/
-├── PLAN.md                          ← redirect stub → docs/plan/
 ├── CONTRIBUTING.md
 ├── README.md
 ├── LICENSE / LICENSE-MIT / LICENSE-APACHE
@@ -46,11 +44,9 @@ superpanels/
 │   ├── superpanels-daemon/          ← background daemon binary
 │   └── superpanels-gui/             ← Tauri shell binary (feature-gated)
 ├── ui/                              ← Svelte 5 frontend (its own package.json)
-├── docs/                            ← architecture, style, testing
-│   ├── spec/                        ← technical spec, split per section (NN-topic.md)
-│   └── plan/                        ← phased build plan, split per phase
-├── packaging/                       ← PKGBUILDs, flatpak manifest, .desktop files
-└── .github/workflows/               ← CI definitions (Phase 1+)
+├── docs/                            ← topic-scoped reference docs
+├── packaging/                       ← PKGBUILDs, flatpak manifest, .desktop files (TBD)
+└── .github/workflows/               ← CI definitions
 ```
 
 The single distributable binary `superpanels` is produced by the GUI crate when built with `--features gui`, or by the CLI crate when built without. Subcommand dispatch unifies them externally; internally, they are separate Cargo targets so building the CLI alone doesn't pull WebKitGTK.
@@ -87,7 +83,7 @@ Read this carefully — drift between intent and reality is a code smell.
 - **System tray.**
 - The Svelte frontend in `ui/` is the actual UI; this crate only hosts it.
 
-> **Crate status (post-Phase 3).** All four crates above now exist: `superpanels-core`, `superpanels-cli`, `superpanels-daemon`, and `superpanels-gui`. The dependency-direction diagram below describes the steady-state graph (each binary depends on `core` and nothing else in the workspace).
+All four crates above exist today: `superpanels-core`, `superpanels-cli`, `superpanels-daemon`, and `superpanels-gui`. The dependency-direction diagram below describes the steady-state graph (each binary depends on `core` and nothing else in the workspace).
 
 ---
 
@@ -196,7 +192,7 @@ Each is a candidate for its own submodule. The wrong split is "library_part_2.rs
 - **No abbreviations** unless the long form is genuinely awkward. `monitor`, not `mon`. `configuration` is acceptable as `config` because that's the universal short form.
 - **No Hungarian notation.** `image_path: PathBuf` not `path_image`. Type information lives in the type system.
 - **Verbs for functions, nouns for types.** `compute_crop_specs()`, not `crop_spec_computer()`.
-- **Boolean-returning functions read like predicates.** `has_rotation()`, `should_skip()`, `is_primary()`. (Note: prefer richer enums when "available / not available" has *reasons* — see `Availability` in `docs/spec/06-detection.md` §6.1.)
+- **Boolean-returning functions read like predicates.** `has_rotation()`, `should_skip()`, `is_primary()`. (Note: prefer richer enums when "available / not available" has *reasons* — see the `Availability` enum used by detectors/backends; [`docs/reference/displays.md`](../reference/displays.md) discusses the pattern.)
 
 ---
 
@@ -213,8 +209,8 @@ Each is a candidate for its own submodule. The wrong split is "library_part_2.rs
 | `typos.toml` | repo root | Spell-check config |
 | `.editorconfig` | repo root | Editor-agnostic indent/charset |
 | `.prettierrc.json` | repo root | Frontend formatting |
-| `eslint.config.js` | `ui/` | Frontend linting (created in Phase 3) |
-| `tsconfig.json` | `ui/` | TS compiler config (created in Phase 3) |
+| `eslint.config.js` | `ui/` | Frontend linting |
+| `tsconfig.json` | `ui/` | TS compiler config |
 | `tauri.conf.json` | `crates/superpanels-gui/` | Tauri build config |
 
 Don't duplicate config across crates. If you need a per-crate override, document why in the crate's `Cargo.toml`.
@@ -223,7 +219,7 @@ Don't duplicate config across crates. If you need a per-crate override, document
 
 ## Workspace lints (the canonical list)
 
-This block goes into the root `Cargo.toml` once the workspace is scaffolded (Phase 1.1):
+This block lives in the root `Cargo.toml`:
 
 ```toml
 [workspace.lints.rust]

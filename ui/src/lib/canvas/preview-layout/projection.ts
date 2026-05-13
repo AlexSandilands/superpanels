@@ -1,6 +1,6 @@
 // mm-space projection of compositor-detected monitors. Computes default
 // row-layout positions, builds the live `PreviewMonitor[]` from detection +
-// overrides, and the cover-fit image rect. SPEC §4 (bezel math).
+// overrides, and the cover-fit image rect. (bezel math).
 
 import type { Monitor } from '$lib/api';
 import type { MonitorOverride } from '$lib/stores/canvas-view.svelte';

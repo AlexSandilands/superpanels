@@ -1,5 +1,5 @@
 //! Synchronous IPC client used by the CLI and the GUI shell to talk to the
-//! daemon (`SPEC.md` §5.3). Wire format: 4-byte big-endian length prefix +
+//! daemon. Wire format: 4-byte big-endian length prefix +
 //! UTF-8 JSON body, capped at [`MAX_FRAME_BYTES`].
 //!
 //! Blocking I/O on a `std::os::unix::net::UnixStream` — no Tokio in this
@@ -7,7 +7,7 @@
 //! Tauri-worker thread without dragging an async runtime along.
 //!
 //! The typed [`ClientError`] keeps callers from string-matching transport
-//! failures: the `library_thumbnail` confused-deputy guard (`SPEC §17`) needs
+//! failures: the `library_thumbnail` confused-deputy guard needs
 //! to distinguish a transport failure from the daemon's own logical
 //! rejection of a path, and that distinction has to be structural.
 

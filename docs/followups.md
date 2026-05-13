@@ -38,5 +38,3 @@ affected stacks (track upstream WebKit / `webkit2gtk` Arch package).
 ## Set icon in taskbar
 
 ## Remove everything related to primary monitor
-
-## Cleanup all spec/plan/phase files

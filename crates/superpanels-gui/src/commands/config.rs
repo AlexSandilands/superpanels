@@ -1,4 +1,4 @@
-//! Config get/save `#[tauri::command]`s (`SPEC.md` §12.4 / §14.1).
+//! Config get/save `#[tauri::command]`s.
 
 #![allow(clippy::needless_pass_by_value)]
 

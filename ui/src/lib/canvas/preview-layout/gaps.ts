@@ -1,5 +1,5 @@
 // Bezel-gap detection + normalisation. Pairs are "immediate" — A is to the
-// left of B with overlap and no third monitor strictly between. SPEC §4.
+// left of B with overlap and no third monitor strictly between.
 
 import type { MonitorOverride } from '$lib/stores/canvas-view.svelte';
 import type { PreviewMonitor } from './projection';

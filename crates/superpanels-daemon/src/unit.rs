@@ -1,4 +1,4 @@
-//! Systemd user unit file generation (`PLAN.md` §2.5).
+//! Systemd user unit file generation.
 
 use std::path::{Path, PathBuf};
 

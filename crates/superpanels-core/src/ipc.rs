@@ -1,4 +1,4 @@
-//! IPC message types and socket-path helper (`SPEC.md` §5.3).
+//! IPC message types and socket-path helper.
 //!
 //! Wire format: 4-byte big-endian length followed by a UTF-8 JSON body.
 

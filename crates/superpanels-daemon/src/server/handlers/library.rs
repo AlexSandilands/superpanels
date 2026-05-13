@@ -1,5 +1,5 @@
-//! Library IPC handlers (`SPEC §12.4`). Path-validates client-supplied
-//! arguments against the configured library roots (`SPEC §17`) and keeps
+//! Library IPC handlers. Path-validates client-supplied
+//! arguments against the configured library roots and keeps
 //! responses under the IPC frame cap by paginating + thumbnailing.
 
 use std::path::{Path, PathBuf};
@@ -17,7 +17,7 @@ use crate::state::DaemonState;
 
 /// Hard floor on the thumbnail edge so a misconfigured `thumbnail_size = 0`
 /// doesn't crash `image::resize`. Production default is whatever
-/// `LibraryConfig::thumbnail_size` resolves to (`SPEC §14.1`).
+/// `LibraryConfig::thumbnail_size` resolves to.
 const THUMBNAIL_MIN_EDGE: u32 = 64;
 
 /// Force a synchronous rescan of every configured root, persist the result
@@ -145,7 +145,7 @@ pub(crate) async fn cmd_library_delete(
             true
         } else {
             // Fall back to the raw path so legacy entries indexed before
-            // canonicalisation still delete (`SPEC §17`).
+            // canonicalisation still delete.
             match db.delete_entry(Path::new(raw_path)) {
                 Ok(b) => b,
                 Err(e) => {
@@ -239,7 +239,7 @@ fn apply_tag(entry: &mut LibraryEntry, tag: &str, on: bool) {
 }
 
 /// Canonicalise `requested` and ensure the result lives under one of the
-/// configured library roots (`SPEC §17`). Returns the canonical path on
+/// configured library roots. Returns the canonical path on
 /// success or a user-facing error string on rejection.
 ///
 /// **Fail-deny by construction.** Empty roots reject. A failure to canonicalise
@@ -483,7 +483,7 @@ mod tests {
     #[tokio::test]
     async fn library_tag_unknown_path_fails() {
         // Path is real and inside roots, but not indexed — must fall through
-        // to the "not in library" check (`SPEC §17`).
+        // to the "not in library" check.
         let dir = tempdir().unwrap();
         let real = dir.path().join("orphan.png");
         write_dummy_png(&real, 16, 16);

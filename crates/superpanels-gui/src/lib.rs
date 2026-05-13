@@ -1,13 +1,13 @@
 #![forbid(unsafe_code)]
 
-//! Tauri shell for Superpanels (`SPEC.md` §12). The crate hosts:
+//! Tauri shell for Superpanels. The crate hosts:
 //! - the `tauri::Builder` setup and lifecycle,
-//! - typed `#[tauri::command]` wrappers for every IPC method (`SPEC.md` §12.4),
+//! - typed `#[tauri::command]` wrappers for every IPC method,
 //! - a daemon-first / in-process bridge that mirrors the CLI's behaviour,
-//! - the system tray (`SPEC.md` §13),
-//! - autostart `.desktop` writer (`SPEC.md` §12 / §14).
+//! - the system tray,
+//! - autostart `.desktop` writer.
 //!
-//! Desktop-notification surfacing (`SPEC.md` §13.4) is intentionally
+//! Desktop-notification surfacing is intentionally
 //! unimplemented; wire it back when the tray exposes failure events.
 
 pub(crate) mod autostart;

@@ -1,4 +1,4 @@
-//! Hyprland display detector backed by `hyprctl monitors -j` (`SPEC.md` §6.4).
+//! Hyprland display detector backed by `hyprctl monitors -j`.
 
 use std::env;
 use std::time::Duration;

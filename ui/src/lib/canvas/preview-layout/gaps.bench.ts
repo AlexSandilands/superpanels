@@ -2,7 +2,7 @@ import { bench, describe } from 'vitest';
 import { hNeighbourPairs, vNeighbourPairs } from './gaps';
 import type { PreviewMonitor } from './projection';
 
-// SPEC §19 canvas-frame budget is 8 ms total. hNeighbourPairs / vNeighbourPairs
+// canvas-frame budget is 8 ms total. hNeighbourPairs / vNeighbourPairs
 // run on every pointer-move redraw and are O(N³) over monitor count. This
 // bench locks in the cost at N=9 — Superpanels' practical multi-monitor cap.
 

@@ -1,4 +1,4 @@
-//! Apply pipeline: detect → crop → render → backend (`SPEC.md` §10).
+//! Apply pipeline: detect → crop → render → backend.
 
 use std::path::{Path, PathBuf};
 

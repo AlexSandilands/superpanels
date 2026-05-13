@@ -1,4 +1,4 @@
-//! Monitor detection / configuration `#[tauri::command]`s (`SPEC.md` §6 / §12.4).
+//! Monitor detection / configuration `#[tauri::command]`s.
 
 #![allow(clippy::needless_pass_by_value)]
 

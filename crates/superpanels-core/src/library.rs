@@ -1,5 +1,5 @@
-//! Folder-driven library index (`SPEC.md` §7.1–7.2). The on-disk index is
-//! `SQLite` from Phase 4b onward (`SPEC §14.5`); the JSON helpers below stay
+//! Folder-driven library index. The on-disk index is
+//! `SQLite` from Phase 4b onward; the JSON helpers below stay
 //! in place as the source for the one-shot migration in [`migrate`].
 
 pub mod db;
@@ -18,9 +18,9 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::debug;
 
-/// Server-side filter for `library_list` (`SPEC §12.4`). All fields optional;
+/// Server-side filter for `library_list`. All fields optional;
 /// `offset`/`limit` paginate so a huge library never overflows the IPC frame
-/// cap (`SPEC §13`).
+/// cap.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct LibraryFilter {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -43,7 +43,7 @@ pub struct LibraryFilter {
 /// stay well under the 1 MiB IPC frame cap for a 5 000-entry library.
 pub const DEFAULT_LIBRARY_PAGE: usize = 200;
 
-/// Hard cap on caller-supplied `filter.limit` (`SPEC §17`). A hostile webview
+/// Hard cap on caller-supplied `filter.limit`. A hostile webview
 /// that asks for `u32::MAX` entries would otherwise force the daemon to
 /// materialise the full library into a response Vec.
 pub const MAX_LIBRARY_PAGE: usize = 1_000;

@@ -31,7 +31,7 @@ pub(crate) struct DaemonState {
     /// avoids a round trip to `SQLite` on every IPC call. Writes go through the
     /// DB and then refresh this vector.
     pub library: Vec<LibraryEntry>,
-    /// ``SQLite`` library index (`SPEC §14.5`). `None` when the DB couldn't be
+    /// ``SQLite`` library index. `None` when the DB couldn't be
     /// opened — the daemon still serves library reads from the cached vector.
     pub library_db: Option<LibraryDb>,
     pub active_profile: Option<String>,
@@ -341,9 +341,9 @@ fn fresh_scan(cfg: &LibraryConfig) -> Vec<LibraryEntry> {
     entries
 }
 
-/// `$XDG_DATA_HOME/superpanels/` (or `~/.local/share/superpanels/`). Library
-/// DB lives here per `SPEC §14.5`; falls back to the state dir when neither
-/// XDG var is set.
+/// `$XDG_DATA_HOME/superpanels/` (or `~/.local/share/superpanels/`). The
+/// library DB lives here; we fall back to the state dir when neither XDG
+/// var is set.
 fn library_data_dir() -> Option<PathBuf> {
     if let Ok(dir) = std::env::var("XDG_DATA_HOME") {
         let p = PathBuf::from(dir);

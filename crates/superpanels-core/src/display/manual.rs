@@ -1,4 +1,4 @@
-//! `--monitors` manual-override parser (`SPEC.md` §6.2).
+//! `--monitors` manual-override parser.
 //!
 //! Each comma-separated entry: `WxH+X+Y[@SCALE][/ROT][?WMMxHMM]`.
 

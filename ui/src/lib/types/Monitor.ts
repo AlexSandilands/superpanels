@@ -3,8 +3,7 @@ import type { MonitorId } from "./MonitorId";
 import type { Rotation } from "./Rotation";
 
 /**
- * A physical display normalised into Superpanels' internal model
- * (`SPEC.md` §3.1).
+ * A physical display normalised into Superpanels' internal model.
  */
 export type Monitor = { 
 /**

@@ -1,4 +1,4 @@
-//! Apply / set / redetect / current-state IPC handlers (`SPEC §12.4`).
+//! Apply / set / redetect / current-state IPC handlers.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -157,8 +157,8 @@ pub(super) async fn cmd_apply_profile(
     IpcResponse::success(applied_json(&report))
 }
 
-/// Push a transient canvas payload to the desktop without persisting it
-/// (`docs/spec/09-profiles-schedules.md` §9.1.2). Mirrors the apply pipeline
+/// Push a transient canvas payload to the desktop without persisting it.
+/// Mirrors the apply pipeline
 /// of `cmd_apply_profile` but takes the profile as an in-memory payload so
 /// the live config is left untouched. If `params.active_name` matches a
 /// stored profile, that profile becomes the active one and its

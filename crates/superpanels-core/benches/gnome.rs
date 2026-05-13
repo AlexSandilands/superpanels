@@ -1,10 +1,9 @@
-//! Criterion benchmark for the GNOME composite path (`SPEC.md` §10.4, §19).
+//! Criterion benchmark for the GNOME composite path.
 //!
 //! Exercises `composite_band` + `downscale_if_needed` for a 3-monitor 4K
-//! span. `SPEC §19` budgets `superpanels set <single image>` to under
-//! 500 ms for that exact shape; this bench is the upper-bound microbench
-//! for the GNOME path's compositing portion (decode + backend `set` are
-//! covered by `image.rs` and integration tests respectively).
+//! span. Upper-bound microbench for the GNOME path's compositing portion
+//! (decode + backend `set` are covered by `image.rs` and integration tests
+//! respectively).
 #![allow(clippy::unwrap_used)] // reason: bench inputs are deterministic; aborting on misconfiguration is fine
 #![allow(clippy::expect_used)] // reason: same as above
 #![allow(missing_docs)] // reason: bench harness functions are not part of the crate's public API

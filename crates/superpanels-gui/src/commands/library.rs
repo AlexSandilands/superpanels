@@ -1,5 +1,5 @@
 //! Library `#[tauri::command]`s — list / thumbnail / source-thumbnail /
-//! rescan / delete / tag (`SPEC.md` §7 / §12.4 / §17).
+//! rescan / delete / tag.
 
 #![allow(clippy::needless_pass_by_value)]
 
@@ -76,7 +76,7 @@ pub(crate) fn library_thumbnail(
 /// other variant (including `IpcError::Daemon`, the daemon's logical
 /// rejections) propagates unchanged so the library-roots gate cannot be
 /// bypassed by crafting a path whose error message contains a transport
-/// keyword (`SPEC §17`, confused-deputy guard).
+/// keyword. (Confused-deputy guard.)
 fn should_fall_back_to_local_render(err: &IpcError) -> bool {
     matches!(err, IpcError::DaemonUnreachable(_))
 }
@@ -182,7 +182,7 @@ mod tests {
     #[test]
     fn library_thumbnail_fallback_only_fires_on_daemon_unreachable() {
         // Confused-deputy guard for `library_thumbnail`'s fallback
-        // (`SPEC §17`): the local render must only run when the bridge
+        //: the local render must only run when the bridge
         // signals the daemon was unreachable. Every other `IpcError` —
         // including `Daemon(_)` carrying the daemon's logical rejection of
         // a user-supplied path — must propagate unchanged so the roots

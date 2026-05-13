@@ -1,4 +1,4 @@
-//! Image load / scale / crop / rotate / `save_temp` pipeline (`SPEC.md` §8).
+//! Image load / scale / crop / rotate / `save_temp` pipeline.
 
 use std::fs;
 use std::io;
@@ -26,7 +26,7 @@ pub enum ImageError {
     },
     #[error("could not decode {path}: {message}")]
     Decode { path: PathBuf, message: String },
-    /// Pixel count exceeds the configured memory budget (`SPEC.md` §8.6).
+    /// Pixel count exceeds the configured memory budget.
     #[error(
         "image {path} would need {needed_bytes} bytes ({width}x{height}) — over the {budget_bytes}-byte cap"
     )]
@@ -52,7 +52,7 @@ pub enum ImageError {
     NoCacheDir,
 }
 
-/// How [`scale_to_fit`] adapts a source image to the target dimensions (`SPEC.md` §8.2).
+/// How [`scale_to_fit`] adapts a source image to the target dimensions.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum FitMode {
     #[default]
@@ -70,7 +70,7 @@ pub fn load(path: &Path) -> Result<DynamicImage, ImageError> {
 
 /// Read the image header at `path` without decoding. Cheap (microseconds)
 /// and the right primitive for any preview pipeline that only needs
-/// dimensions (`SPEC §12.3`).
+/// dimensions.
 pub fn read_dimensions(path: &Path) -> Result<(u32, u32), ImageError> {
     open_reader(path)?
         .into_dimensions()
@@ -81,7 +81,7 @@ pub fn read_dimensions(path: &Path) -> Result<(u32, u32), ImageError> {
 }
 
 /// Decode `path` then resize so the longest edge is `max_edge` pixels using
-/// the fast `Triangle` filter (`SPEC §8.1`). Used by `library_thumbnail` to
+/// the fast `Triangle` filter. Used by `library_thumbnail` to
 /// keep IPC payloads small. The decode is gated by the default memory budget.
 pub fn load_thumbnail(path: &Path, max_edge: u32) -> Result<DynamicImage, ImageError> {
     let img = load(path)?;
@@ -218,8 +218,8 @@ pub fn crop(img: &DynamicImage, rect: Rect) -> Result<DynamicImage, ImageError> 
 
 /// Crop, scale, and letterbox a `source` image per `spec`. Skips
 /// `compose_on_black` for the fully-covered legacy path so non-letterboxed
-/// applies are byte-identical to the pre-Phase-4c pipeline
-/// (`docs/plan/phase-4c-free-positioning.md` §4c.3). Empty slices (the user
+/// applies are byte-identical to the pre-Phase-4c pipeline.
+/// Empty slices (the user
 /// dragged the image entirely off-monitor) return an all-black canvas.
 pub fn render_slice(source: &DynamicImage, spec: &CropSpec) -> Result<DynamicImage, ImageError> {
     if spec.slice_dst_size.0 == 0 || spec.slice_dst_size.1 == 0 {
@@ -241,7 +241,7 @@ pub fn render_slice(source: &DynamicImage, spec: &CropSpec) -> Result<DynamicIma
 
 /// Compose `slice` onto a black `dst_size` canvas at `dst_offset`. Used by the
 /// apply pipeline when the user has free-positioned the image and parts of a
-/// monitor fall outside the source rect (`docs/plan/phase-4c-free-positioning.md`
+/// monitor fall outside the source rect (
 /// §4c.3). Pixels outside the slice stay opaque black.
 #[must_use]
 pub fn compose_on_black(

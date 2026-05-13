@@ -2,8 +2,6 @@
 
 > Linux wallpaper manager focused on physical-bezel-aware multi-monitor spanning and folder-driven slideshows.
 
-**Status: Phase 3 (Tauri shell & tray).** The Rust core, `superpanels` CLI, daemon, and Tauri GUI with system tray are working; polish and packaging follow in [`docs/plan/`](./docs/plan/) Phases 4–5.
-
 Single binary. Rust core, Tauri v2 + Svelte 5 GUI. Primary target: Arch / CachyOS on KDE Wayland.
 
 ## Install
@@ -17,22 +15,22 @@ cargo build --release -p superpanels-cli
 # binary at target/release/superpanels
 ```
 
-Once Phase 5 ships, `cargo install superpanels` and `yay -S superpanels` will be the supported install paths.
+`cargo install superpanels` and `yay -S superpanels` are the planned install paths — see [`docs/release/packaging.md`](./docs/release/packaging.md).
 
 ## Quick start
 
 ```sh
-# Tell Superpanels how big each monitor is in mm (one-off, see docs/spec/06-detection.md).
-superpanels monitor configure DP-1 --diagonal 27in --aspect 16:9
+# One-off: tell Superpanels how big each monitor is in mm.
+superpanels monitor configure DP-1 --diagonal 27 --aspect 16:9
 
 # Span a panorama across every monitor, bezel-corrected.
-superpanels set panorama.jpg --bezel-h 8
+superpanels set panorama.jpg
 
-# Or preview the crops without touching the wallpaper.
-superpanels set panorama.jpg --bezel-h 8 --dry-run
+# Preview the crops without touching the wallpaper.
+superpanels set panorama.jpg --dry-run
 ```
 
-See [`docs/spec/`](./docs/spec/) for the full design (split by section) and [`superpanels --help`](./crates/superpanels-cli/src/main.rs) for the current command surface.
+The monitor gap (bezel + air-gap between panels) is authored on the GUI canvas (or via `superpanels profile`) and stored on the profile — there is no `--bezel` flag. See [`docs/reference/layout-math.md`](./docs/reference/layout-math.md) for the principle and [`docs/reference/configuration.md`](./docs/reference/configuration.md) for the profile schema.
 
 ## Running locally
 
@@ -86,13 +84,17 @@ Tauri OS prerequisites are listed in [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 | Read this when | Doc |
 |---|---|
-| You want to know what's being built | [`docs/spec/`](./docs/spec/) (split by section) |
-| You want to know what's next | [`docs/plan/`](./docs/plan/) (split by phase) |
-| You want to contribute | [CONTRIBUTING.md](./CONTRIBUTING.md) |
-| You're writing Rust here | [docs/style-rust.md](./docs/style-rust.md) |
-| You're writing TypeScript / Svelte here | [docs/style-frontend.md](./docs/style-frontend.md) |
-| You're adding modules / dependencies | [docs/architecture.md](./docs/architecture.md) |
-| You're writing tests | [docs/testing.md](./docs/testing.md) |
+| You want the layout / monitor-gap math | [`docs/reference/layout-math.md`](./docs/reference/layout-math.md) |
+| You're touching display detection | [`docs/reference/displays.md`](./docs/reference/displays.md) |
+| You're touching a backend | [`docs/reference/backends.md`](./docs/reference/backends.md) |
+| You want the config schema | [`docs/reference/configuration.md`](./docs/reference/configuration.md) |
+| You're working on the security/IPC surface | [`docs/reference/security.md`](./docs/reference/security.md) |
+| You're adding modules / dependencies | [`docs/contributing/architecture.md`](./docs/contributing/architecture.md) |
+| You're writing Rust here | [`docs/contributing/style-rust.md`](./docs/contributing/style-rust.md) |
+| You're writing TypeScript / Svelte here | [`docs/contributing/style-frontend.md`](./docs/contributing/style-frontend.md) |
+| You're writing tests | [`docs/contributing/testing.md`](./docs/contributing/testing.md) |
+| You're contributing | [CONTRIBUTING.md](./CONTRIBUTING.md) |
+| You're tagging a release | [`docs/release/packaging.md`](./docs/release/packaging.md) and [`docs/release/release-checklist.md`](./docs/release/release-checklist.md) |
 
 ## Licence
 

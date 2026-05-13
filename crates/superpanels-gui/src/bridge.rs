@@ -31,7 +31,7 @@ pub(crate) fn call(method: &str, params: Value, config_path: Option<&Path>) -> C
         // Mid-call socket / framing failure is a transport problem, not a
         // logical rejection from the daemon — keep the two paths distinct so
         // callers can `match err { IpcError::DaemonUnreachable(_) => … }`
-        // without inspecting strings (confused-deputy guard, `SPEC §17`).
+        // without inspecting strings (confused-deputy guard,`).
         let resp = ipc_client::call(&mut stream, method, params)
             .map_err(|e| IpcError::DaemonUnreachable(e.to_string()))?;
         return resolve(resp);

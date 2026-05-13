@@ -1,4 +1,4 @@
-//! X11 `feh` backend via `feh --bg-fill IMAGE…` (`SPEC.md` §10.4).
+//! X11 `feh` backend via `feh --bg-fill IMAGE…`.
 
 use std::ffi::OsStr;
 use std::path::PathBuf;

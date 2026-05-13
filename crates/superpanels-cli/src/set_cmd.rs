@@ -1,9 +1,9 @@
 //! `superpanels set` subcommand: end-to-end transient apply pipeline.
 //!
-//! Profiles-as-modes (`docs/spec/03-core-concepts.md` §3.4) doesn't change
-//! `set` — it stays a one-shot apply that synthesises monitor placements
-//! from the live OS layout (`layout::synthesise_placements`). Use the
-//! profile manager or `superpanels profile` for persistent state.
+//! `set` stays a one-shot apply that synthesises monitor placements from
+//! the live OS layout (`layout::synthesise_placements`) — it doesn't touch
+//! the profile model. Use the profile manager or `superpanels profile` for
+//! persistent state.
 
 use std::io::Write as _;
 use std::os::unix::net::UnixStream;
@@ -80,16 +80,10 @@ pub(crate) fn run(
     }
 
     if !args.extra_images.is_empty() {
-        bail!(
-            "multiple-image `set` (one per monitor) is not yet supported; \
-             see PLAN.md §2"
-        );
+        bail!("multiple-image `set` (one per monitor) is not yet supported");
     }
     if !args.pins.is_empty() {
-        bail!(
-            "`--monitor NAME=PATH` per-monitor pinning is not yet supported; \
-             see PLAN.md §2"
-        );
+        bail!("`--monitor NAME=PATH` per-monitor pinning is not yet supported");
     }
     let cfg = load_config(config_path)?;
     let mut monitors = detect(args.monitors.as_deref())?;

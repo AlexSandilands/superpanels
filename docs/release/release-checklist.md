@@ -1,8 +1,8 @@
 # Release checklist
 
-> Manual smoke tests + housekeeping for tagging a release. Filled in as phases ship; many items are placeholders pre-Phase 5.
+> Manual smoke tests + housekeeping for tagging a release.
 
-This is not a runbook for any one release — it's the canonical *list of things to walk through* before tagging. Skip items that aren't yet relevant for the current version (noted inline).
+This is not a runbook for any one release — it's the canonical *list of things to walk through* before tagging. Skip items that aren't yet relevant for the current version. Packaging-side work (AUR / crates.io / Flatpak / GitHub Actions release pipeline) is tracked separately in [`docs/release/packaging.md`](./packaging.md).
 
 ---
 
@@ -33,20 +33,20 @@ Run on a real desktop session for each supported backend before tagging. Capture
 - [ ] Drag-to-offset in the GUI updates the live preview at ≥ 60 fps.
 - [ ] Slideshow advances on schedule and persists state across daemon restart.
 
-### Sway / Hyprland / GNOME / X11+feh (Phase 2+)
+### Sway / Hyprland / GNOME / X11+feh
 
 - [ ] `superpanels set` produces a bezel-correct wallpaper on each.
 - [ ] Profile switch from the tray works on each.
 - [ ] Backend auto-detection picks the right backend without config.
 
-### Custom backend (Phase 2+)
+### Custom backend
 
 - [ ] A custom-command profile applies an image successfully.
-- [ ] Custom-command field's safety callout is visible in the GUI settings.
+- [ ] Custom-command field's "runs with your privileges" callout is visible in the GUI settings.
 
 ---
 
-## Packaging (Phase 5+)
+## Packaging
 
 - [ ] AUR PKGBUILDs (`superpanels`, `superpanels-gui`) build cleanly with `makepkg -si`.
 - [ ] `.SRCINFO` regenerated and committed to the AUR repos.
@@ -54,9 +54,9 @@ Run on a real desktop session for each supported backend before tagging. Capture
 - [ ] GitHub release tag created; binaries attached:
   - [ ] `superpanels-x86_64-linux-cli`
   - [ ] `superpanels-x86_64-linux-gui.tar.zst`
-  - [ ] `superpanels-aarch64-linux-cli`
+  - [ ] `superpanels-aarch64-linux-cli` (when cross-compile is wired up)
   - [ ] SHA-256 checksums alongside each.
-- [ ] Flatpak builds locally (Phase 5+ best-effort).
+- [ ] Flatpak builds locally (best-effort).
 
 ---
 
@@ -64,6 +64,5 @@ Run on a real desktop session for each supported backend before tagging. Capture
 
 - [ ] Release notes posted to GitHub Releases.
 - [ ] AUR `bin` package bumped (if present).
-- [ ] Move tick boxes in the relevant `docs/plan/phase-*.md` to "completed" for the phase that shipped.
 - [ ] Open issues for anything that *almost* shipped but slipped.
 - [ ] If 1.0+: announcement (changelog summary on r/unixporn / r/archlinux / HN).

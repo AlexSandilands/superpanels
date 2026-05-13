@@ -81,7 +81,7 @@ impl Config {
     }
 
     /// Populate `physical_size_mm` / `ppi` from `[[monitor]]` blocks.
-    /// Matches by `stable_id` first, then `name` (`SPEC.md` §14.1).
+    /// Matches by `stable_id` first, then `name`.
     pub fn merge_into_monitors(&self, monitors: &mut [Monitor]) {
         merge::merge_monitor_config(&self.monitors, monitors);
     }

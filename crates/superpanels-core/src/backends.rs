@@ -1,4 +1,4 @@
-//! Wallpaper backends (`SPEC.md` §10).
+//! Wallpaper backends.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -72,7 +72,7 @@ pub trait WallpaperBackend: Send + Sync {
     fn supports_per_monitor(&self) -> bool;
 }
 
-/// Walk the `SPEC.md` §10.2 ladder and return the first available backend.
+/// Walk the ladder and return the first available backend.
 /// A non-`Auto` `prefer` is honoured unconditionally — the apply-time error
 /// is more actionable than a silent fallback. When `Auto` finds nothing, an
 /// [`UnavailableBackend`] sentinel is returned.
@@ -82,7 +82,7 @@ pub fn detect_backend(prefer: BackendKind, custom_command: &str) -> Box<dyn Wall
         debug!(?prefer, "backend pinned via config");
         return construct(prefer, custom_command);
     }
-    // Order matches SPEC §10.2 priority table.
+    // Order matches priority table.
     let ladder: &[BackendKind] = &[
         BackendKind::Kde,
         BackendKind::Hyprland,

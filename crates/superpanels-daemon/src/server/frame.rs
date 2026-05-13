@@ -1,4 +1,4 @@
-//! Length-prefixed IPC frame I/O on the Unix socket (`SPEC §13`).
+//! Length-prefixed IPC frame I/O on the Unix socket.
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;

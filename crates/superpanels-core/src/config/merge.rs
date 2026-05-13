@@ -1,5 +1,5 @@
 //! Merge `[[monitor]]` config blocks into a detected `Vec<Monitor>` so each
-//! monitor picks up its physical mm + derived PPI (`SPEC.md` §14.1).
+//! monitor picks up its physical mm + derived PPI.
 
 use crate::display::{Monitor, Rotation};
 

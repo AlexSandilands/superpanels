@@ -1,4 +1,4 @@
-//! wlroots display detector backed by `wlr-randr --json` (`SPEC.md` §6.4).
+//! wlroots display detector backed by `wlr-randr --json`.
 
 use std::env;
 use std::time::Duration;

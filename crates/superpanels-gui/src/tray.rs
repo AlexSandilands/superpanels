@@ -1,4 +1,4 @@
-//! System tray (`SPEC.md` §13). Builds an initial menu, polls daemon state
+//! System tray. Builds an initial menu, polls daemon state
 //! to keep the active-profile tick mark in sync, and routes menu events to
 //! the right Tauri command (or quits the app).
 
@@ -114,7 +114,7 @@ pub(crate) fn spawn_poller(handle: AppHandle, state: Arc<AppState>) {
 
 fn menu_signature(snap: &RuntimeSnapshot, profiles: &[String]) -> String {
     // Newline separator can't appear inside profile names — `validate_profiles`
-    // rejects control chars (`SPEC §17`), so it's safe as a delimiter.
+    // rejects control chars, so it's safe as a delimiter.
     format!(
         "{}|{}|{}",
         snap.active_profile.as_deref().unwrap_or(""),

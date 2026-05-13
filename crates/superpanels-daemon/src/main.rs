@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-//! Superpanels background daemon (`SPEC.md` §5.1, §5.2, §5.3; `PLAN.md` §2.5).
+//! Superpanels background daemon.
 
 // reason: tracing replaces println for structured output; the daemon has no
 // intentional stdout output. Print suppression warnings are correct.
@@ -191,7 +191,7 @@ async fn run_daemon(cli: Cli) -> Result<()> {
 
     // OS-rotation push: KDE kscreen D-Bus signal (best-effort, KDE only).
     // Manual refresh in Settings > Monitors covers stacks where the signal
-    // doesn't fire. See `docs/spec/06-detection.md` §6.3.
+    // doesn't fire. See §6.3.
     display_watch::spawn(Arc::clone(&state), monitors_tx.clone());
 
     // Apply the default profile (if set) after a short delay to allow compositor readiness.

@@ -1,4 +1,4 @@
-//! Slideshow next/prev/pause IPC handlers (`SPEC §12.4`).
+//! Slideshow next/prev/pause IPC handlers.
 
 use std::sync::Arc;
 use std::time::Duration;

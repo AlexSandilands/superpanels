@@ -1,7 +1,7 @@
 // Library-grid thumbnail cache. Calls `library_thumbnail` and stores the
 // decoded bytes as a Blob → object URL so the grid binds an `<img src>`
 // without re-base64-decoding on every reflow. Bounded LRU (oldest-evicted)
-// per `SPEC §7.2` (thumb cache budget).
+// per` (thumb cache budget).
 
 import { api } from '$lib/api';
 

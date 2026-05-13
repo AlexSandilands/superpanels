@@ -434,7 +434,7 @@ mod tests {
     fn portrait_monitor_dst_size_uses_rotated_framebuffer() {
         // 1080×1920 panel rotated right (90 CW): the canvas-as-truth math
         // must hand back dst_size = (1080, 1920) — the framebuffer the
-        // compositor draws into post-rotation. SPEC §4.3.
+        // compositor draws into post-rotation.
         let landscape = Monitor {
             id: MonitorId(0),
             name: "DP-1".to_owned(),

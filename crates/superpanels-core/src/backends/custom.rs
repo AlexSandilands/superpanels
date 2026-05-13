@@ -1,4 +1,4 @@
-//! User-supplied custom backend (`SPEC.md` §10.4). Substitutes `{image_N}` /
+//! User-supplied custom backend. Substitutes `{image_N}` /
 //! `{monitor_N}` placeholders in `[backend].custom_command`; no shell, no quoting.
 
 use std::ffi::{OsStr, OsString};

@@ -1,7 +1,7 @@
 //! Schedule evaluation. The daemon ticks once per minute, checks
 //! `Config.schedules` against wall time, and dispatches `apply_profile` for
 //! any rule that matches the current minute. Schedules are top-level
-//! (`docs/spec/09-profiles-schedules.md`) and reference profiles by name.
+//! and reference profiles by name.
 
 use std::collections::HashMap;
 use std::str::FromStr;

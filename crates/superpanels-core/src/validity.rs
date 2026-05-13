@@ -1,4 +1,4 @@
-//! Profile validity (`docs/spec/09-profiles-schedules.md`).
+//! Profile validity.
 //!
 //! Disabled profiles are surfaced everywhere greyed-out; clicking opens the
 //! repair flow. Validity is *derived* — never stored on disk — so it stays

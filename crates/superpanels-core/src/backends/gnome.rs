@@ -1,4 +1,4 @@
-//! GNOME Shell backend (`SPEC.md` §10.4). Composites per-monitor crops into
+//! GNOME Shell backend. Composites per-monitor crops into
 //! one image and points `picture-uri[-dark]` at it via `gsettings`.
 
 use std::ffi::OsStr;

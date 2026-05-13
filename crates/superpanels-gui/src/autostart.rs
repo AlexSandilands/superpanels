@@ -1,4 +1,4 @@
-//! `~/.config/autostart/superpanels.desktop` writer (`SPEC.md` §12 / §14).
+//! `~/.config/autostart/superpanels.desktop` writer.
 //!
 //! XDG autostart spec: a `.desktop` file in the user's `autostart` directory
 //! is launched by every compliant DE on session start. Removing the file

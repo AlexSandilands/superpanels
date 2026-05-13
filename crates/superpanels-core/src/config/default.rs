@@ -1,7 +1,7 @@
-//! Initial config-file content (`SPEC.md` §14.1).
+//! Initial config-file content.
 
 const DEFAULT_TOML: &str = "\
-# Superpanels configuration file. See SPEC.md §14.1 for the full schema.
+# Superpanels configuration file. See for the full schema.
 #
 # Defaults are sane; uncomment and edit blocks as needed.
 
@@ -26,8 +26,8 @@ auto_scan        = true
 # name. Use `superpanels monitor configure` to generate these blocks.
 #
 # [[monitor]]
-# stable_id   = \"f7f0f124-9e9b-4ef0-91a7-426d58091760\"
-# name        = \"DP-1\"
+# stable_id = \"f7f0f124-9e9b-4ef0-91a7-426d58091760\"
+# name = \"DP-1\"
 # physical_mm = [597, 336]
 ";
 

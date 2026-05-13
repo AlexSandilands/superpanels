@@ -1,7 +1,7 @@
 //! KDE Plasma display detector backed by `kscreen-doctor -o`.
 //!
 //! Physical mm are not extracted (kscreen-doctor doesn't expose them); they
-//! come from `[[monitor]]` config (`SPEC.md` §14.1).
+//! come from `[[monitor]]` config.
 
 use std::env;
 use std::path::PathBuf;
@@ -302,7 +302,7 @@ fn finalize(
     })?;
     let rotation = raw.rotation.unwrap_or(Rotation::None);
     // `kscreen-doctor` reports `Geometry` in compositor (post-rotation) space.
-    // SPEC §3 requires `Monitor.resolution` in native panel orientation; the
+    // requires `Monitor.resolution` in native panel orientation; the
     // layout module re-applies the rotation. Swap back when rotated so the
     // invariant matches wlr-randr (which already reports native mode w/h).
     let resolution = match rotation {

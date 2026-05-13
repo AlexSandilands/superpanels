@@ -1,4 +1,4 @@
-//! SQLite-backed library index (`SPEC §14.5`). Schema is migrated via
+//! SQLite-backed library index. Schema is migrated via
 //! `PRAGMA user_version`; tag matching is case-insensitive (`COLLATE NOCASE`).
 
 use std::collections::HashMap;

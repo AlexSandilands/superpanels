@@ -1,5 +1,4 @@
-//! Criterion benchmark for [`scan_folder`] and [`load_index`] (PLAN.md §2.4
-//! cross-cutting "Performance baselines" — `SPEC.md` §19 budget item).
+//! Criterion benchmark for [`scan_folder`] and [`load_index`].
 //!
 //! `scan_folder` is parameterised over `[100, 1_000, 10_000]` inputs to expose
 //! the walk + header-parse cost at realistic library sizes. The 10k case

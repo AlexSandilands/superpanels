@@ -20,7 +20,7 @@ This file is the entry point for working on Superpanels. The deeper guides live 
 
 ## What you're building
 
-Superpanels is a Linux wallpaper manager focused on multi-monitor spanning with bezel correction. The full design lives in [`docs/spec/`](./docs/spec/) (split per section) and the phased build plan in [`docs/plan/`](./docs/plan/) (split per phase). Read the index of each — only open the section/phase you need.
+Superpanels is a Linux wallpaper manager focused on multi-monitor spanning with bezel correction. Topic-scoped reference docs live in [`docs/`](./docs/); start at [the doc map](#the-doc-map) below.
 
 The project is a Cargo workspace (Rust) plus a Tauri shell with a Svelte 5 frontend (TypeScript). The Rust core is the ground truth; CLI, daemon, and GUI are thin wrappers around it.
 
@@ -64,8 +64,6 @@ pre-commit run --all-files
 cargo check --workspace --all-features
 ```
 
-(These will be no-ops until the workspace is scaffolded in plan Phase 1.1, see `docs/plan/phase-1-core-cli.md`.)
-
 ---
 
 ## Pre-commit hooks
@@ -92,16 +90,20 @@ pre-commit run --all-files --hook-stage pre-push
 
 ## The doc map
 
-Five guides cover everything:
-
 | Doc | When to read it |
 |---|---|
-| [`docs/spec/`](./docs/spec/) | Before designing a feature — what we're building. Read the index, then open just the section file you need. |
-| [`docs/plan/`](./docs/plan/) | Before starting a new phase — what to do next. Read the index, then open just the phase file you need. |
-| [`docs/architecture.md`](./docs/architecture.md) | Before adding/moving a module — the workspace map, file-size rules, naming. |
-| [`docs/style-rust.md`](./docs/style-rust.md) | While writing Rust — idioms, error handling, API design, what to avoid. |
-| [`docs/style-frontend.md`](./docs/style-frontend.md) | While writing TypeScript or Svelte — strict TS, runes, component conventions. |
-| [`docs/testing.md`](./docs/testing.md) | When adding tests — unit/integration/property/snapshot conventions. |
+| [`docs/reference/layout-math.md`](./docs/reference/layout-math.md) | Anything touching the layout/crop algorithm or the monitor-gap model. |
+| [`docs/reference/displays.md`](./docs/reference/displays.md) | Adding a detector or anything keying on monitor identity. |
+| [`docs/reference/backends.md`](./docs/reference/backends.md) | Adding/modifying a wallpaper backend or its subprocess plumbing. |
+| [`docs/reference/configuration.md`](./docs/reference/configuration.md) | Changing the config / state file shape, the profile schema, or validation bounds. |
+| [`docs/reference/security.md`](./docs/reference/security.md) | Anything touching IPC, Tauri capabilities, or input validation. |
+| [`docs/contributing/architecture.md`](./docs/contributing/architecture.md) | Before adding/moving a module — workspace map, file-size rules, naming. |
+| [`docs/contributing/style-rust.md`](./docs/contributing/style-rust.md) | While writing Rust — idioms, error handling, API design, what to avoid. |
+| [`docs/contributing/style-frontend.md`](./docs/contributing/style-frontend.md) | While writing TypeScript or Svelte — strict TS, runes, component conventions. |
+| [`docs/contributing/testing.md`](./docs/contributing/testing.md) | When adding tests — unit/integration/property/snapshot conventions. |
+| [`docs/release/packaging.md`](./docs/release/packaging.md) | Before tagging a release — AUR, crates.io, GitHub Actions. |
+| [`docs/release/stabilisation.md`](./docs/release/stabilisation.md) | What still has to be true before 1.0. |
+| [`docs/followups.md`](./docs/followups.md) | Deferred workarounds and known follow-up work. |
 
 Memorise the headings, not the contents. When you hit a question, you'll know which doc to grep.
 
@@ -109,14 +111,13 @@ Memorise the headings, not the contents. When you hit a question, you'll know wh
 
 ## Workflow
 
-1. Pick a task from the relevant `docs/plan/phase-*.md`. Phases are vertical — finish a phase before starting the next, and within a phase do tasks in roughly the listed order.
-2. Make a feature branch: `git checkout -b phase-1/display-detection`.
-3. **Write the test first** for non-trivial logic. See [`docs/testing.md`](./docs/testing.md).
+1. Pick something to work on — open issues, `docs/followups.md`, or the unticked items in `docs/release/stabilisation.md` / `docs/release/packaging.md`.
+2. Make a feature branch: `git checkout -b feat/display-rotation-watch`.
+3. **Write the test first** for non-trivial logic. See [`docs/contributing/testing.md`](./docs/contributing/testing.md).
 4. Implement.
 5. Run `cargo fmt && cargo clippy --fix --allow-dirty` before committing.
 6. Commit in small, focused chunks. Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) — `feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`.
 7. Push — pre-push hooks run the full suite. If they pass, open a PR.
-8. After merge, tick the box in the relevant `docs/plan/phase-*.md` and move to the next task.
 
 ---
 
@@ -129,7 +130,7 @@ Every commit that lands on `main` must satisfy:
 - [ ] No new `unwrap()`, `expect()`, `panic!`, `todo!`, `unimplemented!`, `dbg!`, or `println!` outside tests / `main` / `eprintln!` for user-facing CLI errors.
 - [ ] No new `#[allow(...)]` without an inline `// reason: …` comment.
 - [ ] No new dependencies added without a one-line justification in the commit message and confirmation that `cargo deny check` passes.
-- [ ] Files modified that grew past ~500 lines are split into submodules — see [`docs/architecture.md`](./docs/architecture.md#file-and-module-sizing).
+- [ ] Files modified that grew past ~500 lines are split into submodules — see [`docs/contributing/architecture.md`](./docs/contributing/architecture.md#file-and-module-sizing).
 - [ ] Public API additions in `superpanels-core` have rustdoc.
 
 ---
@@ -141,7 +142,7 @@ If you're new to Rust, these are worth a few hours each:
 - [The Rust Book](https://doc.rust-lang.org/book/) — chapters 1–10 cover 80% of what we use.
 - [Rust by Example](https://doc.rust-lang.org/rust-by-example/) — for searching "how do I do X".
 - [The Rustonomicon](https://doc.rust-lang.org/nomicon/) — *don't* read this; you don't write `unsafe` here.
-- [Effective Rust](https://www.lurklurk.org/effective-rust/) — the canonical "writing better Rust" reference; pairs well with [`docs/style-rust.md`](./docs/style-rust.md).
+- [Effective Rust](https://www.lurklurk.org/effective-rust/) — the canonical "writing better Rust" reference; pairs well with [`docs/contributing/style-rust.md`](./docs/contributing/style-rust.md).
 
 When in doubt:
 - Run `cargo clippy` and read every warning. Clippy is a great teacher.

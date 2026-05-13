@@ -1,4 +1,4 @@
-//! Hyprland backend via `hyprctl hyprpaper` (`SPEC.md` §10.4).
+//! Hyprland backend via `hyprctl hyprpaper`.
 
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;

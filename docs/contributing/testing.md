@@ -2,7 +2,7 @@
 
 > What to test, where to put the tests, and what tools we use.
 
-For testing *philosophy* in the broader spec, see [`docs/spec/20-testing.md`](./spec/20-testing.md). This doc is the practitioner's reference.
+This doc is the practitioner's reference — what to write and where to put it.
 
 ---
 
@@ -26,12 +26,12 @@ For testing *philosophy* in the broader spec, see [`docs/spec/20-testing.md`](./
 
 | Tier | Tool | When to use it |
 |---|---|---|
-| Unit | `#[test]` | Isolated logic — bezel math, parsers, struct serde. Most tests live here. |
+| Unit | `#[test]` | Isolated logic — layout math, parsers, struct serde. Most tests live here. |
 | Integration | `tests/*.rs` | Cross-module flows — e.g. "full `set` pipeline against a mock backend". |
 | Snapshot | `insta` | Parser output, CLI human-readable output, JSON shapes. |
-| Property | `proptest` | Algorithms with invariants — bezel math, layout. |
+| Property | `proptest` | Algorithms with invariants — layout math. |
 | Doc | `///` examples | Public API examples that must compile + run. |
-| Bench | `criterion` | Hot paths — bezel math, image processing, library scan. |
+| Bench | `criterion` | Hot paths — layout math, image processing, library scan. |
 | Frontend unit | `vitest` | TS utility functions, store logic. |
 | Frontend visual | (manual) | Canvas rendering — no auto-test. |
 
@@ -171,7 +171,7 @@ First run, `insta` writes a `.snap` file next to the test. You eyeball it, commi
 
 For algorithms whose correctness is best stated as *invariants* over arbitrary inputs.
 
-The bezel math is the canonical example:
+The layout math is the canonical example:
 
 ```rust
 use proptest::prelude::*;
@@ -279,7 +279,7 @@ The monitor canvas's *rendering* is verified by humans; the *math* feeding it is
 - **D-Bus messages reaching KDE.** Mocked in unit tests; manually verified on a real KDE install before release.
 - **System tray appearance.** Manual.
 
-These are listed in `docs/release-checklist.md` (created in Phase 5) as items to walk through before tagging a release.
+These are listed in [`docs/release/release-checklist.md`](../release/release-checklist.md) as items to walk through before tagging a release.
 
 ---
 
