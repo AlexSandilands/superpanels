@@ -7,19 +7,6 @@ import type { Profile } from '$lib/api';
 
 const POSITION_TOLERANCE_MM = 0.5;
 
-function rotationDegrees(r: 'none' | 'right' | 'inverted' | 'left'): 0 | 90 | 180 | 270 {
-  switch (r) {
-    case 'right':
-      return 90;
-    case 'inverted':
-      return 180;
-    case 'left':
-      return 270;
-    default:
-      return 0;
-  }
-}
-
 /** Returns `true` when any live monitor override differs (beyond the
  *  half-millimetre slop tolerance) from the persisted placement. */
 export function canvasOverridesDirty(
@@ -35,7 +22,6 @@ export function canvasOverridesDirty(
     ) {
       return true;
     }
-    if (live.rotation !== rotationDegrees(persisted.rotation)) return true;
   }
   return false;
 }

@@ -143,7 +143,7 @@ export function normaliseAxis(
   for (const m of monitors) {
     const w = work.get(m.id);
     if (!w) continue;
-    const ex = next[m.id] ?? { xMm: m.xMm, yMm: m.yMm, rotation: m.rotation };
+    const ex = next[m.id] ?? { xMm: m.xMm, yMm: m.yMm };
     next[m.id] = { ...ex, xMm: w.x, yMm: w.y };
   }
   return next;

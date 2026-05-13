@@ -16,7 +16,7 @@ use superpanels_core::config::{
 use superpanels_core::detect;
 use superpanels_core::display::{Monitor, MonitorRef};
 use superpanels_core::image::{
-    FitMode as ImageFitMode, clear_temp_dir, load, render_slice, rotate, save_temp, scale_to_fit,
+    FitMode as ImageFitMode, clear_temp_dir, load, render_slice, save_temp, scale_to_fit,
 };
 use superpanels_core::layout::{
     FitMode as LayoutFitMode, ImageRectMm, compute_crop_specs, cover_image_rect_mm,
@@ -273,10 +273,11 @@ fn run_span_apply(
             .ok_or_else(|| {
                 anyhow::anyhow!("crop spec references unknown monitor {:?}", spec.monitor_id)
             })?;
+        // Save at canvas/post-rotation dims; backends paint into the
+        // rotated framebuffer themselves (memory: KDE wallpaper orientation).
         let composed = render_slice(&source, spec)?;
-        let rotated = rotate(&composed, spec.rotation);
         let safe = sanitise_filename(&monitor.name);
-        let path = save_temp(&rotated, &format!("{safe}-{token}.png"))?;
+        let path = save_temp(&composed, &format!("{safe}-{token}.png"))?;
         assignments.push((monitor_ref(monitor), path));
     }
     backend.apply(&assignments).context("backend apply")?;

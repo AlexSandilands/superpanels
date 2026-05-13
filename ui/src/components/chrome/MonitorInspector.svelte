@@ -1,6 +1,9 @@
 <script lang="ts">
+  import { redetectMonitorsWithToast } from '$lib/actions';
   import type { PreviewMonitor } from '$lib/canvas/preview-layout';
   import { canvasView } from '$lib/stores/canvas-view.svelte';
+  import { monitorStore } from '$lib/stores/monitors.svelte';
+  import Icon from '../widgets/Icon.svelte';
   import StepperInput from '../widgets/StepperInput.svelte';
 
   type ImageTransform = {
@@ -16,9 +19,8 @@
     imageTransform: ImageTransform;
     onClose: () => void;
     onSetPrimary: () => void;
-    onRotate: (delta: number) => void;
   };
-  let { monitor, imageUrl, imageTransform, onClose, onSetPrimary, onRotate }: Props = $props();
+  let { monitor, imageUrl, imageTransform, onClose, onSetPrimary }: Props = $props();
 
   const cropInner = $derived({
     leftPct: ((imageTransform.offsetMmX - monitor.xMm) / monitor.wMm) * 100,
@@ -52,9 +54,17 @@
     {#if monitor.primary}
       <span class="chip active">PRIMARY</span>
     {/if}
-    <button class="btn ghost icon sm" style:margin-left="auto" onclick={onClose} title="Close"
-      >×</button
+    <button
+      class="btn ghost icon sm"
+      style:margin-left="auto"
+      onclick={() => void redetectMonitorsWithToast()}
+      disabled={monitorStore.loading}
+      title="Re-detect monitors (F5)"
+      aria-label="Re-detect monitors"
     >
+      <Icon name="refresh" size={12} />
+    </button>
+    <button class="btn ghost icon sm" onclick={onClose} title="Close">×</button>
   </div>
 
   <div class="section">
@@ -137,13 +147,11 @@
     </div>
   </div>
 
-  <div class="flex" style:gap="6px" style:margin-top="14px">
-    <button class="btn sm" onclick={() => onRotate(-90)} title="[ rotate CCW">↺</button>
-    <button class="btn sm" onclick={() => onRotate(90)} title="] rotate CW">↻</button>
-    {#if !monitor.primary}
+  {#if !monitor.primary}
+    <div class="flex" style:gap="6px" style:margin-top="14px">
       <button class="btn sm" style:margin-left="auto" onclick={onSetPrimary}>Set as primary</button>
-    {/if}
-  </div>
+    </div>
+  {/if}
 </div>
 
 <style>

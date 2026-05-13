@@ -9,14 +9,21 @@ export type WindowEventHandlers = {
   onDragOver: () => void;
   onDragLeave: () => void;
   onDrop: (path: string) => void;
+  /** Daemon-driven OS-rotation push (KDE kscreen `configChanged`). */
+  onMonitorsChanged: () => void;
 };
 
 export function attachWindowEvents(handlers: WindowEventHandlers): () => void {
   let unTray: UnlistenFn | undefined;
   let unDrop: UnlistenFn | undefined;
+  let unMonitors: UnlistenFn | undefined;
 
   void listen('tray://open-settings', () => handlers.onOpenSettings()).then((fn) => {
     unTray = fn;
+  });
+
+  void listen('monitors://changed', () => handlers.onMonitorsChanged()).then((fn) => {
+    unMonitors = fn;
   });
 
   void getCurrentWebview()
@@ -36,5 +43,6 @@ export function attachWindowEvents(handlers: WindowEventHandlers): () => void {
   return () => {
     unTray?.();
     unDrop?.();
+    unMonitors?.();
   };
 }

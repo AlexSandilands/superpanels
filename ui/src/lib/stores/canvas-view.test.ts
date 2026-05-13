@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { canvasView, type MonitorOverride } from './canvas-view.svelte';
 
-function ovr(xMm: number, yMm: number, rotation: 0 | 90 | 180 | 270 = 0): MonitorOverride {
-  return { xMm, yMm, rotation };
+function ovr(xMm: number, yMm: number): MonitorOverride {
+  return { xMm, yMm };
 }
 
 beforeEach(() => {
@@ -28,16 +28,19 @@ describe('canvasView.hasOverrides', () => {
     expect(canvasView.hasOverrides(defaults)).toBe(true);
   });
 
-  it('returns_true_when_rotation_changes_even_with_zero_displacement', () => {
-    const defaults = { A: ovr(0, 0, 0) };
-    canvasView.setOverrides({ A: ovr(0, 0, 90) });
-    expect(canvasView.hasOverrides(defaults)).toBe(true);
-  });
-
   it('skips_ids_missing_from_either_side', () => {
     const defaults = { A: ovr(0, 0), B: ovr(500, 0) };
     // B has no override entry; A matches. Should not falsely trigger via B.
     canvasView.setOverrides({ A: ovr(0, 0) });
     expect(canvasView.hasOverrides(defaults)).toBe(false);
+  });
+
+  it('only_diffs_position_fields_now_that_rotation_is_OS_driven', () => {
+    // MonitorOverride no longer carries rotation — confirm the check
+    // doesn't reach for a stale field.
+    const defaults = { A: ovr(0, 0) };
+    canvasView.setOverrides({ A: ovr(0, 0) });
+    expect(canvasView.hasOverrides(defaults)).toBe(false);
+    expect(Object.keys(canvasView.overrides['A'] ?? {}).sort()).toEqual(['xMm', 'yMm']);
   });
 });

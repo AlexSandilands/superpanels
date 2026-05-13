@@ -21,12 +21,12 @@ use crate::display::{Monitor, Rotation};
 /// `MonitorOverride` from `ui/src/lib/stores/canvas-view.svelte.ts`. The
 /// `(x_mm, y_mm)` are the monitor's top-left in physical millimetres on the
 /// authored canvas; gaps between monitors fall out of the placements.
+/// Rotation is OS-reported via [`Monitor::rotation`] and is not authored here.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../ui/src/lib/types/")]
 pub struct MonitorPlacement {
     pub x_mm: f32,
     pub y_mm: f32,
-    pub rotation: Rotation,
 }
 
 /// Opaque hash over (sorted `stable_id`s ∥ rotations) for the connected set

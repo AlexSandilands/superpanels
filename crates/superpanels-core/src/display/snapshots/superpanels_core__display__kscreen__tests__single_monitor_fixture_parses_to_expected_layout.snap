@@ -16,8 +16,8 @@ expression: monitors
             0,
         ),
         resolution: (
-            1080,
             1920,
+            1080,
         ),
         physical_size_mm: None,
         scale: 1.25,

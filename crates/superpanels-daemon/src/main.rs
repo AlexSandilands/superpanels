@@ -21,6 +21,7 @@ use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
 mod apply;
+mod display_watch;
 mod pool;
 mod schedule;
 mod server;
@@ -163,6 +164,9 @@ async fn run_daemon(cli: Cli) -> Result<()> {
 
     let (timer_tx, timer_rx) = watch::channel::<Option<Duration>>(None);
     let (watcher_tx, watcher_rx) = tokio::sync::mpsc::unbounded_channel::<notify::Event>();
+    // Broadcast tick fired by `display_watch` when the OS pushes a display
+    // configuration change. Sized small — late subscribers don't need history.
+    let (monitors_tx, _monitors_rx) = tokio::sync::broadcast::channel::<()>(8);
 
     // The watcher lives inside DaemonState so handlers (specifically
     // `save_config`) can rebuild it when library roots change without a
@@ -170,6 +174,7 @@ async fn run_daemon(cli: Cli) -> Result<()> {
     {
         let mut guard = state.lock().await;
         guard.watcher_tx = Some(watcher_tx);
+        guard.monitors_tx = Some(monitors_tx.clone());
         guard.refresh_watcher();
     }
 
@@ -183,6 +188,11 @@ async fn run_daemon(cli: Cli) -> Result<()> {
     let sched_state = Arc::clone(&state);
     let sched_timer_tx = timer_tx.clone();
     tokio::spawn(async move { schedule::run_schedule_checker(sched_state, sched_timer_tx).await });
+
+    // OS-rotation push: KDE kscreen D-Bus signal (best-effort, KDE only).
+    // Manual refresh in Settings > Monitors covers stacks where the signal
+    // doesn't fire. See `docs/spec/06-detection.md` §6.3.
+    display_watch::spawn(Arc::clone(&state), monitors_tx.clone());
 
     // Apply the default profile (if set) after a short delay to allow compositor readiness.
     if let Some(profile_name) = initial_profile {

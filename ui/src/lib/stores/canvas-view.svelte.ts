@@ -1,12 +1,12 @@
 // Canvas-only view state: zoom, pan, dim, hover/selection, and per-monitor
-// preview-only position+rotation overrides. The detected layout from
-// `monitorStore` is the source of truth; overrides let the user rearrange
-// monitors visually without (yet) pushing back to the compositor.
+// preview-only position overrides. The detected layout from `monitorStore`
+// is the source of truth (rotation included — that comes from the OS and is
+// never user-authored). Overrides let the user rearrange monitors visually
+// without (yet) pushing back to the compositor.
 
 export type MonitorOverride = {
   xMm: number;
   yMm: number;
-  rotation: 0 | 90 | 180 | 270;
 };
 
 let zoom = $state(1);
@@ -79,11 +79,7 @@ export const canvasView = {
       const a = defaults[id];
       const b = overrides[id];
       if (!a || !b) continue;
-      if (
-        Math.abs(a.xMm - b.xMm) > 0.5 ||
-        Math.abs(a.yMm - b.yMm) > 0.5 ||
-        a.rotation !== b.rotation
-      ) {
+      if (Math.abs(a.xMm - b.xMm) > 0.5 || Math.abs(a.yMm - b.yMm) > 0.5) {
         return true;
       }
     }

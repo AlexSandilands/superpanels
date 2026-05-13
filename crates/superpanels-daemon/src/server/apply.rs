@@ -254,6 +254,42 @@ pub(super) async fn cmd_apply_canvas(
     IpcResponse::success(applied_json(&report))
 }
 
+/// 55 s safety timeout, well under the IPC client's 120 s read timeout.
+const WAIT_FOR_MONITOR_CHANGE_TIMEOUT: Duration = Duration::from_secs(55);
+
+/// Long-poll: block until `display_watch` broadcasts a monitor-config change
+/// (or the safety timeout fires).
+/// Returns `{ "changed": bool }`; clients re-issue immediately to resume the
+/// subscription. The channel carries no payload — the GUI calls
+/// `detect_monitors` on a `true` response to pull the fresh snapshot.
+pub(super) async fn cmd_wait_for_monitor_change(state: Arc<Mutex<DaemonState>>) -> IpcResponse {
+    wait_for_monitor_change_inner(&state, WAIT_FOR_MONITOR_CHANGE_TIMEOUT).await
+}
+
+async fn wait_for_monitor_change_inner(
+    state: &Arc<Mutex<DaemonState>>,
+    timeout: Duration,
+) -> IpcResponse {
+    let tx_opt = {
+        let guard = state.lock().await;
+        guard.monitors_tx.clone()
+    };
+    let Some(tx) = tx_opt else {
+        return IpcResponse::failure("OS-rotation push channel not initialised");
+    };
+    let mut rx = tx.subscribe();
+    match tokio::time::timeout(timeout, rx.recv()).await {
+        // Real tick OR a `Lagged`/`Closed` recv error — both mean we should
+        // re-check, so report `changed: true` and let the client refresh.
+        Ok(_) => IpcResponse::success(json!({ "changed": true })),
+        Err(_elapsed) => IpcResponse::success(json!({ "changed": false })),
+    }
+}
+
+// Deliberately does NOT publish on `monitors_tx`: this is a GUI-initiated
+// refresh, the caller already updates its view from the response, and the
+// push relay's `monitors://changed` listener would loop straight back into
+// `detect_monitors` (which calls `redetect` first) → publish → event → …
 pub(super) async fn cmd_redetect(state: Arc<Mutex<DaemonState>>) -> IpcResponse {
     let mut guard = state.lock().await;
     match superpanels_core::detect(None) {
@@ -271,4 +307,74 @@ pub(super) async fn cmd_redetect(state: Arc<Mutex<DaemonState>>) -> IpcResponse 
 pub(super) async fn cmd_current_state(state: Arc<Mutex<DaemonState>>) -> IpcResponse {
     let guard = state.lock().await;
     IpcResponse::success(guard.to_runtime_state())
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)] // reason: tests fail loudly on unexpected errors
+mod tests {
+    use super::*;
+    use superpanels_core::config::Config;
+    use tokio::sync::broadcast;
+
+    fn state_with_tx(tx: broadcast::Sender<()>) -> Arc<Mutex<DaemonState>> {
+        let mut ds = DaemonState::for_tests(Config::default());
+        ds.monitors_tx = Some(tx);
+        Arc::new(Mutex::new(ds))
+    }
+
+    #[tokio::test]
+    async fn wait_for_monitor_change_fails_when_channel_uninitialised() {
+        let state = Arc::new(Mutex::new(DaemonState::for_tests(Config::default())));
+        let resp = wait_for_monitor_change_inner(&state, Duration::from_millis(50)).await;
+        assert!(!resp.is_ok());
+        let err = resp.error.unwrap_or_default();
+        assert!(err.contains("not initialised"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn redetect_does_not_publish_on_monitors_tx() {
+        // Regression: a publish here forms a feedback loop with the GUI push
+        // relay, because the GUI's `detect_monitors` command (which fires on
+        // `monitors://changed`) calls daemon `redetect` first.
+        let (tx, mut rx) = broadcast::channel::<()>(4);
+        // Keep one sender alive outside `state` so dropping `state` doesn't
+        // turn an empty channel into a `Closed` error.
+        let _keep_tx = tx.clone();
+        let state = state_with_tx(tx);
+        let _resp = cmd_redetect(state).await;
+        assert!(
+            matches!(rx.try_recv(), Err(broadcast::error::TryRecvError::Empty)),
+            "cmd_redetect must not publish on monitors_tx"
+        );
+    }
+
+    #[tokio::test]
+    async fn wait_for_monitor_change_returns_changed_true_on_tick() {
+        let (tx, _keep) = broadcast::channel::<()>(4);
+        let state = state_with_tx(tx.clone());
+
+        let tx_publish = tx.clone();
+        tokio::spawn(async move {
+            // Brief sleep so the handler subscribes before we send. A
+            // pre-subscribe send would be missed by broadcast's tail-only
+            // semantics for new receivers.
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            let _ = tx_publish.send(());
+        });
+
+        let resp = wait_for_monitor_change_inner(&state, Duration::from_secs(2)).await;
+        assert!(resp.is_ok(), "got error: {:?}", resp.error);
+        let result = resp.result.unwrap();
+        assert_eq!(result["changed"], json!(true));
+    }
+
+    #[tokio::test]
+    async fn wait_for_monitor_change_returns_changed_false_on_timeout() {
+        let (tx, _keep) = broadcast::channel::<()>(4);
+        let state = state_with_tx(tx);
+        let resp = wait_for_monitor_change_inner(&state, Duration::from_millis(50)).await;
+        assert!(resp.is_ok(), "got error: {:?}", resp.error);
+        let result = resp.result.unwrap();
+        assert_eq!(result["changed"], json!(false));
+    }
 }

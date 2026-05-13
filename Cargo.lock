@@ -4290,6 +4290,7 @@ dependencies = [
  "chrono",
  "clap",
  "cron",
+ "futures-util",
  "image",
  "notify",
  "serde",
@@ -4300,6 +4301,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "zbus",
 ]
 
 [[package]]

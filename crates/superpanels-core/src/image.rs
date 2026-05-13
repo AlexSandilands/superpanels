@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use image::{DynamicImage, ImageReader, imageops};
 use thiserror::Error;
 
-use crate::display::Rotation;
 use crate::layout::{CropSpec, Rect};
 
 mod temp;
@@ -274,17 +273,6 @@ pub fn compose_on_black(
     DynamicImage::ImageRgba8(canvas)
 }
 
-/// Rotate `img` by 90/180/270 °. `Rotation::None` clones.
-#[must_use]
-pub fn rotate(img: &DynamicImage, rotation: Rotation) -> DynamicImage {
-    match rotation {
-        Rotation::None => img.clone(),
-        Rotation::Right => DynamicImage::ImageRgba8(imageops::rotate90(img)),
-        Rotation::Inverted => DynamicImage::ImageRgba8(imageops::rotate180(img)),
-        Rotation::Left => DynamicImage::ImageRgba8(imageops::rotate270(img)),
-    }
-}
-
 fn u32_from_f64(v: f64) -> Option<u32> {
     if v.is_finite() && v >= 0.0 && v <= f64::from(u32::MAX) {
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // reason: range checked
@@ -299,6 +287,7 @@ fn u32_from_f64(v: f64) -> Option<u32> {
 #[allow(clippy::unwrap_used)] // reason: tests fail loudly on io errors
 mod tests {
     use super::*;
+    use crate::display::Rotation;
     use image::{Rgba, RgbaImage};
     use tempfile::tempdir;
 
@@ -608,30 +597,6 @@ mod tests {
         let rgba = out.to_rgba8();
         assert_eq!(rgba.get_pixel(0, 0).0, [0, 0, 0, 255]);
         assert_eq!(rgba.get_pixel(3, 3).0, [0, 0, 0, 255]);
-    }
-
-    #[test]
-    fn rotate_right_swaps_dimensions() {
-        // Arrange
-        let src = solid_image(2, 4, [0, 0, 0, 255]);
-
-        // Act
-        let out = rotate(&src, Rotation::Right);
-
-        // Assert
-        assert_eq!((out.width(), out.height()), (4, 2));
-    }
-
-    #[test]
-    fn rotate_none_returns_same_dimensions() {
-        // Arrange
-        let src = solid_image(2, 4, [0, 0, 0, 255]);
-
-        // Act
-        let out = rotate(&src, Rotation::None);
-
-        // Assert
-        assert_eq!((out.width(), out.height()), (2, 4));
     }
 
     #[test]

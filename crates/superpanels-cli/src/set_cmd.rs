@@ -17,7 +17,7 @@ use superpanels_core::config::{
 };
 use superpanels_core::detect;
 use superpanels_core::display::{Monitor, MonitorRef};
-use superpanels_core::image::{clear_temp_dir, load, render_slice, rotate, save_temp};
+use superpanels_core::image::{clear_temp_dir, load, render_slice, save_temp};
 use superpanels_core::layout::{
     CropSpec, compute_crop_specs, cover_image_rect_mm, synthesise_placements,
 };
@@ -240,11 +240,12 @@ fn render_per_monitor(
     let mut out = Vec::with_capacity(specs.len());
     for spec in specs {
         let monitor = monitor_for_spec(monitors, spec)?;
+        // Save at canvas/post-rotation dims; backends paint into the
+        // rotated framebuffer themselves (memory: KDE wallpaper orientation).
         let composed = render_slice(source, spec)?;
-        let rotated = rotate(&composed, spec.rotation);
         let safe = sanitise_filename(&monitor.name);
         let filename = format!("{safe}-{token}.png");
-        let path = save_temp(&rotated, &filename)?;
+        let path = save_temp(&composed, &filename)?;
         debug!(monitor = %monitor.name, file = %path.display(), "set: wrote temp slice");
         out.push((to_monitor_ref(monitor), path));
     }

@@ -13,7 +13,7 @@ use superpanels_core::config::{
 };
 use superpanels_core::display::{Monitor, MonitorRef};
 use superpanels_core::image::{
-    FitMode as ImageFitMode, clear_temp_dir, load, render_slice, rotate, save_temp, scale_to_fit,
+    FitMode as ImageFitMode, clear_temp_dir, load, render_slice, save_temp, scale_to_fit,
 };
 use superpanels_core::layout::{
     FitMode, ImageRectMm, compute_crop_specs, cover_image_rect_mm, synthesise_placements,
@@ -121,11 +121,15 @@ pub(crate) fn run_immediate_span_apply(
             .ok_or_else(|| {
                 anyhow::anyhow!("crop spec references unknown monitor {:?}", spec.monitor_id)
             })?;
+        // Compose at the canvas/logical (post-rotation) framebuffer dims —
+        // the backend writes that file as-is. Pre-rotating to native panel
+        // orientation would over-bake: KDE's wallpaper plugin already paints
+        // into the rotated framebuffer (memory: KDE wallpaper orientation).
+        // Sway/Hyprland/wlroots and feh likewise expect post-rotation files.
         let composed = render_slice(&source, spec).context("composing slice")?;
-        let rotated = rotate(&composed, spec.rotation);
         let safe = sanitise_filename(&monitor.name);
         let filename = format!("{safe}-{token}.png");
-        let path = save_temp(&rotated, &filename).context("saving temp slice")?;
+        let path = save_temp(&composed, &filename).context("saving temp slice")?;
         debug!(monitor = %monitor.name, file = %path.display(), "wrote temp slice");
         assignments.push((to_monitor_ref(monitor), path));
     }

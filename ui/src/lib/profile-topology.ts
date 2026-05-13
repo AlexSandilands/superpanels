@@ -2,7 +2,8 @@
 // Joins authored placements (`monitor_state`) with currently-detected
 // monitors so we can use real physical sizes when the setup matches; falls
 // back to a default rect when a profile was authored against monitors that
-// aren't connected.
+// aren't connected. Rotation comes from the live `Monitor.rotation` (OS),
+// not from the placement.
 
 import type { Monitor } from './api';
 import type { MonitorPlacement } from './types/MonitorPlacement';
@@ -24,7 +25,7 @@ export function topologyRects(
     if (m?.physical_size_mm) {
       [w, h] = m.physical_size_mm;
     }
-    if (p.rotation === 'left' || p.rotation === 'right') {
+    if (m?.rotation === 'left' || m?.rotation === 'right') {
       [w, h] = [h, w];
     }
     out.push({ x: p.x_mm, y: p.y_mm, w, h });

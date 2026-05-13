@@ -31,6 +31,10 @@ notify             = { workspace = true }
 tokio              = { workspace = true }
 tracing            = { workspace = true }
 tracing-subscriber = { workspace = true }
+# Used by display_watch to subscribe to the KDE kscreen kded `configChanged`
+# signal so an OS-driven rotation is reflected without polling.
+zbus               = { workspace = true }
+futures-util       = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
