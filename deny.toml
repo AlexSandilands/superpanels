@@ -63,7 +63,21 @@ highlight          = "all"
 allow              = []
 deny               = []
 skip               = []
-skip-tree          = []
+# Suppress duplicate-version warnings rooted in the Tauri/wry/webkit2gtk
+# stack. Those subtrees pin dozens of crates at multiple versions
+# (base64, bitflags, phf, rand, windows-sys, etc.) and aren't actionable
+# for us — we don't choose those deps. Without this list the warnings
+# emit ~7 k lines on every cargo-deny run, which is just noise.
+skip-tree = [
+    { name = "tauri" },
+    { name = "tauri-build" },
+    { name = "tauri-plugin-dialog" },
+    { name = "tauri-plugin-notification" },
+    { name = "wry" },
+    { name = "webkit2gtk" },
+    { name = "swift-rs" },
+    { name = "windows" },
+]
 
 [sources]
 unknown-registry = "deny"

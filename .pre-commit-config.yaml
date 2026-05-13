@@ -88,12 +88,18 @@ repos:
       - id: cargo-deny
         name: cargo deny
         description: Audit dependencies for licences and advisories
-        # Capture output and only surface it on failure. cargo-deny's
-        # `multiple-versions = "warn"` emits ~7 k lines on this Tauri-based
-        # workspace; that overflows pre-commit's output pipe and crashes the
-        # hook (BlockingIOError) during `git push`. Failures still print up
-        # to 500 lines, which covers the actual error context.
-        entry: bash -c 'if [ ! -f Cargo.toml ]; then echo "no Cargo.toml yet — skipping"; exit 0; fi; out=$(cargo deny check 2>&1); rc=$?; if [ $rc -ne 0 ]; then printf "%s\n" "$out" | head -500; fi; exit $rc'
+        # Scrub GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE before invoking
+        # cargo-deny. Git exports these to hooks so they know which repo
+        # invoked them; cargo-deny's advisory-db sync then runs
+        # `git -C ~/.cargo/advisory-db reset --hard FETCH_HEAD`. With
+        # GIT_DIR set, that env var overrides `-C` and the reset hits
+        # OUR repo, destructively moving HEAD to FETCH_HEAD. See
+        # pre-commit's own `no_git_env()` helper for the precedent.
+        #
+        # Output is also captured and only surfaced on failure: cargo-deny
+        # emits thousands of duplicate-version warnings on Tauri stacks
+        # which can overflow pre-commit's output pipe (BlockingIOError).
+        entry: bash -c 'if [ ! -f Cargo.toml ]; then echo "no Cargo.toml yet — skipping"; exit 0; fi; out=$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE cargo deny check 2>&1); rc=$?; if [ $rc -ne 0 ]; then printf "%s\n" "$out" | head -500; fi; exit $rc'
         language: system
         files: ^(Cargo\.toml|Cargo\.lock|deny\.toml)$
         pass_filenames: false
