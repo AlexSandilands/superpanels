@@ -53,7 +53,7 @@
     class="panel absolute flex items-center"
     style:left="70px"
     style:bottom="14px"
-    style:padding="12px"
+    style:padding="8px"
     style:padding-right="28px"
     style:gap="18px"
     style:z-index="5"
@@ -111,7 +111,7 @@
     letter-spacing: 0.08em;
     color: var(--text-3);
     text-transform: uppercase;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
     display: inline-flex;
     align-items: center;
     gap: 6px;

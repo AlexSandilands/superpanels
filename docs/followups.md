@@ -22,28 +22,6 @@ affected stacks (track upstream WebKit / `webkit2gtk` Arch package).
 `desktop_body_includes_webkit_dmabuf_workaround` test assertions in
 `autostart.rs`.
 
-## Cover `debounce_and_redetect` with a hermetic test
-
-`crates/superpanels-daemon/src/display_watch.rs` `debounce_and_redetect`
-collapses bursts of kscreen signals into a single re-detect (~250 ms
-window). It currently has no unit test because zbus's `MessageStream` is
-concrete and ties into a real `Connection`. Worth introducing a small
-trait abstraction (e.g. `trait SignalSource: Stream<Item = ...>`) so a
-test can drive coalescing under `tokio::time::pause()` and assert that
-N signals within DEBOUNCE produce exactly one publish.
-
-## Pin a real D-Bus signal for rotation push on Plasma 6
-
-`display_watch.rs` subscribes to `org.kde.KScreen` as a best-effort push
-path, but on Plasma 6 Wayland the kscreen kded module is often unloaded
-and the signal doesn't fire. Manual re-detect (Settings > Monitors, F5)
-is the working fallback, but a real push signal would feel snappier.
-
-**Action:** run `dbus-monitor --session "type='signal'"` while rotating
-a display in System Settings, identify what actually fires (likely a
-KWin or kded signal we haven't pinned), and update `build_match_rule`
-to target it.
-
 ## Fix transforms/cropping from canvas
   - Align with the preview in the profile manager
 
@@ -58,3 +36,7 @@ to target it.
 ## Per Monitor Wallpapers
 
 ## Set icon in taskbar
+
+## Remove everything related to primary monitor
+
+## Cleanup all spec/plan/phase files

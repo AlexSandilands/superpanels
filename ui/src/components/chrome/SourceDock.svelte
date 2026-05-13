@@ -72,8 +72,8 @@
   >
     <CollapseChevron side="right" onClick={() => (collapsed = true)} title="Collapse" />
     <div
-      style:width="56px"
-      style:height="32px"
+      style:width="76px"
+      style:height="44px"
       style:border-radius="4px"
       style:border="1px solid var(--line)"
       style:flex-shrink="0"
