@@ -88,7 +88,12 @@ repos:
       - id: cargo-deny
         name: cargo deny
         description: Audit dependencies for licences and advisories
-        entry: bash -c 'if [ -f Cargo.toml ]; then cargo deny check; else echo "no Cargo.toml yet — skipping" && exit 0; fi'
+        # Capture output and only surface it on failure. cargo-deny's
+        # `multiple-versions = "warn"` emits ~7 k lines on this Tauri-based
+        # workspace; that overflows pre-commit's output pipe and crashes the
+        # hook (BlockingIOError) during `git push`. Failures still print up
+        # to 500 lines, which covers the actual error context.
+        entry: bash -c 'if [ ! -f Cargo.toml ]; then echo "no Cargo.toml yet — skipping"; exit 0; fi; out=$(cargo deny check 2>&1); rc=$?; if [ $rc -ne 0 ]; then printf "%s\n" "$out" | head -500; fi; exit $rc'
         language: system
         files: ^(Cargo\.toml|Cargo\.lock|deny\.toml)$
         pass_filenames: false
