@@ -19,7 +19,7 @@ Type=Application\n\
 Name=Superpanels\n\
 Comment=Bezel-aware multi-monitor wallpaper manager\n\
 Exec=env WEBKIT_DISABLE_DMABUF_RENDERER=1 superpanels-gui\n\
-Icon=superpanels\n\
+Icon=superpanels-gui\n\
 Categories=Graphics;Utility;\n\
 Terminal=false\n\
 X-GNOME-Autostart-enabled=true\n";

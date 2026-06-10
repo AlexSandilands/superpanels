@@ -11,6 +11,8 @@ Reference for the on-disk files Superpanels reads and writes. Code: [`crates/sup
 | Slideshow state | `$XDG_STATE_HOME/superpanels/slideshow-state.json` | daemon |
 | Last-applied state | `$XDG_STATE_HOME/superpanels/state.toml` | daemon |
 | Autostart desktop | `$XDG_CONFIG_HOME/autostart/superpanels.desktop` | GUI when autostart is on |
+| App-menu desktop | `$XDG_DATA_HOME/applications/superpanels-gui.desktop` | GUI on every launch (taskbar icon on Wayland) |
+| App icons | `$XDG_DATA_HOME/icons/hicolor/<size>/apps/superpanels-gui.png` | GUI on every launch |
 
 Tilde expansion is supported in path-valued fields (`library.roots`, etc.).
 

@@ -1,0 +1,181 @@
+//! Installs the app-menu `.desktop` entry and hicolor icons into
+//! `$XDG_DATA_HOME` so the taskbar shows the app icon.
+//!
+//! On Wayland the compositor ignores any window-level icon: it resolves the
+//! taskbar icon by matching the window's `app_id` against an installed
+//! `<app_id>.desktop` entry and loading its `Icon=` from the icon theme.
+//! Tauri leaves the GTK application id unset, so the `app_id` falls back to
+//! the process name `superpanels-gui`. Without these files every launch —
+//! including a packaged one until the user installs system-wide — shows the
+//! generic Wayland gear.
+
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use crate::errors::IpcError;
+
+const APP_ID: &str = "superpanels-gui";
+
+const ICONS: [(&str, &[u8]); 3] = [
+    ("32x32", include_bytes!("../icons/32x32.png")),
+    ("128x128", include_bytes!("../icons/128x128.png")),
+    ("256x256", include_bytes!("../icons/icon.png")),
+];
+
+/// Install (or refresh) the desktop entry and icons for the current binary.
+/// Rewrites only on content change, so repeat launches are no-ops.
+pub(crate) fn install() -> Result<(), IpcError> {
+    install_at(&data_dir()?, &exec_value())
+}
+
+pub(crate) fn install_at(data_dir: &Path, exec: &str) -> Result<(), IpcError> {
+    let desktop = data_dir
+        .join("applications")
+        .join(format!("{APP_ID}.desktop"));
+    write_if_changed(&desktop, desktop_body(exec).as_bytes())?;
+    for (size, png) in ICONS {
+        let icon = data_dir
+            .join("icons/hicolor")
+            .join(size)
+            .join("apps")
+            .join(format!("{APP_ID}.png"));
+        write_if_changed(&icon, png)?;
+    }
+    Ok(())
+}
+
+// reason: `env WEBKIT_DISABLE_DMABUF_RENDERER=1` mirrors the WebKitGTK
+// Wayland crash workaround documented in `docs/followups.md` (also set in
+// `.cargo/config.toml`, the justfile, and `autostart.rs`).
+fn desktop_body(exec: &str) -> String {
+    format!(
+        "[Desktop Entry]\n\
+         Type=Application\n\
+         Name=Superpanels\n\
+         Comment=Bezel-aware multi-monitor wallpaper manager\n\
+         Exec=env WEBKIT_DISABLE_DMABUF_RENDERER=1 {exec}\n\
+         Icon={APP_ID}\n\
+         Categories=Graphics;Utility;\n\
+         Terminal=false\n\
+         StartupWMClass={APP_ID}\n"
+    )
+}
+
+/// Path of the running binary, quoted for the desktop-entry `Exec` key, so
+/// the menu entry launches whichever build last ran (dev target dir or an
+/// installed binary). Falls back to the bare name if the path is unreadable.
+fn exec_value() -> String {
+    std::env::current_exe().ok().map_or_else(
+        || APP_ID.to_owned(),
+        |p| quote_exec_path(&p.to_string_lossy()),
+    )
+}
+
+/// Quote a path per the desktop-entry spec's `Exec` rules: plain paths pass
+/// through; anything else is double-quoted with `\` `"` `` ` `` `$` escaped.
+fn quote_exec_path(path: &str) -> String {
+    let plain = path
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '_' | '.' | '-' | '+'));
+    if plain {
+        return path.to_owned();
+    }
+    let mut out = String::with_capacity(path.len() + 2);
+    out.push('"');
+    for c in path.chars() {
+        if matches!(c, '\\' | '"' | '`' | '$') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out.push('"');
+    out
+}
+
+fn data_dir() -> Result<PathBuf, IpcError> {
+    std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .filter(|p| !p.as_os_str().is_empty())
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .map(|h| h.join(".local").join("share"))
+        })
+        .ok_or_else(|| IpcError::internal("neither $XDG_DATA_HOME nor $HOME is set"))
+}
+
+fn write_if_changed(path: &Path, contents: &[u8]) -> Result<(), IpcError> {
+    if fs::read(path).is_ok_and(|current| current == contents) {
+        return Ok(());
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(IpcError::from)?;
+    }
+    fs::write(path, contents).map_err(IpcError::from)
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)] // reason: tests fail loudly on harness errors
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn install_at_writes_desktop_entry_and_all_icon_sizes() {
+        let tmp = tempdir().unwrap();
+        install_at(tmp.path(), "superpanels-gui").unwrap();
+
+        let desktop = tmp.path().join("applications/superpanels-gui.desktop");
+        assert!(desktop.exists());
+        for (size, _) in ICONS {
+            let icon = tmp
+                .path()
+                .join(format!("icons/hicolor/{size}/apps/superpanels-gui.png"));
+            assert!(icon.exists(), "missing icon for {size}");
+        }
+    }
+
+    #[test]
+    fn install_at_twice_is_idempotent() {
+        let tmp = tempdir().unwrap();
+        install_at(tmp.path(), "superpanels-gui").unwrap();
+        let desktop = tmp.path().join("applications/superpanels-gui.desktop");
+        let first = fs::read(&desktop).unwrap();
+        install_at(tmp.path(), "superpanels-gui").unwrap();
+        assert_eq!(fs::read(&desktop).unwrap(), first);
+    }
+
+    #[test]
+    fn desktop_body_names_match_the_wayland_app_id() {
+        // KDE resolves the taskbar icon by matching the window's `app_id`
+        // (the binary name) to `<app_id>.desktop` and its `Icon=` line.
+        // Renaming either side silently brings the generic gear icon back.
+        let body = desktop_body("superpanels-gui");
+        assert!(body.contains("Icon=superpanels-gui\n"));
+        assert!(body.contains("StartupWMClass=superpanels-gui\n"));
+    }
+
+    #[test]
+    fn desktop_body_includes_webkit_dmabuf_workaround() {
+        // Same invariant as `autostart.rs` — see docs/followups.md before
+        // removing.
+        assert!(desktop_body("x").contains("WEBKIT_DISABLE_DMABUF_RENDERER=1"));
+    }
+
+    #[test]
+    fn quote_exec_path_passes_plain_paths_through() {
+        assert_eq!(
+            quote_exec_path("/usr/bin/superpanels-gui"),
+            "/usr/bin/superpanels-gui"
+        );
+    }
+
+    #[test]
+    fn quote_exec_path_quotes_and_escapes_special_chars() {
+        assert_eq!(
+            quote_exec_path("/home/a user/target/debug/superpanels-gui"),
+            "\"/home/a user/target/debug/superpanels-gui\""
+        );
+        assert_eq!(quote_exec_path("/tmp/$x\"y"), "\"/tmp/\\$x\\\"y\"");
+    }
+}

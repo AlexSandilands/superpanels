@@ -5,7 +5,8 @@
 //! - typed `#[tauri::command]` wrappers for every IPC method,
 //! - a daemon-first / in-process bridge that mirrors the CLI's behaviour,
 //! - the system tray,
-//! - autostart `.desktop` writer.
+//! - autostart `.desktop` writer,
+//! - desktop-entry / icon installer (taskbar icon on Wayland).
 //!
 //! Desktop-notification surfacing is intentionally
 //! unimplemented; wire it back when the tray exposes failure events.
@@ -13,6 +14,7 @@
 pub(crate) mod autostart;
 pub(crate) mod bridge;
 pub(crate) mod commands;
+pub(crate) mod desktop_entry;
 pub(crate) mod errors;
 pub(crate) mod state;
 pub(crate) mod tray;
@@ -51,6 +53,14 @@ fn build_app() -> tauri::App {
             crate::window_state::restore(app);
             crate::tray::spawn_poller(app.handle().clone(), Arc::clone(&state));
             crate::commands::monitors::spawn_push_relay(app.handle().clone());
+            std::thread::Builder::new()
+                .name("desktop-entry".into())
+                .spawn(|| {
+                    if let Err(e) = crate::desktop_entry::install() {
+                        tracing::warn!(error = %e, "desktop entry install failed");
+                    }
+                })
+                .ok();
             Ok(())
         })
         .on_window_event(|window, event| {
