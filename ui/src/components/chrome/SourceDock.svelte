@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { SlideshowState } from '$lib/actions';
+  import { dockStackBreakpoint } from '$lib/dock-breakpoints';
   import type { SlideshowConfig } from '$lib/types/SlideshowConfig';
   import Icon from '../widgets/Icon.svelte';
   import CollapseChevron from './CollapseChevron.svelte';
@@ -52,10 +53,10 @@
   let settingsOpen = $state(false);
   let gearEl: HTMLButtonElement | undefined = $state();
 
-  // Stack above BezelDock when the window is narrow enough that the two would
-  // otherwise overlap. Mirrors the ModeHint pattern so the bottom row degrades
-  // predictably as width shrinks.
-  const STACK_BREAKPOINT = 1180;
+  // Stack above MonitorGapDock when the window is narrow enough that the two
+  // would otherwise overlap. Mirrors the ModeHint pattern so the bottom row
+  // degrades predictably as width shrinks. Slideshow chrome widens the dock,
+  // so its breakpoint sits higher — see dockStackBreakpoint.
   let innerWidth = $state(typeof window === 'undefined' ? 1920 : window.innerWidth);
 
   $effect(() => {
@@ -64,7 +65,7 @@
     return () => window.removeEventListener('resize', onResize);
   });
 
-  const stacked = $derived(innerWidth < STACK_BREAKPOINT);
+  const stacked = $derived(innerWidth < dockStackBreakpoint(Boolean(slideshow || slideshowConfig)));
   const bottomPx = $derived(stacked ? 96 : 14);
 
   // Countdown ticks locally between runtime refreshes off the daemon's

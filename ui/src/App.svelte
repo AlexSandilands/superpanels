@@ -715,7 +715,7 @@
     onMonitorDrop={pinImageToMonitor}
   />
 
-  <ModeHint />
+  <ModeHint slideshowActive={Boolean(dockSlideshowState || dockSlideshowProfile)} />
 
   <TitleBar
     profiles={profileStore.profiles}

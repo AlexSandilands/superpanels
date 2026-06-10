@@ -1,13 +1,19 @@
 <script lang="ts">
-  // Centre-bottom hint. Shifts up above the bezel/source docks when the window
+  // Centre-bottom hint. Shifts up above the gap/source docks when the window
   // narrows enough that they would overlap horizontally, and hides entirely
   // below a width where even the raised position is no longer useful.
-  // Thresholds approximate the combined widths of BezelDock (~520px) and
-  // SourceDock (~360px) plus the hint itself.
+  // The raise threshold approximates the combined widths of MonitorGapDock
+  // (~520px) and SourceDock (~360px, ~660px with slideshow chrome) plus the
+  // hint itself.
+  import { dockStackBreakpoint } from '$lib/dock-breakpoints';
+
+  type Props = {
+    /** Slideshow chrome widens SourceDock, so it stacks (and we hide) sooner. */
+    slideshowActive?: boolean;
+  };
+  let { slideshowActive = false }: Props = $props();
+
   const RAISE_BREAKPOINT = 2200;
-  // Match SourceDock's STACK_BREAKPOINT — once that lifts the bottom-right dock
-  // up onto the hint's row, the area gets too busy to be readable.
-  const HIDE_BREAKPOINT = 1180;
 
   let innerWidth = $state(typeof window === 'undefined' ? 1920 : window.innerWidth);
 
@@ -17,7 +23,9 @@
     return () => window.removeEventListener('resize', onResize);
   });
 
-  const hidden = $derived(innerWidth < HIDE_BREAKPOINT);
+  // Match SourceDock's stack breakpoint — once that lifts the bottom-right
+  // dock up onto the hint's row, the area gets too busy to be readable.
+  const hidden = $derived(innerWidth < dockStackBreakpoint(slideshowActive));
   const raised = $derived(innerWidth < RAISE_BREAKPOINT);
 </script>
 
