@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { api, type Profile } from '$lib/api';
+  import type { Profile } from '$lib/api';
+  import { profileThumbPath } from '$lib/profile-thumb';
+  import { libraryStore } from '$lib/stores/library.svelte';
+  import { profileThumbs } from '$lib/stores/profile-thumbs.svelte';
 
   const PROFILE_BG = 'oklch(0.22 0 0)';
 
@@ -31,32 +34,7 @@
   }: Props = $props();
 
   const active = $derived(profiles.find((p) => p.name === activeName) ?? null);
-  let thumbnails = $state<Record<string, string>>({});
-
-  function profileImagePath(p: Profile): string | null {
-    if (p.body.type !== 'span') return null;
-    const src = p.body.source;
-    if (src.type !== 'single') return null;
-    const path = src.path.trim();
-    if (!path || !path.startsWith('/')) return null;
-    return path;
-  }
-
-  $effect(() => {
-    for (const p of profiles) {
-      if (thumbnails[p.name]) continue;
-      const path = profileImagePath(p);
-      if (!path) continue;
-      void api
-        .sourceThumbnail(path)
-        .then((r) => {
-          thumbnails[p.name] = `data:${r.mime};base64,${r.data}`;
-        })
-        .catch(() => {
-          // ignore — fall back to swatch
-        });
-    }
-  });
+  const libraryPaths = $derived(libraryStore.entries.map((e) => e.path));
 
   function sourceLabel(p: Profile): string {
     if (p.body.type === 'span') {
@@ -112,7 +90,7 @@
     </div>
     {#each profiles as p (p.name)}
       {@const isActive = p.name === activeName}
-      {@const thumb = thumbnails[p.name]}
+      {@const thumb = profileThumbs.url(profileThumbPath(p, libraryPaths))}
       <button class="row" onclick={() => onSwitch(p)}>
         <span style:width="14px" style:color="var(--accent)" style:font-size="12px">
           {isActive ? '✓' : ''}

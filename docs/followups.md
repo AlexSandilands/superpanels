@@ -25,6 +25,17 @@ affected stacks (track upstream WebKit / `webkit2gtk` Arch package).
 ## Fix transforms/cropping from canvas
   - Align with the preview in the profile manager
 
+## Synchronous Tauri commands block the webview main thread
+
+Every `#[tauri::command]` in `superpanels-gui` except the two thumbnail
+commands is synchronous, so each `bridge::call` Unix-socket round trip runs on
+the webview's main thread. Local IPC is usually sub-millisecond, but slow
+daemon handlers (apply, detect, rescan) freeze the UI for their duration. The
+thumbnail commands show the pattern to copy: `async fn` +
+`tauri::async_runtime::spawn_blocking` (see `run_off_main` in
+`commands/library.rs`). Migrate the rest command-by-command, starting with the
+ones that gate on disk or backend work.
+
 ## Preemption sentinel fires on user-initiated switches
 
 `switchAndApply` claims the *new* profile name as the preemption sentinel

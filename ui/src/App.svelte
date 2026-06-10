@@ -8,6 +8,7 @@
   import { monitorStore } from '$lib/stores/monitors.svelte';
   import { preemption } from '$lib/stores/preemption.svelte';
   import { profileStore } from '$lib/stores/profile.svelte';
+  import { prewarmProfileThumbs } from '$lib/stores/profile-thumbs.svelte';
   import { runtime } from '$lib/stores/runtime.svelte';
   import { toast } from '$lib/stores/toast.svelte';
   import { applyDocumentTokens } from '$lib/stores/ui.svelte';
@@ -508,6 +509,14 @@
     () => monitorStore.monitors,
     () => 0,
   );
+
+  // Background-fetch switcher/tray thumbnails so the menus open warm.
+  $effect(() => {
+    prewarmProfileThumbs(
+      profileStore.profiles,
+      libraryStore.entries.map((e) => e.path),
+    );
+  });
 
   useSourceImage(
     () => sourcePath ?? liveSlideshowPath,

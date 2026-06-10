@@ -47,8 +47,12 @@ pub(crate) fn library_list(
     bridge::call("library_list", params, state.config_path().as_deref())
 }
 
+// Thumbnail commands are async: the decode / IPC runs on a blocking thread
+// via `spawn_blocking`, never on the webview's main thread. Synchronous
+// commands block the UI, which made menus stutter for the duration of one
+// full image decode per profile.
 #[tauri::command]
-pub(crate) fn library_thumbnail(
+pub(crate) async fn library_thumbnail(
     path: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
@@ -56,19 +60,23 @@ pub(crate) fn library_thumbnail(
     if !p.is_absolute() {
         return Err(IpcError::invalid("thumbnail path must be absolute"));
     }
-    let result = bridge::call(
-        "library_thumbnail",
-        json!({ "path": p.to_string_lossy() }),
-        state.config_path().as_deref(),
-    );
-    match result {
-        Ok(v) => Ok(v),
-        Err(e) if should_fall_back_to_local_render(&e) => {
-            warn!(error = %e, "library_thumbnail daemon unreachable; falling back to local render");
-            render_local_thumbnail(&p)
+    let config_path = state.config_path();
+    run_off_main(move || {
+        let result = bridge::call(
+            "library_thumbnail",
+            json!({ "path": p.to_string_lossy() }),
+            config_path.as_deref(),
+        );
+        match result {
+            Ok(v) => Ok(v),
+            Err(e) if should_fall_back_to_local_render(&e) => {
+                warn!(error = %e, "library_thumbnail daemon unreachable; falling back to local render");
+                render_local_thumbnail(&p)
+            }
+            Err(e) => Err(e),
         }
-        Err(e) => Err(e),
-    }
+    })
+    .await
 }
 
 /// Whether `library_thumbnail` is allowed to fall back to a local render in
@@ -82,12 +90,22 @@ fn should_fall_back_to_local_render(err: &IpcError) -> bool {
 }
 
 #[tauri::command]
-pub(crate) fn source_thumbnail(path: String) -> Result<Value, IpcError> {
+pub(crate) async fn source_thumbnail(path: String) -> Result<Value, IpcError> {
     let p = PathBuf::from(&path);
     if !p.is_absolute() {
         return Err(IpcError::invalid("source thumbnail path must be absolute"));
     }
-    render_local_thumbnail(&p)
+    run_off_main(move || render_local_thumbnail(&p)).await
+}
+
+/// Run `work` on the blocking thread pool. A panicked or cancelled task
+/// surfaces as an internal error instead of poisoning the command channel.
+async fn run_off_main(
+    work: impl FnOnce() -> Result<Value, IpcError> + Send + 'static,
+) -> Result<Value, IpcError> {
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|e| IpcError::internal(format!("thumbnail task failed: {e}")))?
 }
 
 fn render_local_thumbnail(path: &std::path::Path) -> Result<Value, IpcError> {
@@ -175,7 +193,8 @@ mod tests {
         // Mirrors `library_thumbnail`'s absolute-path requirement so the
         // Rust side can't be tricked into resolving against the daemon's
         // working directory.
-        let err = source_thumbnail("relative/path.png".to_owned()).unwrap_err();
+        let err = tauri::async_runtime::block_on(source_thumbnail("relative/path.png".to_owned()))
+            .unwrap_err();
         assert!(matches!(err, IpcError::InvalidArgument(_)));
     }
 
