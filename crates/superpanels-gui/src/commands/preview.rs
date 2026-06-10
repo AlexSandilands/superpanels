@@ -21,11 +21,11 @@ pub(crate) struct PreviewArgs {
 }
 
 #[tauri::command]
-pub(crate) fn preview_crop(
+pub(crate) async fn preview_crop(
     args: PreviewArgs,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
     let params = serde_json::to_value(&args)
         .map_err(|e| IpcError::internal(format!("PreviewArgs serialise: {e}")))?;
-    bridge::call("preview_crop", params, state.config_path().as_deref())
+    bridge::call_off_main("preview_crop", params, state.config_path()).await
 }

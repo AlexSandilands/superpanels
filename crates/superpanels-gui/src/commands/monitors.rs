@@ -22,18 +22,20 @@ const MONITOR_CHANGED_EVENT: &str = "monitors://changed";
 const RECONNECT_BACKOFF: Duration = Duration::from_secs(3);
 
 #[tauri::command]
-pub(crate) fn detect_monitors(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
-    bridge::call("redetect", json!({}), state.config_path().as_deref())?;
-    bridge::call("detect_monitors", json!({}), state.config_path().as_deref())
+pub(crate) async fn detect_monitors(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Value, IpcError> {
+    bridge::call_off_main("redetect", json!({}), state.config_path()).await?;
+    bridge::call_off_main("detect_monitors", json!({}), state.config_path()).await
 }
 
 #[tauri::command]
-pub(crate) fn redetect(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
-    bridge::call("redetect", json!({}), state.config_path().as_deref())
+pub(crate) async fn redetect(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
+    bridge::call_off_main("redetect", json!({}), state.config_path()).await
 }
 
 #[tauri::command]
-pub(crate) fn set_monitor_physical_size(
+pub(crate) async fn set_monitor_physical_size(
     stable_id: Option<String>,
     name: Option<String>,
     physical_mm: [f64; 2],
@@ -60,11 +62,7 @@ pub(crate) fn set_monitor_physical_size(
             params["name"] = Value::String(n);
         }
     }
-    bridge::call(
-        "set_monitor_physical_size",
-        params,
-        state.config_path().as_deref(),
-    )
+    bridge::call_off_main("set_monitor_physical_size", params, state.config_path()).await
 }
 
 /// Spawn a dedicated OS thread that runs the daemon's

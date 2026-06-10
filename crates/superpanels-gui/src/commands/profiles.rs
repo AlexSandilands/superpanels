@@ -13,160 +13,175 @@ use crate::errors::IpcError;
 use crate::state::AppState;
 
 #[tauri::command]
-pub(crate) fn list_profiles(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
-    bridge::call("list_profiles", json!({}), state.config_path().as_deref())
+pub(crate) async fn list_profiles(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Value, IpcError> {
+    bridge::call_off_main("list_profiles", json!({}), state.config_path()).await
 }
 
 #[tauri::command]
-pub(crate) fn apply_profile(
+pub(crate) async fn apply_profile(
     name: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
     if name.trim().is_empty() {
         return Err(IpcError::invalid("profile name is empty"));
     }
-    bridge::call(
+    bridge::call_off_main(
         "apply_profile",
         json!({ "name": name }),
-        state.config_path().as_deref(),
+        state.config_path(),
     )
+    .await
 }
 
 #[tauri::command]
-pub(crate) fn save_profile(
+pub(crate) async fn save_profile(
     profile: Value,
     recompute_topology: Option<bool>,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
-    bridge::call(
+    bridge::call_off_main(
         "save_profile",
         json!({
             "profile": profile,
             "recompute_topology": recompute_topology.unwrap_or(false),
         }),
-        state.config_path().as_deref(),
+        state.config_path(),
     )
+    .await
 }
 
 #[tauri::command]
-pub(crate) fn apply_canvas(
+pub(crate) async fn apply_canvas(
     profile: Value,
     active_name: Option<String>,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
-    bridge::call(
+    bridge::call_off_main(
         "apply_canvas",
         json!({ "profile": profile, "active_name": active_name }),
-        state.config_path().as_deref(),
+        state.config_path(),
     )
+    .await
 }
 
 #[tauri::command]
-pub(crate) fn delete_profile(
+pub(crate) async fn delete_profile(
     name: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
-    bridge::call(
+    bridge::call_off_main(
         "delete_profile",
         json!({ "name": name }),
-        state.config_path().as_deref(),
+        state.config_path(),
     )
+    .await
 }
 
 #[tauri::command]
-pub(crate) fn duplicate_profile(
+pub(crate) async fn duplicate_profile(
     name: String,
     new_name: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
-    bridge::call(
+    bridge::call_off_main(
         "duplicate_profile",
         json!({ "name": name, "new_name": new_name }),
-        state.config_path().as_deref(),
+        state.config_path(),
     )
+    .await
 }
 
 #[tauri::command]
-pub(crate) fn rename_profile(
+pub(crate) async fn rename_profile(
     name: String,
     new_name: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
-    bridge::call(
+    bridge::call_off_main(
         "rename_profile",
         json!({ "name": name, "new_name": new_name }),
-        state.config_path().as_deref(),
+        state.config_path(),
     )
+    .await
 }
 
 #[tauri::command]
-pub(crate) fn update_profile_monitor_state(
+pub(crate) async fn update_profile_monitor_state(
     profile: String,
     stable_id: String,
     placement: Value,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
-    bridge::call(
+    bridge::call_off_main(
         "update_profile_monitor_state",
         json!({ "profile": profile, "stable_id": stable_id, "placement": placement }),
-        state.config_path().as_deref(),
+        state.config_path(),
     )
+    .await
 }
 
 #[tauri::command]
-pub(crate) fn update_profile_image_transform(
+pub(crate) async fn update_profile_image_transform(
     profile: String,
     image_rect_mm: Option<Value>,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
-    bridge::call(
+    bridge::call_off_main(
         "update_profile_image_transform",
         json!({
             "profile": profile,
             "image_rect_mm": image_rect_mm,
         }),
-        state.config_path().as_deref(),
+        state.config_path(),
     )
+    .await
 }
 
 #[tauri::command]
-pub(crate) fn update_profile_source(
+pub(crate) async fn update_profile_source(
     profile: String,
     source: Value,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
-    bridge::call(
+    bridge::call_off_main(
         "update_profile_source",
         json!({ "profile": profile, "source": source }),
-        state.config_path().as_deref(),
+        state.config_path(),
     )
+    .await
 }
 
 #[tauri::command]
-pub(crate) fn list_schedules(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
-    bridge::call("list_schedules", json!({}), state.config_path().as_deref())
+pub(crate) async fn list_schedules(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Value, IpcError> {
+    bridge::call_off_main("list_schedules", json!({}), state.config_path()).await
 }
 
 #[tauri::command]
-pub(crate) fn save_schedules(
+pub(crate) async fn save_schedules(
     schedules: Value,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
-    bridge::call(
+    bridge::call_off_main(
         "save_schedules",
         json!({ "schedules": schedules }),
-        state.config_path().as_deref(),
+        state.config_path(),
     )
+    .await
 }
 
 #[tauri::command]
-pub(crate) fn set_schedules_paused(
+pub(crate) async fn set_schedules_paused(
     paused: bool,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
-    bridge::call(
+    bridge::call_off_main(
         "set_schedules_paused",
         json!({ "paused": paused }),
-        state.config_path().as_deref(),
+        state.config_path(),
     )
+    .await
 }

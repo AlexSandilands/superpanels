@@ -11,18 +11,19 @@ use crate::errors::IpcError;
 use crate::state::AppState;
 
 #[tauri::command]
-pub(crate) fn get_config(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
-    bridge::call("get_config", json!({}), state.config_path().as_deref())
+pub(crate) async fn get_config(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
+    bridge::call_off_main("get_config", json!({}), state.config_path()).await
 }
 
 #[tauri::command]
-pub(crate) fn save_config(
+pub(crate) async fn save_config(
     config: Value,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
-    bridge::call(
+    bridge::call_off_main(
         "save_config",
         json!({ "config": config }),
-        state.config_path().as_deref(),
+        state.config_path(),
     )
+    .await
 }

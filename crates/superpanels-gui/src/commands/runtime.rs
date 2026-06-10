@@ -12,8 +12,10 @@ use crate::errors::IpcError;
 use crate::state::{AppState, RuntimeSnapshot};
 
 #[tauri::command]
-pub(crate) fn current_state(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
-    let v = bridge::call("current_state", json!({}), state.config_path().as_deref())?;
+pub(crate) async fn current_state(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Value, IpcError> {
+    let v = bridge::call_off_main("current_state", json!({}), state.config_path()).await?;
     state.set_snapshot(parse_runtime_snapshot(&v));
     Ok(v)
 }

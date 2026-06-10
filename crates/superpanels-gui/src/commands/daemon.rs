@@ -19,21 +19,30 @@ use crate::errors::IpcError;
 const DAEMON_BIN: &str = "superpanels-daemon";
 
 #[tauri::command]
-pub(crate) fn daemon_status() -> Value {
-    let connected = ipc_client::try_connect(&socket_path()).is_some();
-    json!({ "connected": connected })
+pub(crate) async fn daemon_status() -> Value {
+    // `try_connect` is a blocking connect; the GUI polls this, and a stale
+    // socket can stall it — keep it off the main thread.
+    tauri::async_runtime::spawn_blocking(|| {
+        let connected = ipc_client::try_connect(&socket_path()).is_some();
+        json!({ "connected": connected })
+    })
+    .await
+    .unwrap_or_else(|_| json!({ "connected": false }))
 }
 
 #[tauri::command]
-pub(crate) fn start_daemon() -> Result<Value, IpcError> {
-    let exe = locate_daemon_exe();
-    Command::new(&exe).spawn().map_err(|e| {
-        IpcError::internal(format!(
-            "could not spawn '{}': {e} — is `superpanels-daemon` on $PATH?",
-            exe.display()
-        ))
-    })?;
-    Ok(json!({ "exe": exe.display().to_string() }))
+pub(crate) async fn start_daemon() -> Result<Value, IpcError> {
+    super::run_off_main(|| {
+        let exe = locate_daemon_exe();
+        Command::new(&exe).spawn().map_err(|e| {
+            IpcError::internal(format!(
+                "could not spawn '{}': {e} — is `superpanels-daemon` on $PATH?",
+                exe.display()
+            ))
+        })?;
+        Ok(json!({ "exe": exe.display().to_string() }))
+    })
+    .await
 }
 
 /// Resolve the daemon binary path.
@@ -60,7 +69,7 @@ mod tests {
 
     #[test]
     fn daemon_status_returns_connected_field() {
-        let v = daemon_status();
+        let v = tauri::async_runtime::block_on(daemon_status());
         assert!(
             v.get("connected").is_some_and(Value::is_boolean),
             "expected boolean `connected` field, got {v}"

@@ -58,6 +58,17 @@ fn resolve(resp: IpcResponse) -> CallResult {
     }
 }
 
+/// [`call`] on the blocking thread pool — the form `#[tauri::command]`s use,
+/// since socket IPC (or its in-process fallback) on the webview's main
+/// thread freezes the UI for the duration of the daemon handler.
+pub(crate) async fn call_off_main(
+    method: &'static str,
+    params: Value,
+    config_path: Option<std::path::PathBuf>,
+) -> CallResult {
+    crate::commands::run_off_main(move || call(method, params, config_path.as_deref())).await
+}
+
 /// Helper: synthesise an `IpcResponse`-shaped success body so an in-process
 /// dispatch returns the same JSON the daemon would have. Kept here so call
 /// sites don't reach into `IpcResponse` themselves.

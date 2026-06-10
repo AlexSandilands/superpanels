@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 use tracing::warn;
 use ts_rs::TS;
 
+use super::run_off_main;
 use crate::bridge;
 use crate::errors::IpcError;
 use crate::state::AppState;
@@ -38,13 +39,13 @@ pub(crate) struct LibraryFilter {
 }
 
 #[tauri::command]
-pub(crate) fn library_list(
+pub(crate) async fn library_list(
     filter: LibraryFilter,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
     let params = serde_json::to_value(&filter)
         .map_err(|e| IpcError::internal(format!("LibraryFilter serialise: {e}")))?;
-    bridge::call("library_list", params, state.config_path().as_deref())
+    bridge::call_off_main("library_list", params, state.config_path()).await
 }
 
 // Thumbnail commands are async: the decode / IPC runs on a blocking thread
@@ -98,16 +99,6 @@ pub(crate) async fn source_thumbnail(path: String) -> Result<Value, IpcError> {
     run_off_main(move || render_local_thumbnail(&p)).await
 }
 
-/// Run `work` on the blocking thread pool. A panicked or cancelled task
-/// surfaces as an internal error instead of poisoning the command channel.
-async fn run_off_main(
-    work: impl FnOnce() -> Result<Value, IpcError> + Send + 'static,
-) -> Result<Value, IpcError> {
-    tauri::async_runtime::spawn_blocking(work)
-        .await
-        .map_err(|e| IpcError::internal(format!("thumbnail task failed: {e}")))?
-}
-
 fn render_local_thumbnail(path: &std::path::Path) -> Result<Value, IpcError> {
     // Matches `LibraryConfig::thumbnail_size`'s default; the canvas preview
     // doesn't have config in scope so the constant is hard-coded here.
@@ -124,34 +115,38 @@ fn render_local_thumbnail(path: &std::path::Path) -> Result<Value, IpcError> {
 }
 
 #[tauri::command]
-pub(crate) fn library_rescan(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
-    bridge::call("library_rescan", json!({}), state.config_path().as_deref())
+pub(crate) async fn library_rescan(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Value, IpcError> {
+    bridge::call_off_main("library_rescan", json!({}), state.config_path()).await
 }
 
 #[tauri::command]
-pub(crate) fn library_delete(
+pub(crate) async fn library_delete(
     path: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
-    bridge::call(
+    bridge::call_off_main(
         "library_delete",
         json!({ "path": path }),
-        state.config_path().as_deref(),
+        state.config_path(),
     )
+    .await
 }
 
 #[tauri::command]
-pub(crate) fn library_tag(
+pub(crate) async fn library_tag(
     path: String,
     tag: String,
     on: bool,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
-    bridge::call(
+    bridge::call_off_main(
         "library_tag",
         json!({ "path": path, "tag": tag, "on": on }),
-        state.config_path().as_deref(),
+        state.config_path(),
     )
+    .await
 }
 
 #[cfg(test)]

@@ -11,17 +11,21 @@ use crate::errors::IpcError;
 use crate::state::AppState;
 
 #[tauri::command]
-pub(crate) fn slideshow_next(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
-    bridge::call("slideshow_next", json!({}), state.config_path().as_deref())
+pub(crate) async fn slideshow_next(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Value, IpcError> {
+    bridge::call_off_main("slideshow_next", json!({}), state.config_path()).await
 }
 
 #[tauri::command]
-pub(crate) fn slideshow_prev(state: tauri::State<'_, Arc<AppState>>) -> Result<Value, IpcError> {
-    bridge::call("slideshow_prev", json!({}), state.config_path().as_deref())
+pub(crate) async fn slideshow_prev(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Value, IpcError> {
+    bridge::call_off_main("slideshow_prev", json!({}), state.config_path()).await
 }
 
 #[tauri::command]
-pub(crate) fn slideshow_pause(
+pub(crate) async fn slideshow_pause(
     paused: Option<bool>,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, IpcError> {
@@ -29,5 +33,5 @@ pub(crate) fn slideshow_pause(
     if let Some(p) = paused {
         params = json!({ "paused": p });
     }
-    bridge::call("slideshow_pause", params, state.config_path().as_deref())
+    bridge::call_off_main("slideshow_pause", params, state.config_path()).await
 }
