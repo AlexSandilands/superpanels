@@ -22,9 +22,6 @@ affected stacks (track upstream WebKit / `webkit2gtk` Arch package).
 `desktop_body_includes_webkit_dmabuf_workaround` test assertions in
 `autostart.rs`.
 
-## Fix transforms/cropping from canvas
-  - Align with the preview in the profile manager
-
 ## Synchronous Tauri commands block the webview main thread
 
 Every `#[tauri::command]` in `superpanels-gui` except the two thumbnail
@@ -47,8 +44,6 @@ dirty). The library modal now derives its slideshow-edit mode reactively to
 ride out the flip-flop, but the sentinel handshake itself should compare
 against "switch in flight" state instead of raw `activeName`.
 
-## Monitor gap not loaded on app start for profile
-
 ## Repair different topology
 
 When the topology-repair flow lands, it must remap (or at minimum
@@ -56,8 +51,6 @@ invalidate, with a toast) the per-image `overrides` maps inside
 `SpanSource::Slideshow`, not just the profile-level `monitor_state` — both
 are keyed by `stable_id`, so a monitor swap silently breaks hand-tuned
 slideshow images otherwise.
-
-## Lag when opening profile switcher
 
 ## Per Monitor Wallpapers
 

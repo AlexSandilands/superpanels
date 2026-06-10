@@ -518,20 +518,40 @@
     );
   });
 
+  const rectToTransform = (r: { x_mm: number; y_mm: number; w_mm: number; h_mm: number }) => ({
+    offsetMmX: r.x_mm,
+    offsetMmY: r.y_mm,
+    widthMm: r.w_mm,
+    heightMm: r.h_mm,
+  });
+
   useSourceImage(
     () => sourcePath ?? liveSlideshowPath,
     () => previewMonitors,
-    // An authored rect for a slideshow image is its per-image override, or
-    // the profile-level rect when the slideshow runs one uniform layout.
-    // Otherwise untuned images fall through to the cover-fit seed, matching
-    // the daemon's per-image cover fallback.
+    // The authored rect for a slideshow image is its per-image override, or
+    // the profile-level rect when the slideshow runs one uniform layout; for
+    // a single source it's the saved profile's rect (so a profile switch or
+    // cold start shows the layout the manager preview shows). Everything
+    // else — untuned slideshow images, a freshly dropped image whose path
+    // isn't persisted yet — falls through to the cover-fit seed.
     (path) => {
-      if (path !== liveSlideshowPath) return null;
-      const active = profileStore.activeProfile;
-      const r =
-        liveOverride?.image_rect_mm ??
-        (uniformLayoutOn && active && isSpanBody(active.body) ? active.body.image_rect_mm : null);
-      return r ? { offsetMmX: r.x_mm, offsetMmY: r.y_mm, widthMm: r.w_mm, heightMm: r.h_mm } : null;
+      if (path === liveSlideshowPath) {
+        const active = profileStore.activeProfile;
+        const r =
+          liveOverride?.image_rect_mm ??
+          (uniformLayoutOn && active && isSpanBody(active.body) ? active.body.image_rect_mm : null);
+        return r ? rectToTransform(r) : null;
+      }
+      const saved = profileStore.profiles.find((pr) => pr.name === draft?.name);
+      if (
+        saved &&
+        isSpanBody(saved.body) &&
+        saved.body.source.type === 'single' &&
+        saved.body.source.path === path
+      ) {
+        return rectToTransform(saved.body.image_rect_mm);
+      }
+      return null;
     },
   );
 
@@ -566,7 +586,14 @@
 
   onMount(() => {
     void monitorStore.refresh();
-    void profileStore.refresh().then(() => slideshowController.refresh());
+    void profileStore.refresh().then(() => {
+      void slideshowController.refresh();
+      // Cold start: pull the active profile's placements (monitor gaps) and
+      // single-source rect into the canvas — nothing else seeds them until
+      // the user switches profiles.
+      const active = profileStore.activeProfile;
+      if (active) applyMonitorStateToCanvas(active);
+    });
     void libraryStore.refresh();
 
     const detachWindow = attachWindowEvents({
