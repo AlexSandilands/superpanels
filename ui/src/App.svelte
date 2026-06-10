@@ -412,13 +412,16 @@
     if (profileStore.dirty) return true;
     const active = profileStore.activeProfile;
     if (!active) return false;
+    // While a slideshow image is still resolving, the transform (and loaded
+    // dims) belong to the previous image — rect comparisons against the
+    // incoming image's baseline would flag phantom edits.
+    const imageSettled = !liveSlideshowPath || sourceImageState.value.path === liveSlideshowPath;
     if (liveOverride) {
-      return (
-        placementsDirty(canvasView.overrides, liveOverride.monitor_state) ||
-        rectDirty(imageTransform.value, liveOverride.image_rect_mm)
-      );
+      if (placementsDirty(canvasView.overrides, liveOverride.monitor_state)) return true;
+      return imageSettled && rectDirty(imageTransform.value, liveOverride.image_rect_mm);
     }
     if (canvasOverridesDirty(canvasView.overrides, active)) return true;
+    if (!imageSettled) return false;
     if (liveSlideshowPath && !uniformLayoutOn) {
       // Untuned slideshow image: clean means the cover-fit seed, not the
       // profile rect (which belongs to a different image's aspect). Under a
@@ -459,6 +462,22 @@
   $effect(() => {
     const seen = profileStore.activeName;
     const sentinel = preemption.sentinel;
+    const pending = preemption.pendingClaim;
+    if (pending) {
+      if (seen === pending.to) {
+        // The user's own switch landed in the runtime view.
+        preemption.settleClaim();
+        return;
+      }
+      if (seen === pending.from) {
+        // A poll that raced the switch still reports the old name — a stale
+        // echo, not a schedule fire. Keep waiting for the claim to land.
+        return;
+      }
+      // A third profile became active mid-switch: a genuine schedule fire
+      // overtook the user's switch — handle it as an external change.
+      preemption.settleClaim();
+    }
     if (seen === sentinel) return;
     const externalChange = sentinel !== null && seen !== sentinel;
     if (externalChange) {

@@ -37,6 +37,7 @@ async function applyTransientImageLayout(
   try {
     await api.applyCanvas(transient, profileStore.activeName);
   } catch (err) {
+    preemption.cancelClaim(profileStore.activeName);
     toast.error('Apply failed', errorMessage(err));
   }
 }

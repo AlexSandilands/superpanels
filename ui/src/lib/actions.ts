@@ -10,6 +10,9 @@ import { imageTransform } from '$lib/stores/image-transform.svelte';
 import { monitorStore } from '$lib/stores/monitors.svelte';
 import { preemption } from '$lib/stores/preemption.svelte';
 import { profileStore } from '$lib/stores/profile.svelte';
+// Cyclic with slideshow-controller (it imports next/prev/refreshRuntime from
+// here) — safe: both modules only touch the other inside functions.
+import { slideshowController } from '$lib/slideshow-controller.svelte';
 import { runtime } from '$lib/stores/runtime.svelte';
 import { toast } from '$lib/stores/toast.svelte';
 import type { ImageRectMm } from '$lib/types/ImageRectMm';
@@ -105,7 +108,9 @@ export async function applyDraftProfile(): Promise<void> {
     const elapsed = recordAndToast(r, t0);
     toast.success(`Applied '${refreshed.name}'`, `${r.backend ?? 'backend'} · ${elapsed} ms`);
     void profileStore.refresh();
+    void slideshowController.refresh();
   } catch (err) {
+    preemption.cancelClaim(profileStore.activeName);
     toast.error('Apply failed', errorMessage(err));
   }
 }
@@ -128,6 +133,7 @@ export async function saveActiveProfile(): Promise<boolean> {
     toast.success(`Saved '${active}'`);
     return true;
   } catch (err) {
+    preemption.cancelClaim(profileStore.activeName);
     toast.error(`Failed to save '${active}'`, errorMessage(err));
     return false;
   }
@@ -155,7 +161,11 @@ export async function switchAndApply(p: Profile): Promise<void> {
     recordAndToast(r, t0);
     toast.success(`Switched to ${p.name}`);
     void profileStore.refresh();
+    // Pull the slideshow's new current image immediately — waiting for the
+    // 5 s poll leaves the canvas imageless after switching to a slideshow.
+    void slideshowController.refresh();
   } catch (err) {
+    preemption.cancelClaim(profileStore.activeName);
     toast.error(`Failed to apply '${p.name}'`, errorMessage(err));
   }
 }

@@ -39,9 +39,12 @@ export const imageTransform = {
 export type SourceImageState = {
   url: string | null;
   naturalDims: { w: number; h: number } | null;
+  /** The path `url`/`naturalDims` belong to — consumers comparing against
+   *  the *current* source must check this, since loads resolve async. */
+  path: string | null;
 };
 
-let sourceState = $state<SourceImageState>({ url: null, naturalDims: null });
+let sourceState = $state<SourceImageState>({ url: null, naturalDims: null, path: null });
 
 export const sourceImageState = {
   get value() {
@@ -63,13 +66,17 @@ export function useSourceImage(
   $effect(() => {
     const path = getSourcePath();
     if (!path) {
-      sourceState = { url: null, naturalDims: null };
+      sourceState = { url: null, naturalDims: null, path: null };
       initializedFor = '';
       return;
     }
     const cached = peekSourceImage(path);
     if (cached) {
-      sourceState = { url: cached.url, naturalDims: { w: cached.naturalW, h: cached.naturalH } };
+      sourceState = {
+        url: cached.url,
+        naturalDims: { w: cached.naturalW, h: cached.naturalH },
+        path,
+      };
       maybeInitTransform(path, getPreviewMonitors());
       return;
     }
@@ -77,7 +84,7 @@ export function useSourceImage(
     void loadSourceImage(path)
       .then((img) => {
         if (cancelled || getSourcePath() !== path) return;
-        sourceState = { url: img.url, naturalDims: { w: img.naturalW, h: img.naturalH } };
+        sourceState = { url: img.url, naturalDims: { w: img.naturalW, h: img.naturalH }, path };
         maybeInitTransform(path, getPreviewMonitors());
       })
       .catch((err: unknown) => {
