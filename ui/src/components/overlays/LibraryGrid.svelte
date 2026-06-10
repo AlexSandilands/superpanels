@@ -6,12 +6,18 @@
   import LibraryThumb from './LibraryThumb.svelte';
   import LibraryPinMenu from './LibraryPinMenu.svelte';
 
+  export type SlideshowSelection = {
+    membershipOf: (path: string) => 'image' | 'folder' | null;
+    onToggle: (path: string) => void;
+  };
+
   type Props = {
     entries: LibraryEntry[];
     onApply: (entry: LibraryEntry) => void;
     onPin: (monitorId: string, path: string) => void;
+    selection?: SlideshowSelection | null;
   };
-  let { entries, onApply, onPin }: Props = $props();
+  let { entries, onApply, onPin, selection = null }: Props = $props();
 
   let scrollEl: HTMLDivElement | undefined = $state();
   let scrollTop = $state(0);
@@ -94,21 +100,43 @@
   {:else}
     <div class="relative w-full" style:height="{totalH}px">
       {#each visibleRange as item (item.entry.path)}
+        {@const m = selection ? selection.membershipOf(item.entry.path) : null}
         <div
           class="lib-card absolute"
           style:top="{item.row * (ROW_HEIGHT_PX + ROW_GAP_PX)}px"
           style:left="calc({(item.col * 100) / cols}% + {ROW_GAP_PX / 2}px)"
           style:width="calc({100 / cols}% - {ROW_GAP_PX}px)"
           style:height="{ROW_HEIGHT_PX}px"
+          class:selected={m === 'image'}
           draggable="true"
           ondragstart={(ev) => onDragStart(ev, item.entry)}
-          ondblclick={() => onApply(item.entry)}
+          ondblclick={() => {
+            // In selection mode the single click already toggled — a second
+            // toggle here would make every double-click fire three times.
+            if (!selection) onApply(item.entry);
+          }}
+          onclick={() => selection?.onToggle(item.entry.path)}
+          onkeydown={(ev) => {
+            if (selection && (ev.key === 'Enter' || ev.key === ' ')) {
+              ev.preventDefault();
+              selection.onToggle(item.entry.path);
+            }
+          }}
           title={item.entry.path}
           role="button"
           tabindex="0"
         >
           <div style:flex="1" style:min-height="0" style:position="relative">
             <LibraryThumb path={item.entry.path} alt={item.entry.path} />
+            {#if selection}
+              {#if m === 'image'}
+                <div class="member member-image"><Icon name="check" size={10} /> in slideshow</div>
+              {:else if m === 'folder'}
+                <div class="member member-folder">
+                  <Icon name="folder" size={10} /> via folder
+                </div>
+              {/if}
+            {/if}
             <button
               class="fav"
               style:color={item.entry.favourite ? 'var(--warn)' : 'oklch(1 0 0 / 0.7)'}
@@ -142,41 +170,62 @@
               <span>{item.entry.resolution[0]}×{item.entry.resolution[1]}</span>
               <span>{item.entry.tags.slice(0, 2).join(' · ')}</span>
             </div>
-            <div class="flex" style:gap="4px" style:margin-top="8px">
-              <button
-                class="btn primary sm"
-                style:flex="1"
-                style:font-size="10px"
-                onclick={(ev) => {
-                  ev.stopPropagation();
-                  onApply(item.entry);
-                }}
-              >
-                Apply
-              </button>
-              <button
-                class="btn sm"
-                style:padding="0 6px"
-                title="Set for monitor…"
-                onclick={(ev) => {
-                  ev.stopPropagation();
-                  pinFor = pinFor === item.entry.path ? null : item.entry.path;
-                }}
-              >
-                <Icon name="link" size={11} />
-              </button>
-              <button
-                class="btn sm"
-                style:padding="0 6px"
-                title="Reveal in file manager"
-                onclick={(ev) => {
-                  ev.stopPropagation();
-                  toast.info('Reveal', 'not yet wired in this build');
-                }}
-              >
-                <Icon name="reveal" size={11} />
-              </button>
-            </div>
+            {#if selection}
+              <div class="flex" style:gap="4px" style:margin-top="8px">
+                <button
+                  class="btn sm"
+                  class:primary={m === null}
+                  style:flex="1"
+                  style:font-size="10px"
+                  disabled={m === 'folder'}
+                  title={m === 'folder'
+                    ? 'Included via a folder source — remove the folder to exclude it'
+                    : undefined}
+                  onclick={(ev) => {
+                    ev.stopPropagation();
+                    selection.onToggle(item.entry.path);
+                  }}
+                >
+                  {m === 'image' ? 'Remove' : m === 'folder' ? 'Via folder' : '+ Add'}
+                </button>
+              </div>
+            {:else}
+              <div class="flex" style:gap="4px" style:margin-top="8px">
+                <button
+                  class="btn primary sm"
+                  style:flex="1"
+                  style:font-size="10px"
+                  onclick={(ev) => {
+                    ev.stopPropagation();
+                    onApply(item.entry);
+                  }}
+                >
+                  Apply
+                </button>
+                <button
+                  class="btn sm"
+                  style:padding="0 6px"
+                  title="Set for monitor…"
+                  onclick={(ev) => {
+                    ev.stopPropagation();
+                    pinFor = pinFor === item.entry.path ? null : item.entry.path;
+                  }}
+                >
+                  <Icon name="link" size={11} />
+                </button>
+                <button
+                  class="btn sm"
+                  style:padding="0 6px"
+                  title="Reveal in file manager"
+                  onclick={(ev) => {
+                    ev.stopPropagation();
+                    toast.info('Reveal', 'not yet wired in this build');
+                  }}
+                >
+                  <Icon name="reveal" size={11} />
+                </button>
+              </div>
+            {/if}
             {#if pinFor === item.entry.path}
               <LibraryPinMenu
                 onPin={(monitorId) => {
@@ -206,6 +255,30 @@
   }
   .lib-card:hover {
     border-color: var(--accent);
+  }
+  .lib-card.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .member {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+  }
+  .member-image {
+    background: var(--accent);
+    color: oklch(0.16 0.01 250);
+  }
+  .member-folder {
+    background: oklch(0 0 0 / 0.55);
+    color: oklch(1 0 0 / 0.85);
   }
   .fav {
     position: absolute;

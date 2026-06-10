@@ -26,6 +26,7 @@ pub(crate) fn dispatch(method: &str, params: &Value, config_path: Option<&Path>)
         "apply_profile" => apply_profile(),
         "apply_canvas" => apply_canvas(),
         "save_profile" => save_profile(params, config_path),
+        "update_profile_source" => update_profile_source(params, config_path),
         "delete_profile" => delete_profile(params, config_path),
         "preview_crop" => preview_crop(params, config_path),
         "library_list" => library_list(params, config_path),
@@ -121,6 +122,27 @@ fn save_profile(params: &Value, config_path: Option<&Path>) -> CallResult {
     } else {
         cfg.profiles.push(profile);
     }
+    cfg.save_to(&path)?;
+    Ok(ok_unit())
+}
+
+fn update_profile_source(params: &Value, config_path: Option<&Path>) -> CallResult {
+    let name = params
+        .get("profile")
+        .and_then(Value::as_str)
+        .ok_or_else(|| IpcError::invalid("params.profile required"))?;
+    let source: superpanels_core::config::SpanSource = params
+        .get("source")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .ok_or_else(|| IpcError::invalid("params.source (SpanSource) required"))?;
+    let path = config_path_or_default(config_path)?;
+    let mut cfg = Config::load_from(&path)?;
+    cfg.set_span_source(name, source).map_err(|e| match e {
+        superpanels_core::config::SpanSourceError::ProfileNotFound(_) => {
+            IpcError::Config(e.to_string())
+        }
+        superpanels_core::config::SpanSourceError::NotSpan => IpcError::invalid(e.to_string()),
+    })?;
     cfg.save_to(&path)?;
     Ok(ok_unit())
 }

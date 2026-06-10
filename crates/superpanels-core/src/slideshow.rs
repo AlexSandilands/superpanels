@@ -122,6 +122,37 @@ impl SlideshowPicker {
         &mut self.state
     }
 
+    /// Swap the config on a live picker, keeping history and pause state —
+    /// unlike [`Self::with_state`], `on_start` is *not* re-applied. History is
+    /// re-trimmed when the new window is smaller.
+    pub fn update_config(&mut self, config: SlideshowConfig) {
+        self.config = config;
+        while self.state.history.len() > self.history_capacity() {
+            self.state.history.pop_back();
+        }
+    }
+
+    /// History always retains at least the current image — it feeds
+    /// current-path reporting and `step_back` — even when the
+    /// repeat-suppression window (`recent_history_size`) is 0.
+    fn history_capacity(&self) -> usize {
+        self.config.recent_history_size.max(1)
+    }
+
+    /// Step back to the previously shown image: drops the newest history
+    /// entry and returns the new front, which is now the current image.
+    /// `None` when there is nothing to go back to.
+    pub fn step_back(&mut self) -> Option<PathBuf> {
+        if self.state.history.len() < 2 {
+            return None;
+        }
+        self.state.history.pop_front();
+        // The pool position of the restored image is unknown without the
+        // pool; the next advance re-derives it from history.
+        self.state.current_index = None;
+        self.state.history.front().cloned()
+    }
+
     /// Pick the next path, recording it in `state.history`. If every entry
     /// is in recent history, returns [`SlideshowError::NoEligibleEntry`] —
     /// the daemon decides whether to widen the pool or shrink history.
@@ -130,8 +161,15 @@ impl SlideshowPicker {
             return Err(SlideshowError::EmptyPool);
         }
         let ordered = sorted_pool(pool, self.config.sort);
-        let history: std::collections::HashSet<PathBuf> =
-            self.state.history.iter().cloned().collect();
+        // Only the configured window suppresses repeats; history may hold one
+        // extra entry (the current image) when the window is 0.
+        let history: std::collections::HashSet<PathBuf> = self
+            .state
+            .history
+            .iter()
+            .take(self.config.recent_history_size)
+            .cloned()
+            .collect();
 
         let choice = match self.config.sort {
             SlideshowSort::Shuffle => self.pick_shuffle(&ordered, &history),
@@ -168,10 +206,14 @@ impl SlideshowPicker {
         ordered: &[PathBuf],
         history: &std::collections::HashSet<PathBuf>,
     ) -> Option<PathBuf> {
-        let last = self
-            .state
-            .current_index
-            .and_then(|i| ordered.get(i).cloned());
+        // History front is the current image and survives `step_back`;
+        // `current_index` is the fallback for state persisted before history
+        // tracked the current entry.
+        let last = self.state.history.front().cloned().or_else(|| {
+            self.state
+                .current_index
+                .and_then(|i| ordered.get(i).cloned())
+        });
         let start = match last {
             Some(prev) => ordered.iter().position(|p| p == &prev).map_or(0, |i| i + 1),
             None => 0,
@@ -212,7 +254,7 @@ impl SlideshowPicker {
             self.state.current_index = Some(idx);
         }
         self.state.history.push_front(chosen.to_path_buf());
-        while self.state.history.len() > self.config.recent_history_size {
+        while self.state.history.len() > self.history_capacity() {
             self.state.history.pop_back();
         }
     }
@@ -426,6 +468,66 @@ mod tests {
             picker.next(&images).unwrap();
         }
         assert!(picker.state().history.len() <= 2);
+    }
+
+    #[test]
+    fn update_config_keeps_state_and_trims_history() {
+        // Arrange — build up 3 history entries with a window of 5.
+        let images = pool(&["a.png", "b.png", "c.png", "d.png"]);
+        let mut picker = SlideshowPicker::new(config_with(SlideshowSort::Alphabetical, 5));
+        for _ in 0..3 {
+            picker.next(&images).unwrap();
+        }
+        picker.state_mut().paused = true;
+
+        // Act — shrink the window to 1 via a live config swap.
+        let mut new_cfg = config_with(SlideshowSort::Shuffle, 1);
+        new_cfg.on_start = SlideshowStart::NewRandom; // must NOT clear history
+        picker.update_config(new_cfg);
+
+        // Assert — history trimmed to the new window, pause preserved.
+        assert_eq!(picker.state().history.len(), 1);
+        assert!(picker.state().paused);
+    }
+
+    #[test]
+    fn zero_history_window_still_tracks_current_image() {
+        let images = pool(&["a.png", "b.png"]);
+        let mut picker = SlideshowPicker::new(config_with(SlideshowSort::Alphabetical, 0));
+
+        let first = picker.next(&images).unwrap();
+
+        // The window suppresses nothing, but the current image stays visible.
+        assert_eq!(picker.state().history.front(), Some(&first));
+        assert_eq!(picker.state().history.len(), 1);
+    }
+
+    #[test]
+    fn step_back_restores_previous_image_as_current() {
+        let images = pool(&["a.png", "b.png", "c.png"]);
+        let mut picker = SlideshowPicker::new(config_with(SlideshowSort::Alphabetical, 5));
+        let first = picker.next(&images).unwrap();
+        let _second = picker.next(&images).unwrap();
+
+        let back = picker.step_back();
+
+        assert_eq!(back, Some(first.clone()));
+        assert_eq!(picker.state().history.front(), Some(&first));
+        // Only one entry left — nothing further to go back to.
+        assert!(picker.step_back().is_none());
+    }
+
+    #[test]
+    fn sequential_resume_continues_from_step_back_target() {
+        let images = pool(&["a.png", "b.png", "c.png"]);
+        let mut picker = SlideshowPicker::new(config_with(SlideshowSort::Alphabetical, 2));
+        let _a = picker.next(&images).unwrap();
+        let b = picker.next(&images).unwrap();
+        picker.step_back();
+
+        // Next after stepping back to `a` is `b` again, not `c`.
+        let next = picker.next(&images).unwrap();
+        assert_eq!(next, b);
     }
 
     #[test]

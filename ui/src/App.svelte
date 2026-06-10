@@ -21,6 +21,7 @@
     applyDraftProfile,
     applyMonitorStateToCanvas,
     openMainWindow,
+    persistSlideshowSource,
     pinImageToMonitor,
     quitApp,
     revertCanvasToActive,
@@ -47,7 +48,15 @@
   import { slideshowController } from '$lib/slideshow-controller.svelte';
   import { attachWindowEvents } from '$lib/events/window';
   import { dispatchKey } from '$lib/keymap';
-  import { isSpanBody } from '$lib/types/profile-helpers';
+  import {
+    defaultSlideshowConfig,
+    isSlideshowSource,
+    isSpanBody,
+    type ImageSet,
+    type ProfileKind,
+    type SlideshowConfig,
+    type SlideshowSource,
+  } from '$lib/types/profile-helpers';
   import PreviewCanvas from './components/canvas/PreviewCanvas.svelte';
   import ModeHint from './components/chrome/ModeHint.svelte';
   import MonitorGapDock from './components/chrome/MonitorGapDock.svelte';
@@ -72,7 +81,7 @@
   let saveDialogOpen = $state(false);
   let profileManagerOpen = $state(false);
 
-  async function saveAsNew(name: string, description: string | null) {
+  async function saveAsNew(name: string, description: string | null, kind: ProfileKind = 'single') {
     saveDialogOpen = false;
     try {
       const monitor_state: Record<string, { x_mm: number; y_mm: number }> = {};
@@ -83,29 +92,35 @@
         };
       }
       const t = imageTransform.value;
+      const image_rect_mm = {
+        x_mm: t.offsetMmX,
+        y_mm: t.offsetMmY,
+        w_mm: t.widthMm,
+        h_mm: t.heightMm,
+      };
+      // Duplicating a slideshow keeps its sources and timer config. A fresh
+      // slideshow starts from the current image (if any) so the desktop
+      // doesn't go blank; more sources come from the library.
+      const seed: ImageSet = {
+        sources: sourcePath ? [{ type: 'image', path: sourcePath }] : [],
+      };
+      const slideshowSrc: SlideshowSource = slideshowSource
+        ? ($state.snapshot(slideshowSource) as SlideshowSource)
+        : { type: 'slideshow', images: seed, config: defaultSlideshowConfig() };
+      const body =
+        kind === 'slideshow'
+          ? { type: 'span' as const, source: slideshowSrc, image_rect_mm }
+          : span
+            ? { ...span, image_rect_mm }
+            : {
+                type: 'span' as const,
+                source: { type: 'single' as const, path: sourcePath ?? '' },
+                image_rect_mm,
+              };
       const now = new Date().toISOString();
       const profile = {
         name,
-        body: span
-          ? {
-              ...span,
-              image_rect_mm: {
-                x_mm: t.offsetMmX,
-                y_mm: t.offsetMmY,
-                w_mm: t.widthMm,
-                h_mm: t.heightMm,
-              },
-            }
-          : {
-              type: 'span' as const,
-              source: { type: 'single' as const, path: sourcePath ?? '' },
-              image_rect_mm: {
-                x_mm: t.offsetMmX,
-                y_mm: t.offsetMmY,
-                w_mm: t.widthMm,
-                h_mm: t.heightMm,
-              },
-            },
+        body,
         monitor_state,
         // Topology is recomputed by the daemon against live monitors.
         topology: '',
@@ -119,7 +134,22 @@
       await profileStore.refresh();
       toast.success(`Saved '${name}'`);
       const saved = profileStore.profiles.find((p) => p.name === name);
-      if (saved) await switchAndApply(saved);
+      if (kind === 'slideshow') {
+        // A new slideshow needs populating — drop straight into the library.
+        // With images on board (a duplicate, or the seeded canvas image) the
+        // profile is applied first so the desktop follows along.
+        const isDuplicate = slideshowSource !== null;
+        const hasImages = slideshowSrc.images.sources.length > 0;
+        if (saved && hasImages) {
+          await switchAndApply(saved);
+        } else {
+          profileStore.select(name);
+          toast.info('Add images', 'pick images or folders for the slideshow');
+        }
+        if (!isDuplicate || !hasImages) libraryOpen = true;
+      } else if (saved) {
+        await switchAndApply(saved);
+      }
     } catch (err) {
       toast.error('Save as new failed', errorMessage(err));
     }
@@ -130,6 +160,70 @@
   const draft = $derived<Profile | null>(profileStore.draft);
   const span = $derived(draft && isSpanBody(draft.body) ? draft.body : null);
   const sourcePath = $derived(span && span.source.type === 'single' ? span.source.path : null);
+  const slideshowSource = $derived(span && isSlideshowSource(span.source) ? span.source : null);
+
+  // Saved slideshow profile whose image set the library can edit. Unsaved
+  // drafts are excluded — `update_profile_source` needs an on-disk profile.
+  const slideshowTarget = $derived.by(() => {
+    if (!draft || !slideshowSource) return null;
+    if (!profileStore.profiles.some((p) => p.name === draft.name)) return null;
+    return { name: draft.name, images: slideshowSource.images };
+  });
+
+  // While the active profile is a slideshow, mirror its live image onto the
+  // canvas / dock thumb so the preview tracks the desktop.
+  const liveSlideshowPath = $derived(
+    slideshowSource && draft && draft.name === profileStore.activeName
+      ? (slideshowController.state?.currentPath ?? null)
+      : null,
+  );
+
+  // The dock's slideshow controls follow the profile the dock displays (the
+  // draft), never whatever happens to be active — editing B while A runs
+  // must not silently rewrite A's config.
+  const dockSlideshowProfile = $derived(
+    slideshowTarget && slideshowSource
+      ? { name: slideshowTarget.name, source: slideshowSource }
+      : null,
+  );
+
+  // Playback state belongs to the active slideshow; hide it while the dock
+  // shows a different (merely selected) profile.
+  const dockSlideshowState = $derived(
+    draft && draft.name === profileStore.activeName ? slideshowController.state : null,
+  );
+
+  async function updateSlideshowConfig(config: SlideshowConfig) {
+    const target = dockSlideshowProfile;
+    if (!target) return;
+    const ok = await persistSlideshowSource(target.name, { ...target.source, config });
+    if (ok) void slideshowController.refresh();
+  }
+
+  async function updateSlideshowImages(images: ImageSet) {
+    const target = slideshowTarget;
+    if (!target || !slideshowSource) return;
+    const ok = await persistSlideshowSource(target.name, { ...slideshowSource, images });
+    if (ok) void slideshowController.refresh();
+  }
+
+  // An empty slideshow can't be applied (its pool is empty and validity
+  // disables it) — switching to one selects it and opens the library to
+  // populate the set instead of surfacing an apply failure.
+  function pickProfile(p: Profile) {
+    const emptySlideshow =
+      isSpanBody(p.body) &&
+      isSlideshowSource(p.body.source) &&
+      p.body.source.images.sources.length === 0;
+    if (emptySlideshow) {
+      profileStore.select(p.name);
+      applyMonitorStateToCanvas(p);
+      toast.info('Slideshow has no images yet', 'pick images or folders from the library');
+      libraryOpen = true;
+      return;
+    }
+    void switchAndApply(p);
+  }
 
   const previewMonitors = $derived(
     buildPreviewMonitors(monitorStore.monitors, canvasView.overrides),
@@ -250,7 +344,7 @@
   );
 
   useSourceImage(
-    () => sourcePath,
+    () => sourcePath ?? liveSlideshowPath,
     () => previewMonitors,
   );
 
@@ -347,16 +441,23 @@
   }
 
   // Source dock metadata — lifted from the active draft for display.
-  const sourceName = $derived(
-    sourcePath ? (sourcePath.split('/').pop() ?? sourcePath) : '— no source',
-  );
-  const sourceMeta = $derived(
-    imageNaturalDims
-      ? `${imageNaturalDims.w}×${imageNaturalDims.h}`
-      : sourcePath
-        ? 'loading…'
-        : 'pick from library',
-  );
+  const sourceName = $derived.by(() => {
+    if (sourcePath) return sourcePath.split('/').pop() ?? sourcePath;
+    if (slideshowSource) {
+      if (liveSlideshowPath) return liveSlideshowPath.split('/').pop() ?? liveSlideshowPath;
+      return draft?.name ?? 'slideshow';
+    }
+    return '— no source';
+  });
+  const sourceMeta = $derived.by(() => {
+    if (slideshowSource) {
+      const n = slideshowSource.images.sources.length;
+      if (n === 0) return 'slideshow · empty — add images';
+      return `slideshow · ${n} source${n === 1 ? '' : 's'}`;
+    }
+    if (imageNaturalDims) return `${imageNaturalDims.w}×${imageNaturalDims.h}`;
+    return sourcePath ? 'loading…' : 'pick from library';
+  });
   const backendName = $derived(runtime.last?.backend ?? 'auto-detect');
 
   const someMissingMm = $derived(
@@ -381,7 +482,7 @@
     activeName={profileStore.activeName}
     {backendName}
     {canApply}
-    canSaveAsNew={Boolean(sourcePath)}
+    canSaveAsNew={true}
     {canSave}
     {canRevert}
     saveDirty={canvasDirty}
@@ -389,7 +490,7 @@
     onSave={() => void saveActiveProfile()}
     onSaveAsNew={() => (saveDialogOpen = true)}
     onRevert={revertCanvasToActive}
-    onSwitchProfile={(p) => guardedDiscard(`Switch to '${p.name}'`, () => switchAndApply(p))}
+    onSwitchProfile={(p) => guardedDiscard(`Switch to '${p.name}'`, () => pickProfile(p))}
     onOpenLibrary={() => (libraryOpen = true)}
     onOpenSettings={() => (settingsOpen = true)}
     onOpenProfileManager={() => (profileManagerOpen = true)}
@@ -402,8 +503,9 @@
       defaultName={profileStore.activeName
         ? `${profileStore.activeName}-copy`
         : `untitled-${profileStore.profiles.length + 1}`}
+      hasSource={Boolean(sourcePath)}
       onCancel={() => (saveDialogOpen = false)}
-      onConfirm={(n, d) => void saveAsNew(n, d)}
+      onConfirm={(n, d, k) => void saveAsNew(n, d, k)}
     />
   {/if}
 
@@ -427,10 +529,12 @@
     {sourceName}
     {sourceMeta}
     sourceThumbUrl={imageUrl}
-    slideshow={slideshowController.state}
+    slideshow={dockSlideshowState}
+    slideshowConfig={dockSlideshowProfile?.source.config ?? null}
     onPrev={() => void slideshowController.prev()}
     onNext={() => void slideshowController.next()}
     onTogglePause={() => void slideshowController.togglePause()}
+    onUpdateConfig={(c) => void updateSlideshowConfig(c)}
     onOpenLibrary={() => (libraryOpen = true)}
   />
 
@@ -487,13 +591,20 @@
       onClose={() => (libraryOpen = false)}
       onApplyAsSpan={setSpanImage}
       onPinToMonitor={pinImageToMonitor}
+      {slideshowTarget}
+      onUpdateSlideshow={(images) => void updateSlideshowImages(images)}
     />
   {/if}
 
   {#if profileManagerOpen}
     <ProfileManagerModal
       onClose={() => (profileManagerOpen = false)}
-      onCreateFromCanvas={(n, d) => saveAsNew(n, d)}
+      onCreateFromCanvas={(n, d, k) => saveAsNew(n, d, k)}
+      onEditSlideshow={(p) => {
+        profileManagerOpen = false;
+        profileStore.select(p.name);
+        libraryOpen = true;
+      }}
     />
   {/if}
 
@@ -514,7 +625,7 @@
       slideshowPaused={slideshowController.state?.paused ?? false}
       onSwitch={(p) => {
         trayOpen = false;
-        guardedDiscard(`Switch to '${p.name}'`, () => switchAndApply(p));
+        guardedDiscard(`Switch to '${p.name}'`, () => pickProfile(p));
       }}
       onPrev={() => void slideshowController.prev()}
       onNext={() => void slideshowController.next()}

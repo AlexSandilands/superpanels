@@ -9,7 +9,10 @@ use serde::{Deserialize, Serialize};
 pub mod client;
 pub mod validate;
 
-pub const PROTOCOL_VERSION: u32 = 1;
+// v2: `ImageSet` wire shape changed from a tagged enum to `{ sources: [...] }`
+// and `SlideshowSummary` gained path/countdown fields — old and new peers
+// must not silently talk past each other.
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// Outbound request sent by a client over the Unix socket.
 #[derive(Debug, Serialize, Deserialize)]
@@ -70,6 +73,16 @@ pub struct SlideshowSummary {
     pub current_index: Option<usize>,
     pub history_len: usize,
     pub paused: bool,
+    /// Most recently shown image, if any.
+    #[serde(default)]
+    pub current_path: Option<PathBuf>,
+    /// Seconds until the next automatic advance; `None` while paused or when
+    /// no timer is armed.
+    #[serde(default)]
+    pub remaining_secs: Option<u64>,
+    /// Size of the last resolved image pool; `None` before the first resolve.
+    #[serde(default)]
+    pub pool_len: Option<usize>,
 }
 
 /// Unix domain socket path for the daemon IPC.

@@ -1,52 +1,16 @@
 //! Shared helpers for the apply / slideshow handlers.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::json;
 use superpanels_core::backends::AppliedReport;
-use superpanels_core::config::{ImageSet, ProfileBody, SpanSource};
+use superpanels_core::config::{ProfileBody, SpanSource};
 use superpanels_core::slideshow::SlideshowPicker;
 use tokio::sync::{Mutex, watch};
-use tracing::error;
 
 use crate::apply::profile_to_picker_config;
-use crate::pool::{pool_from_cache, scan_blocking};
 use crate::state::DaemonState;
-
-/// Resolve `images` to a list of paths without holding `state` locked across
-/// any disk walk. Tries the cached library first; if that misses, runs
-/// `scan_folder` in `spawn_blocking` and returns the paths. The persisted
-/// library cache is owned by the FS watcher and explicit rescans, so we
-/// don't pollute it from ad-hoc slideshow folders.
-pub(super) async fn resolve_pool(
-    state: &Arc<Mutex<DaemonState>>,
-    images: &ImageSet,
-) -> Option<Vec<PathBuf>> {
-    let cached = {
-        let guard = state.lock().await;
-        pool_from_cache(images, &guard.library)
-    };
-    if let Some(pool) = cached {
-        if !pool.is_empty() {
-            return Some(pool);
-        }
-    }
-
-    let images_clone = images.clone();
-    let scanned = match tokio::task::spawn_blocking(move || scan_blocking(&images_clone)).await {
-        Ok(p) => p,
-        Err(e) => {
-            error!(error = %e, "pool resolver task panicked");
-            return None;
-        }
-    };
-    if scanned.is_empty() {
-        return None;
-    }
-    Some(scanned)
-}
 
 pub(super) fn init_picker_if_needed(state: &mut DaemonState, profile_name: &str) {
     if state.slideshow_picker.is_some() {
@@ -75,6 +39,18 @@ pub(super) async fn update_active_profile(state: &Arc<Mutex<DaemonState>>, name:
     let mut guard = state.lock().await;
     guard.active_profile = Some(name.to_owned());
     guard.last_apply_unix_secs = Some(DaemonState::now_unix_secs());
+    // A leftover picker would keep `current_state` reporting a slideshow
+    // (with stale pool/counter data) after switching to a non-slideshow.
+    let is_slideshow = guard.config.profiles.iter().any(|p| {
+        p.name == name
+            && matches!(
+                &p.body,
+                ProfileBody::Span(span) if matches!(span.source, SpanSource::Slideshow { .. })
+            )
+    });
+    if !is_slideshow {
+        guard.clear_slideshow_runtime();
+    }
     let now = superpanels_core::config::now_timestamp();
     let mut touched = false;
     if let Some(profile) = guard.config.profiles.iter_mut().find(|p| p.name == name) {
@@ -95,7 +71,27 @@ pub(super) async fn update_active_profile(state: &Arc<Mutex<DaemonState>>, name:
     }
 }
 
+/// Sync the timer with the active profile's interval. The countdown only
+/// restarts when the interval actually changed — image-set or sort edits on
+/// a running slideshow must not push back the next advance.
 pub(super) async fn update_timer(
+    state: &Arc<Mutex<DaemonState>>,
+    timer_tx: &watch::Sender<Option<Duration>>,
+) {
+    let interval = state.lock().await.active_slideshow_interval();
+    timer_tx.send_if_modified(|current| {
+        if *current == interval {
+            false
+        } else {
+            *current = interval;
+            true
+        }
+    });
+}
+
+/// Re-arm the timer unconditionally, restarting the countdown even when the
+/// interval is unchanged — applies and manual advances reset the clock.
+pub(super) async fn restart_timer(
     state: &Arc<Mutex<DaemonState>>,
     timer_tx: &watch::Sender<Option<Duration>>,
 ) {

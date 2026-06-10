@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { portal } from '$lib/portal';
+
   type Option = { value: string; label: string };
   type Props = {
     value: string;
@@ -7,15 +9,6 @@
     minWidth?: number;
   };
   let { value, options, onChange, minWidth = 0 }: Props = $props();
-
-  function portal(node: HTMLElement) {
-    document.body.appendChild(node);
-    return {
-      destroy() {
-        node.remove();
-      },
-    };
-  }
 
   let buttonEl: HTMLButtonElement | undefined = $state();
   let menuEl: HTMLDivElement | undefined = $state();

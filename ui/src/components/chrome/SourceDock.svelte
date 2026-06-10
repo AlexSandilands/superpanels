@@ -1,18 +1,21 @@
 <script lang="ts">
+  import type { SlideshowState } from '$lib/actions';
+  import type { SlideshowConfig } from '$lib/types/SlideshowConfig';
   import Icon from '../widgets/Icon.svelte';
   import CollapseChevron from './CollapseChevron.svelte';
   import CollapseTab from './CollapseTab.svelte';
-
-  type Slideshow = { paused: boolean; index: number; total: number } | null;
+  import SlideshowSettingsPopover from './SlideshowSettingsPopover.svelte';
 
   type Props = {
     sourceName: string;
     sourceMeta: string;
     sourceThumbUrl: string | null;
-    slideshow: Slideshow;
+    slideshow: SlideshowState;
+    slideshowConfig: SlideshowConfig | null;
     onPrev: () => void;
     onNext: () => void;
     onTogglePause: () => void;
+    onUpdateConfig: (config: SlideshowConfig) => void;
     onOpenLibrary: () => void;
   };
   let {
@@ -20,13 +23,17 @@
     sourceMeta,
     sourceThumbUrl,
     slideshow,
+    slideshowConfig,
     onPrev,
     onNext,
     onTogglePause,
+    onUpdateConfig,
     onOpenLibrary,
   }: Props = $props();
 
   let collapsed = $state(false);
+  let settingsOpen = $state(false);
+  let gearEl: HTMLButtonElement | undefined = $state();
 
   // Stack above BezelDock when the window is narrow enough that the two would
   // otherwise overlap. Mirrors the ModeHint pattern so the bottom row degrades
@@ -43,11 +50,53 @@
   const stacked = $derived(innerWidth < STACK_BREAKPOINT);
   const bottomPx = $derived(stacked ? 96 : 14);
 
+  // Countdown ticks locally between runtime refreshes off the daemon's
+  // remaining-seconds snapshot.
+  let nowMs = $state(Date.now());
+  $effect(() => {
+    if (!slideshow || slideshow.paused || slideshow.remainingSecs === null) return;
+    const id = window.setInterval(() => (nowMs = Date.now()), 1000);
+    return () => window.clearInterval(id);
+  });
+  const countdownSecs = $derived.by(() => {
+    if (!slideshow || slideshow.paused || slideshow.remainingSecs === null) return null;
+    // A runtime refresh can land between local ticks, putting `fetchedAt`
+    // ahead of `nowMs` — clamp so the countdown never exceeds the snapshot.
+    const elapsed = Math.max(0, Math.floor((nowMs - slideshow.fetchedAt) / 1000));
+    return Math.max(0, slideshow.remainingSecs - elapsed);
+  });
+
+  function fmtCountdown(secs: number): string {
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }
+
+  const counterText = $derived.by(() => {
+    if (!slideshow || slideshow.total <= 0) return '—';
+    // Under shuffle the pool position jumps randomly, and after Prev it is
+    // unknown — show only the pool size instead of a misleading "n/m".
+    if (slideshow.index === null || slideshowConfig?.sort === 'shuffle') {
+      return `${slideshow.total} imgs`;
+    }
+    return `${slideshow.index + 1}/${slideshow.total}`;
+  });
+
   const tabSummary = $derived(
-    slideshow && slideshow.total > 0
-      ? `${sourceName} · ${slideshow.index + 1}/${slideshow.total}`
-      : sourceName,
+    slideshow && slideshow.total > 0 ? `${sourceName} · ${counterText}` : sourceName,
   );
+
+  const shuffleOn = $derived(slideshowConfig?.sort === 'shuffle');
+
+  function toggleShuffle() {
+    if (!slideshowConfig) return;
+    onUpdateConfig({
+      ...slideshowConfig,
+      sort: shuffleOn ? 'alphabetical' : 'shuffle',
+    });
+  }
 </script>
 
 {#if collapsed}
@@ -108,8 +157,46 @@
           <Icon name="next" size={12} />
         </button>
       </div>
-      <div class="mono" style:font-size="10px" style:color="var(--text-3)">
-        {slideshow.total > 0 ? `${slideshow.index + 1}/${slideshow.total}` : '—'}
+      <div class="mono counter" style:font-size="10px" style:color="var(--text-3)">
+        {counterText}
+        {#if slideshow.paused}
+          <span class="mono" style:color="var(--warn)">paused</span>
+        {:else if countdownSecs !== null}
+          <span class="mono countdown" title="Time until next wallpaper">
+            {fmtCountdown(countdownSecs)}
+          </span>
+        {/if}
+      </div>
+    {/if}
+    {#if slideshowConfig}
+      <div style:width="1px" style:height="28px" style:background="var(--line)"></div>
+      <div class="flex items-center" style:gap="2px">
+        <button
+          class="btn ghost icon sm"
+          class:shuffle-on={shuffleOn}
+          title={shuffleOn ? 'Shuffle on — switch to A → Z' : 'Shuffle off — switch to shuffle'}
+          onclick={toggleShuffle}
+        >
+          <Icon name="shuffle" size={12} />
+        </button>
+        <button
+          bind:this={gearEl}
+          class="btn ghost icon sm"
+          title="Slideshow settings"
+          aria-expanded={settingsOpen}
+          onclick={() => (settingsOpen = !settingsOpen)}
+        >
+          <Icon name="gear" size={12} />
+        </button>
+        {#if settingsOpen && gearEl}
+          <SlideshowSettingsPopover
+            anchor={gearEl}
+            config={slideshowConfig}
+            onChange={onUpdateConfig}
+            onManageImages={onOpenLibrary}
+            onClose={() => (settingsOpen = false)}
+          />
+        {/if}
       </div>
     {/if}
     <div style:width="1px" style:height="28px" style:background="var(--line)"></div>
@@ -118,3 +205,20 @@
     </button>
   </div>
 {/if}
+
+<style>
+  .counter {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    min-width: 38px;
+  }
+  .countdown {
+    font-size: 10px;
+    color: var(--accent);
+  }
+  .shuffle-on {
+    color: var(--accent);
+  }
+</style>

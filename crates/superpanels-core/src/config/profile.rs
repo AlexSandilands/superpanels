@@ -42,18 +42,81 @@ pub enum SpanSource {
     },
 }
 
+/// Mixed slideshow pool: any number of live folders and hand-picked images.
+/// Deserialization also accepts the pre-1.0 single-variant forms
+/// (`type = "folder"` / `type = "playlist"`) and lifts them into `sources`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, TS)]
+#[ts(export, export_to = "../../../ui/src/lib/types/")]
+pub struct ImageSet {
+    pub sources: Vec<ImageSource>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../ui/src/lib/types/")]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum ImageSet {
+pub enum ImageSource {
     Folder {
         path: PathBuf,
         #[serde(default)]
         recursive: bool,
     },
-    Playlist {
-        paths: Vec<PathBuf>,
+    Image {
+        path: PathBuf,
     },
+}
+
+impl ImageSet {
+    #[must_use]
+    pub fn from_folder(path: PathBuf, recursive: bool) -> Self {
+        Self {
+            sources: vec![ImageSource::Folder { path, recursive }],
+        }
+    }
+
+    #[must_use]
+    pub fn from_images(paths: Vec<PathBuf>) -> Self {
+        Self {
+            sources: paths
+                .into_iter()
+                .map(|path| ImageSource::Image { path })
+                .collect(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.sources.is_empty()
+    }
+}
+
+impl<'de> Deserialize<'de> for ImageSet {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Compat {
+            Current { sources: Vec<ImageSource> },
+            Legacy(LegacySet),
+        }
+        #[derive(Deserialize)]
+        #[serde(tag = "type", rename_all = "snake_case")]
+        enum LegacySet {
+            Folder {
+                path: PathBuf,
+                #[serde(default)]
+                recursive: bool,
+            },
+            Playlist {
+                paths: Vec<PathBuf>,
+            },
+        }
+        Ok(match Compat::deserialize(de)? {
+            Compat::Current { sources } => Self { sources },
+            Compat::Legacy(LegacySet::Folder { path, recursive }) => {
+                Self::from_folder(path, recursive)
+            }
+            Compat::Legacy(LegacySet::Playlist { paths }) => Self::from_images(paths),
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -145,5 +208,54 @@ mod duration_secs {
     pub(super) fn deserialize<'de, D: Deserializer<'de>>(de: D) -> Result<Duration, D::Error> {
         let secs = u64::deserialize(de)?;
         Ok(Duration::from_secs(secs))
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)] // reason: tests fail loudly on harness errors
+mod tests {
+    use super::*;
+
+    #[test]
+    fn image_set_round_trips_mixed_sources_through_json() {
+        let set = ImageSet {
+            sources: vec![
+                ImageSource::Folder {
+                    path: PathBuf::from("/walls"),
+                    recursive: true,
+                },
+                ImageSource::Image {
+                    path: PathBuf::from("/pick/a.png"),
+                },
+            ],
+        };
+        let json = serde_json::to_string(&set).unwrap();
+        let back: ImageSet = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, set);
+    }
+
+    #[test]
+    fn legacy_folder_form_deserializes_into_one_folder_source() {
+        let json = r#"{"type":"folder","path":"/walls","recursive":true}"#;
+        let set: ImageSet = serde_json::from_str(json).unwrap();
+        assert_eq!(set, ImageSet::from_folder(PathBuf::from("/walls"), true));
+    }
+
+    #[test]
+    fn legacy_playlist_form_deserializes_into_image_sources() {
+        let json = r#"{"type":"playlist","paths":["/a.png","/b.png"]}"#;
+        let set: ImageSet = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            set,
+            ImageSet::from_images(vec![PathBuf::from("/a.png"), PathBuf::from("/b.png")])
+        );
+    }
+
+    #[test]
+    fn legacy_folder_form_deserializes_from_toml() {
+        // Profiles are persisted as TOML; the compat path must hold there too.
+        let toml = "type = \"folder\"\npath = \"/walls\"\n";
+        let set: ImageSet = toml::from_str(toml).unwrap();
+        assert_eq!(set, ImageSet::from_folder(PathBuf::from("/walls"), false));
     }
 }

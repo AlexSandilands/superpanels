@@ -18,6 +18,7 @@ import {
   isPerMonitorBody,
   isSpanBody,
   type PerMonitorAssignment,
+  type SpanSource,
 } from '$lib/types/profile-helpers';
 
 function imageRectFromTransform(): ImageRectMm {
@@ -155,16 +156,30 @@ export async function switchAndApply(p: Profile): Promise<void> {
   }
 }
 
-export type SlideshowState = { paused: boolean; index: number; total: number } | null;
+export type SlideshowState = {
+  paused: boolean;
+  /** Position in the resolved pool; `null` when unknown (e.g. after Prev). */
+  index: number | null;
+  total: number;
+  currentPath: string | null;
+  /** Seconds until the next automatic advance, as of `fetchedAt`. */
+  remainingSecs: number | null;
+  fetchedAt: number;
+} | null;
 
 export async function refreshRuntime(): Promise<SlideshowState | undefined> {
   try {
     const s = await api.currentState();
     if (s.slideshow) {
+      // `?? null` throughout: a daemon missing a field must read as "absent",
+      // not leak `undefined` past `=== null` guards downstream.
       return {
         paused: s.slideshow.paused,
-        index: s.slideshow.current_index ?? 0,
-        total: s.slideshow.history_len + 1,
+        index: s.slideshow.current_index ?? null,
+        total: s.slideshow.pool_len ?? s.slideshow.history_len + 1,
+        currentPath: s.slideshow.current_path ?? null,
+        remainingSecs: s.slideshow.remaining_secs ?? null,
+        fetchedAt: Date.now(),
       };
     }
     return null;
@@ -235,6 +250,34 @@ export function pinImageToMonitor(monitorId: string, path: string): void {
     else d.body.assignments.push(assignment);
   });
   toast.success('Image pinned', `${detected.name}: ${path.split('/').pop() ?? path}`);
+}
+
+// Source writes queue behind one another so a burst of library toggles can't
+// land on the daemon out of order.
+let pendingSourceWrite: Promise<unknown> = Promise.resolve();
+
+/** Persist a slideshow profile's source (image set and/or timer config) and
+ *  mirror it into the in-memory profile list + draft without touching the
+ *  dirty flag. The daemon re-tunes the live picker and timer when the target
+ *  is the active profile. */
+export async function persistSlideshowSource(
+  profileName: string,
+  source: SpanSource,
+): Promise<boolean> {
+  // Commit to the store before the IPC round-trip so a follow-up toggle
+  // computes its next set from this one instead of a stale base.
+  profileStore.commitSource(profileName, source);
+  const write = pendingSourceWrite.then(() => api.updateProfileSource(profileName, source));
+  pendingSourceWrite = write.catch(() => undefined);
+  try {
+    await write;
+    return true;
+  } catch (err) {
+    toast.error('Slideshow update failed', errorMessage(err));
+    // The optimistic commit no longer matches disk — re-pull.
+    void profileStore.refresh();
+    return false;
+  }
 }
 
 export async function slideshowTogglePause(): Promise<{ paused: boolean } | null> {

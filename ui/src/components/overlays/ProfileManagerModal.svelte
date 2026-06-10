@@ -7,6 +7,14 @@
   import { switchAndApply } from '$lib/actions';
   import { toast } from '$lib/stores/toast.svelte';
   import { profileStore } from '$lib/stores/profile.svelte';
+  import {
+    isSlideshowSource,
+    isSpanBody,
+    type ProfileKind,
+    type SlideshowSort,
+    type SlideshowSource,
+  } from '$lib/types/profile-helpers';
+  import { folderCount, imageCount } from '$lib/slideshow-set';
   import { topologyRects } from '$lib/profile-topology';
   import { loadSourceImage, type SourceImage } from '$lib/library/source-image';
   import Backdrop from '../widgets/Backdrop.svelte';
@@ -19,9 +27,15 @@
 
   type Props = {
     onClose: () => void;
-    onCreateFromCanvas?: (name: string, description: string | null) => Promise<void> | void;
+    onCreateFromCanvas?: (
+      name: string,
+      description: string | null,
+      kind: ProfileKind,
+    ) => Promise<void> | void;
+    /** Select the profile and open the library's slideshow editor. */
+    onEditSlideshow?: (p: Profile) => void;
   };
-  let { onClose, onCreateFromCanvas }: Props = $props();
+  let { onClose, onCreateFromCanvas, onEditSlideshow }: Props = $props();
 
   let profiles = $state<Profile[]>([]);
   let validity = $state<Record<string, ProfileValidity>>({});
@@ -38,12 +52,35 @@
   function profileImagePath(p: Profile): string | null {
     if (p.body.type !== 'span') return null;
     const src = p.body.source;
-    if (src.type !== 'single') return null;
+    if (src.type === 'slideshow') {
+      // Best-effort thumb: the first hand-picked image. Folder sources would
+      // need a scan, which isn't worth it for a list swatch.
+      const img = src.images.sources.find((s) => s.type === 'image');
+      return img && img.path.startsWith('/') ? img.path : null;
+    }
     const path = src.path.trim();
     if (!path) return null;
     if (!path.startsWith('/')) return null;
     return path;
   }
+
+  function slideshowOf(p: Profile): SlideshowSource | null {
+    return isSpanBody(p.body) && isSlideshowSource(p.body.source) ? p.body.source : null;
+  }
+
+  function intervalLabel(secs: number): string {
+    if (secs >= 3600 && secs % 3600 === 0) return `${secs / 3600} h`;
+    if (secs >= 60) return `${Math.round(secs / 60)} min`;
+    return `${secs} s`;
+  }
+
+  const sortLabels: Record<SlideshowSort, string> = {
+    shuffle: 'Shuffle',
+    alphabetical: 'A → Z',
+    date_asc: 'Oldest first',
+    date_desc: 'Newest first',
+    last_shown_asc: 'Least recently shown',
+  };
 
   async function loadThumbnail(p: Profile): Promise<void> {
     const path = profileImagePath(p);
@@ -102,8 +139,14 @@
     if (b.type === 'span') {
       const src = b.source;
       if (src.type === 'single') return src.path || '— no image —';
-      if (src.images.type === 'folder') return src.images.path;
-      return `Playlist (${src.images.paths.length} images)`;
+      if (src.images.sources.length === 0) return 'Slideshow (empty)';
+      const folders = folderCount(src.images);
+      const images = imageCount(src.images);
+      const parts = [
+        folders > 0 ? `${folders} folder${folders === 1 ? '' : 's'}` : null,
+        images > 0 ? `${images} image${images === 1 ? '' : 's'}` : null,
+      ].filter(Boolean);
+      return `Slideshow (${parts.join(', ')})`;
     }
     return `Per-monitor (${b.assignments.length})`;
   }
@@ -116,6 +159,8 @@
         return `image missing: ${r.path}`;
       case 'folder_missing_or_empty':
         return `folder missing or empty: ${r.path}`;
+      case 'slideshow_empty':
+        return 'slideshow has no images yet';
       case 'monitor_not_connected':
         return `monitor not connected (${r.monitor.name})`;
       case 'physical_size_missing':
@@ -154,10 +199,18 @@
       }),
   );
   let detail = $derived(profiles.find((p) => p.name === selectedName) ?? null);
+  let detailSlideshow = $derived(detail ? slideshowOf(detail) : null);
   let detailValidity = $derived(detail ? validity[detail.name] : undefined);
   let detailRects = $derived(detail ? topologyRects(detail.monitor_state, detectedMonitors) : []);
   let detailDisabled = $derived(isDisabled(detailValidity));
   let detailMismatch = $derived(hasTopologyMismatch(detailValidity));
+  let detailNeedsImages = $derived(
+    detailSlideshow !== null &&
+      detailValidity?.kind === 'disabled' &&
+      detailValidity.reasons.some(
+        (r) => r.kind === 'slideshow_empty' || r.kind === 'folder_missing_or_empty',
+      ),
+  );
   let isActive = $derived(detail !== null && detail.name === activeName);
 
   async function applyProfile(p: Profile) {
@@ -240,13 +293,27 @@
     showSave = true;
   }
 
-  async function handleCreate(name: string, description: string | null) {
+  async function handleCreate(name: string, description: string | null, kind: ProfileKind) {
     showSave = false;
     if (!onCreateFromCanvas) return;
-    await onCreateFromCanvas(name, description);
+    if (kind === 'slideshow') {
+      // Creation drops into the library's slideshow editor — get the manager
+      // out of the way so it isn't stacked over it.
+      onClose();
+      await onCreateFromCanvas(name, description, kind);
+      return;
+    }
+    await onCreateFromCanvas(name, description, kind);
     selectedName = name;
     void refresh();
   }
+
+  const canvasHasSource = $derived.by(() => {
+    const d = profileStore.draft;
+    return Boolean(
+      d && isSpanBody(d.body) && d.body.source.type === 'single' && d.body.source.path,
+    );
+  });
 </script>
 
 <Backdrop {onClose}>
@@ -383,6 +450,9 @@
                   {detail.name}
                 </button>
               {/if}
+              {#if detailSlideshow}
+                <span class="chip">SLIDESHOW</span>
+              {/if}
               {#if isActive}
                 <span class="chip active">ACTIVE</span>
               {/if}
@@ -403,8 +473,23 @@
               <span class="meta-label">Source</span>
               <span class="meta-value mono">
                 {sourceLabel(detail)}
-                <button class="btn sm ghost" disabled title="Coming soon">Reveal</button>
+                {#if detailSlideshow && onEditSlideshow}
+                  {@const editTarget = detail}
+                  <button class="btn sm ghost" onclick={() => onEditSlideshow(editTarget)}>
+                    Edit images…
+                  </button>
+                {:else}
+                  <button class="btn sm ghost" disabled title="Coming soon">Reveal</button>
+                {/if}
               </span>
+              {#if detailSlideshow}
+                <span class="meta-label">Interval</span>
+                <span class="meta-value mono">
+                  every {intervalLabel(detailSlideshow.config.interval_secs)}
+                </span>
+                <span class="meta-label">Order</span>
+                <span class="meta-value mono">{sortLabels[detailSlideshow.config.sort]}</span>
+              {/if}
               <span class="meta-label">Topology</span>
               <span class="meta-value mono">
                 {Object.keys(detail.monitor_state).length} monitors
@@ -419,7 +504,12 @@
             </div>
 
             <div class="actions">
-              {#if detailDisabled}
+              {#if detailNeedsImages && onEditSlideshow}
+                {@const target = detail}
+                <button class="btn primary" onclick={() => onEditSlideshow(target)}>
+                  Add images…
+                </button>
+              {:else if detailDisabled}
                 <button class="btn primary" onclick={() => repair(detail)}> 🔧 Repair </button>
               {:else}
                 <button
@@ -450,8 +540,9 @@
   <SaveProfileDialog
     existingNames={profiles.map((p) => p.name)}
     defaultName={`untitled-${profiles.length + 1}`}
+    hasSource={canvasHasSource}
     onCancel={() => (showSave = false)}
-    onConfirm={(n, d) => void handleCreate(n, d)}
+    onConfirm={(n, d, k) => void handleCreate(n, d, k)}
   />
 {/if}
 

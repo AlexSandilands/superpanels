@@ -13,11 +13,10 @@ use tokio::sync::{Mutex, watch};
 use tracing::info;
 
 use crate::apply::{run_immediate_span_apply, run_per_monitor_apply, run_span_apply};
+use crate::pool::resolve_pool;
 use crate::state::DaemonState;
 
-use super::helpers::{
-    applied_json, init_picker_if_needed, resolve_pool, update_active_profile, update_timer,
-};
+use super::helpers::{applied_json, init_picker_if_needed, restart_timer, update_active_profile};
 
 pub(super) async fn cmd_set(req: IpcRequest, state: Arc<Mutex<DaemonState>>) -> IpcResponse {
     let image_path = match req.params.get("image").and_then(|v| v.as_str()) {
@@ -108,7 +107,7 @@ pub(super) async fn cmd_apply_profile(
             Err(e) => return IpcResponse::failure(format!("task panic: {e}")),
         };
         update_active_profile(&state, &name).await;
-        update_timer(&state, &timer_tx).await;
+        restart_timer(&state, &timer_tx).await;
         return IpcResponse::success(applied_json(&report));
     }
 
@@ -120,6 +119,11 @@ pub(super) async fn cmd_apply_profile(
                     return IpcResponse::failure("slideshow pool is empty");
                 };
                 let mut guard = state.lock().await;
+                // A picker left over from a different profile carries that
+                // profile's config and history — start fresh instead.
+                if guard.active_profile.as_deref() != Some(name.as_str()) {
+                    guard.slideshow_picker = None;
+                }
                 init_picker_if_needed(&mut guard, &name);
                 match guard
                     .slideshow_picker
@@ -153,7 +157,7 @@ pub(super) async fn cmd_apply_profile(
     };
 
     update_active_profile(&state, &name).await;
-    update_timer(&state, &timer_tx).await;
+    restart_timer(&state, &timer_tx).await;
     IpcResponse::success(applied_json(&report))
 }
 
@@ -208,7 +212,7 @@ pub(super) async fn cmd_apply_canvas(
         };
         if let Some(name) = active_name.as_deref() {
             update_active_profile(&state, name).await;
-            update_timer(&state, &timer_tx).await;
+            restart_timer(&state, &timer_tx).await;
         }
         return IpcResponse::success(applied_json(&report));
     }
@@ -249,7 +253,7 @@ pub(super) async fn cmd_apply_canvas(
 
     if let Some(name) = active_name.as_deref() {
         update_active_profile(&state, name).await;
-        update_timer(&state, &timer_tx).await;
+        restart_timer(&state, &timer_tx).await;
     }
     IpcResponse::success(applied_json(&report))
 }

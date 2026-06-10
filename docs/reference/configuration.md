@@ -80,11 +80,16 @@ fit  = "fill"
 [profile.body.source]
 type = "slideshow"
 
-[profile.body.source.images]
+# Mixed source list: any number of live folders and hand-picked images.
+# Folders are re-scanned on each pool resolve, so new files join the rotation.
+[[profile.body.source.images.sources]]
 type      = "folder"
 path      = "~/walls/work"
 recursive = false
-filters   = { aspect_ratios = "wide" }
+
+[[profile.body.source.images.sources]]
+type = "image"
+path = "~/walls/specials/skyline.png"
 
 [profile.body.source.config]
 interval_secs       = 1800
@@ -107,6 +112,8 @@ schedules_paused = false
 
 Enums use `serde`'s tagged representation (`#[serde(tag = "type", rename_all = "snake_case")]`). This is the source of truth for the on-disk format; the Rust types in `superpanels-core` are the source of truth for the runtime model.
 
+`ImageSet` also deserializes the pre-1.0 single-variant forms — `images = { type = "folder", path, recursive }` and `images = { type = "playlist", paths }` — lifting them into the `sources` list; serialization always emits the current form.
+
 ### Profiles
 
 A profile is **the mode the user is in**, not a one-shot apply request. It bundles the canvas state — image transform, per-monitor placements — captured under a specific monitor topology.
@@ -119,7 +126,8 @@ A profile is **disabled** when any of:
 
 - Topology mismatch (connected set or rotation differs from fingerprint).
 - Referenced single image is missing.
-- Referenced slideshow folder is missing or empty.
+- Slideshow image set has no sources yet (`slideshow_empty` — the GUI offers the "add images" flow instead of repair).
+- Slideshow image set has no usable source (every folder missing/empty and every picked image missing — one healthy source keeps the profile enabled).
 - Referenced `MonitorRef` in a `PerMonitor` body is not connected.
 - Required `physical_size_mm` missing for any expected monitor.
 
@@ -136,7 +144,7 @@ Top-level concept driving profile switches by clock, separate from slideshow tim
 
 ## Validation
 
-Config is validated at load time. Invalid configs **do not crash** — they return an error with the exact field path (`profile[1].monitor_state.DP-1: …`) and the previous wallpaper remains on the desktop.
+Config is validated at load time **and** before every save (`Config::save_to`). Load rejects an invalid file wholesale, so the save-side check exists to keep any IPC write path from persisting a config that would brick the next start. Invalid configs **do not crash** — they return an error with the exact field path (`profile[1].monitor_state.DP-1: …`) and the previous wallpaper remains on the desktop.
 
 Bounded invariants enforced in `superpanels-core::ipc::validate` (so daemon and in-process IPC share one source of truth):
 
@@ -145,7 +153,7 @@ Bounded invariants enforced in `superpanels-core::ipc::validate` (so daemon and 
 | `physical_mm` components | finite, `> 0`, `≤ 10_000` mm |
 | `stable_id`, `name` | non-empty, `≤ 256` chars, no control chars |
 | `Profile.name` | non-empty, `≤ 64` chars post-trim |
-| `Profile.body::Span::Slideshow.images` | `≤ 10_000` entries |
+| `Profile.body::Span::Slideshow.images.sources` | `≤ 10_000` entries |
 | `Config.profiles` | `≤ 256` entries |
 | `Config.monitors` | `≤ 64` entries |
 | `offset`/`image_size_px` components | finite, `|v| ≤ 1_000_000` |

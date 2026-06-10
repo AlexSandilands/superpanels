@@ -6,15 +6,15 @@ use std::time::Duration;
 use serde_json::json;
 use superpanels_core::config::{ProfileBody, SpanSource};
 use superpanels_core::ipc::{IpcRequest, IpcResponse};
+use superpanels_core::slideshow::SlideshowPicker;
 use tokio::sync::{Mutex, watch};
 use tracing::info;
 
 use crate::apply::run_span_apply;
+use crate::pool::resolve_pool;
 use crate::state::DaemonState;
 
-use super::helpers::{
-    applied_json, init_picker_if_needed, resolve_pool, update_active_profile, update_timer,
-};
+use super::helpers::{applied_json, init_picker_if_needed, restart_timer, update_active_profile};
 
 pub(super) async fn cmd_slideshow_advance(
     state: Arc<Mutex<DaemonState>>,
@@ -63,10 +63,11 @@ pub(super) async fn cmd_slideshow_advance(
         let mut guard = state.lock().await;
         init_picker_if_needed(&mut guard, &name);
         if is_prev {
+            // Mutates history so `current_path` tracks what's on screen.
             guard
                 .slideshow_picker
-                .as_ref()
-                .and_then(|p| p.state().history.get(1).cloned())
+                .as_mut()
+                .and_then(SlideshowPicker::step_back)
         } else {
             guard
                 .slideshow_picker
@@ -90,13 +91,13 @@ pub(super) async fn cmd_slideshow_advance(
     };
 
     update_active_profile(&state, &name).await;
-    update_timer(&state, &timer_tx).await;
+    restart_timer(&state, &timer_tx).await;
     IpcResponse::success(applied_json(&report))
 }
 
 pub(super) async fn cmd_slideshow_prev(state: Arc<Mutex<DaemonState>>) -> IpcResponse {
     let (profile, monitors, backend_kind, custom_cmd, image_path) = {
-        let guard = state.lock().await;
+        let mut guard = state.lock().await;
         let Some(name) = guard.active_profile.clone() else {
             return IpcResponse::failure("no active profile");
         };
@@ -125,10 +126,11 @@ pub(super) async fn cmd_slideshow_prev(state: Arc<Mutex<DaemonState>>) -> IpcRes
             .unwrap_or(guard.config.backend.prefer);
         let custom_cmd = guard.config.backend.custom_command.clone();
         let monitors = guard.monitors.clone();
+        // Mutates history so `current_path` tracks what's on screen.
         let path = guard
             .slideshow_picker
-            .as_ref()
-            .and_then(|p| p.state().history.get(1).cloned());
+            .as_mut()
+            .and_then(SlideshowPicker::step_back);
         (profile, monitors, backend_kind, custom_cmd, path)
     };
 

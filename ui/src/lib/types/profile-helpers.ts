@@ -6,12 +6,15 @@ import type { ProfileBody } from './ProfileBody';
 import type { SpanProfile } from './SpanProfile';
 import type { PerMonitorProfile } from './PerMonitorProfile';
 import type { SlideshowConfig } from './SlideshowConfig';
+import type { SpanSource } from './SpanSource';
+import type { ImageSet } from './ImageSet';
 
 export type { Profile } from './Profile';
 export type { ProfileBody } from './ProfileBody';
 export type { SpanProfile } from './SpanProfile';
 export type { SpanSource } from './SpanSource';
 export type { ImageSet } from './ImageSet';
+export type { ImageSource } from './ImageSource';
 export type { SlideshowConfig } from './SlideshowConfig';
 export type { SlideshowSort } from './SlideshowSort';
 export type { SlideshowStart } from './SlideshowStart';
@@ -34,6 +37,15 @@ export function isPerMonitorBody(
   body: ProfileBody,
 ): body is { type: 'per_monitor' } & PerMonitorProfile {
   return body.type === 'per_monitor';
+}
+
+export type SlideshowSource = { type: 'slideshow'; images: ImageSet; config: SlideshowConfig };
+
+/** Profile flavour offered by the save-as-new dialog. */
+export type ProfileKind = 'single' | 'slideshow';
+
+export function isSlideshowSource(source: SpanSource): source is SlideshowSource {
+  return source.type === 'slideshow';
 }
 
 export function defaultSlideshowConfig(): SlideshowConfig {

@@ -3,6 +3,17 @@
   import { open } from '@tauri-apps/plugin-dialog';
   import type { LibraryEntry } from '$lib/api';
   import { libraryStore } from '$lib/stores/library.svelte';
+  import { toast } from '$lib/stores/toast.svelte';
+  import {
+    addFolder,
+    addImage,
+    membership,
+    membershipLookup,
+    removeImage,
+    removeSourceAt,
+    sourceLabel,
+  } from '$lib/slideshow-set';
+  import type { ImageSet } from '$lib/types/ImageSet';
   import Backdrop from '../widgets/Backdrop.svelte';
   import StepperInput from '../widgets/StepperInput.svelte';
   import Icon from '../widgets/Icon.svelte';
@@ -28,10 +39,24 @@
     onClose: () => void;
     onApplyAsSpan: (path: string) => void;
     onPinToMonitor: (monitorId: string, path: string) => void;
+    /** Slideshow profile whose image set can be edited from here, if any. */
+    slideshowTarget?: { name: string; images: ImageSet } | null;
+    onUpdateSlideshow?: (images: ImageSet) => void;
   };
-  let { onClose, onApplyAsSpan, onPinToMonitor }: Props = $props();
+  let {
+    onClose,
+    onApplyAsSpan,
+    onPinToMonitor,
+    slideshowTarget = null,
+    onUpdateSlideshow,
+  }: Props = $props();
 
   let searchEl: HTMLInputElement | undefined = $state();
+  // Editing the image set is the primary action while a slideshow profile is
+  // selected, so the mode follows the target (which can settle a tick after
+  // mount) until the user explicitly toggles the chip.
+  let selectModeOverride = $state<boolean | null>(null);
+  const selectMode = $derived(selectModeOverride ?? slideshowTarget !== null);
 
   const visible = $derived(libraryStore.visible);
 
@@ -46,6 +71,39 @@
     const picked = await open({ directory: true, multiple: false });
     if (typeof picked === 'string') await libraryStore.addRoot(picked);
   }
+
+  async function pickSlideshowFolder() {
+    if (!slideshowTarget || !onUpdateSlideshow) return;
+    const picked = await open({ directory: true, multiple: false });
+    if (typeof picked !== 'string') return;
+    const next = addFolder(slideshowTarget.images, picked, true);
+    if (next === slideshowTarget.images) {
+      toast.info('Already a source', picked);
+      return;
+    }
+    onUpdateSlideshow(next);
+  }
+
+  function toggleMembership(path: string) {
+    if (!slideshowTarget || !onUpdateSlideshow) return;
+    const m = membership(slideshowTarget.images, path);
+    if (m === 'image') {
+      onUpdateSlideshow(removeImage(slideshowTarget.images, path));
+    } else if (m === null) {
+      onUpdateSlideshow(addImage(slideshowTarget.images, path));
+    } else {
+      toast.info('Included via folder', 'remove the folder source to exclude it');
+    }
+  }
+
+  const selection = $derived(
+    selectMode && slideshowTarget && onUpdateSlideshow
+      ? {
+          membershipOf: membershipLookup(slideshowTarget.images),
+          onToggle: toggleMembership,
+        }
+      : null,
+  );
 
   function applyEntry(entry: LibraryEntry) {
     onApplyAsSpan(entry.path);
@@ -99,7 +157,22 @@
       >
         <Icon name={libraryStore.favouritesOnly ? 'star-filled' : 'star'} size={11} /> favourites
       </button>
+      {#if slideshowTarget}
+        <button
+          class="chip"
+          class:active={selectMode}
+          title={`Add images to '${slideshowTarget.name}'`}
+          onclick={() => (selectModeOverride = !selectMode)}
+        >
+          <Icon name="stack" size={11} /> add to slideshow
+        </button>
+      {/if}
       <div style:flex="1"></div>
+      {#if selectMode && slideshowTarget}
+        <div class="mono" style:font-size="11px" style:color="var(--text-3)">
+          editing ‘{slideshowTarget.name}’
+        </div>
+      {/if}
       <button class="btn ghost icon" onclick={onClose} aria-label="Close">×</button>
     </div>
 
@@ -164,6 +237,47 @@
           >
             <Icon name="plus" size={11} /> Add root
           </button>
+
+          {#if selectMode && slideshowTarget && onUpdateSlideshow}
+            <div class="section-label" style:margin-top="18px">Slideshow sources</div>
+            {#if slideshowTarget.images.sources.length === 0}
+              <p class="src-hint">Nothing yet — click images on the right or add a whole folder.</p>
+            {/if}
+            {#each slideshowTarget.images.sources as source, i (`${source.type}:${source.path}`)}
+              <div class="root-row" title={source.path}>
+                <Icon name={source.type === 'folder' ? 'folder' : 'cover'} />
+                <div style:flex="1" style:min-width="0">
+                  <div
+                    class="mono"
+                    style:font-size="11px"
+                    style:overflow="hidden"
+                    style:text-overflow="ellipsis"
+                    style:white-space="nowrap"
+                    style:color="var(--text-2)"
+                  >
+                    {sourceLabel(source)}
+                  </div>
+                </div>
+                <button
+                  class="btn ghost sm"
+                  style:padding="0 6px"
+                  title="Remove from slideshow"
+                  onclick={() => onUpdateSlideshow(removeSourceAt(slideshowTarget.images, i))}
+                >
+                  ×
+                </button>
+              </div>
+            {/each}
+            <button
+              class="btn ghost sm"
+              style:width="100%"
+              style:margin-top="8px"
+              style:justify-content="flex-start"
+              onclick={() => void pickSlideshowFolder()}
+            >
+              <Icon name="plus" size={11} /> Add folder as source
+            </button>
+          {/if}
 
           <div class="section-label" style:margin-top="18px">Filters</div>
           <div class="filter-row">
@@ -261,7 +375,7 @@
           {/if}
         </div>
 
-        <LibraryGrid entries={visible} onApply={applyEntry} onPin={onPinToMonitor} />
+        <LibraryGrid entries={visible} onApply={applyEntry} onPin={onPinToMonitor} {selection} />
       </div>
     {/if}
   </div>
@@ -287,6 +401,11 @@
   }
   .root-row:hover {
     background: var(--panel-2);
+  }
+  .src-hint {
+    margin: 0 0 6px;
+    font-size: 11px;
+    color: var(--text-3);
   }
   .filter-row {
     display: flex;

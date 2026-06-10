@@ -110,7 +110,7 @@ async fn dispatch(
         "update_profile_image_transform" => {
             handlers::cmd_update_profile_image_transform(req, state).await
         }
-        "update_profile_source" => handlers::cmd_update_profile_source(req, state).await,
+        "update_profile_source" => handlers::cmd_update_profile_source(req, state, timer_tx).await,
         "list_schedules" => handlers::cmd_list_schedules(state).await,
         "save_schedules" => handlers::cmd_save_schedules(req, state).await,
         "set_schedules_paused" => handlers::cmd_set_schedules_paused(req, state).await,
@@ -162,10 +162,7 @@ mod tests {
             name: name.to_owned(),
             body: ProfileBody::Span(SpanProfile {
                 source: SpanSource::Slideshow {
-                    images: ImageSet::Folder {
-                        path: folder.to_path_buf(),
-                        recursive: false,
-                    },
+                    images: ImageSet::from_folder(folder.to_path_buf(), false),
                     config: SlideshowCfg {
                         interval: Duration::from_secs(60),
                         sort: SlideshowSort::Alphabetical,
@@ -443,6 +440,161 @@ mod tests {
         let guard = state.lock().await;
         let picker = guard.slideshow_picker.as_ref().expect("picker created");
         assert_eq!(picker.state().history.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn update_profile_source_retunes_live_picker_and_timer() {
+        // Arrange — active slideshow profile with a live picker and an armed
+        // timer at the old 60 s interval.
+        let dir = tempdir().unwrap();
+        let config_path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.profiles.push(slideshow_profile("p", dir.path()));
+        config.save_to(&config_path).unwrap();
+        let mut s = DaemonState::for_tests_with_path(config, config_path);
+        s.active_profile = Some("p".to_owned());
+        s.slideshow_picker = Some(picker_with_history(vec![
+            PathBuf::from("/walls/a.png"),
+            PathBuf::from("/walls/b.png"),
+            PathBuf::from("/walls/c.png"),
+        ]));
+        let state = make_state_arc(s);
+        let (timer_tx, timer_rx) =
+            watch::channel::<Option<Duration>>(Some(Duration::from_secs(60)));
+
+        // Act — push a new slideshow source with a 5 s interval and a
+        // 1-entry history window.
+        let new_source = SpanSource::Slideshow {
+            images: ImageSet::from_folder(dir.path().to_path_buf(), false),
+            config: SlideshowCfg {
+                interval: Duration::from_secs(5),
+                sort: SlideshowSort::Shuffle,
+                recent_history_size: 1,
+                on_start: SlideshowStart::Resume,
+                pause_when_active: false,
+                skip_on_unavailable: true,
+            },
+        };
+        let resp = dispatch_for_tests(
+            IpcRequest {
+                v: PROTOCOL_VERSION,
+                method: "update_profile_source".to_owned(),
+                params: json!({
+                    "profile": "p",
+                    "source": serde_json::to_value(&new_source).unwrap(),
+                }),
+            },
+            Arc::clone(&state),
+            timer_tx,
+        )
+        .await;
+
+        // Assert — timer rearmed at the new interval, history trimmed live.
+        assert!(resp.is_ok(), "got: {:?}", resp.error);
+        assert_eq!(*timer_rx.borrow(), Some(Duration::from_secs(5)));
+        let guard = state.lock().await;
+        let picker = guard.slideshow_picker.as_ref().expect("picker kept");
+        assert_eq!(picker.state().history.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn update_profile_source_creates_picker_when_switching_to_slideshow() {
+        // Arrange — active profile, but no picker (it was a Single source).
+        let dir = tempdir().unwrap();
+        let config_path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.profiles.push(slideshow_profile("p", dir.path()));
+        config.save_to(&config_path).unwrap();
+        let mut s = DaemonState::for_tests_with_path(config, config_path);
+        s.active_profile = Some("p".to_owned());
+        s.slideshow_picker = None;
+        let state = make_state_arc(s);
+        let (timer_tx, timer_rx) = watch::channel::<Option<Duration>>(None);
+
+        // Act — push a slideshow source onto the active profile.
+        let new_source = SpanSource::Slideshow {
+            images: ImageSet::from_folder(dir.path().to_path_buf(), false),
+            config: SlideshowCfg {
+                interval: Duration::from_secs(60),
+                sort: SlideshowSort::Alphabetical,
+                recent_history_size: 4,
+                on_start: SlideshowStart::Resume,
+                pause_when_active: false,
+                skip_on_unavailable: false,
+            },
+        };
+        let resp = dispatch_for_tests(
+            IpcRequest {
+                v: PROTOCOL_VERSION,
+                method: "update_profile_source".to_owned(),
+                params: json!({
+                    "profile": "p",
+                    "source": serde_json::to_value(&new_source).unwrap(),
+                }),
+            },
+            Arc::clone(&state),
+            timer_tx,
+        )
+        .await;
+
+        // Assert — a picker exists, so the armed timer's ticks can advance.
+        assert!(resp.is_ok(), "got: {:?}", resp.error);
+        assert_eq!(*timer_rx.borrow(), Some(Duration::from_secs(60)));
+        let guard = state.lock().await;
+        assert!(guard.slideshow_picker.is_some(), "picker must be created");
+    }
+
+    #[tokio::test]
+    async fn update_profile_source_with_unchanged_interval_does_not_restart_timer() {
+        // An image-set edit on a running slideshow must not reset the
+        // countdown — only an interval change may notify the timer task.
+        let dir = tempdir().unwrap();
+        let config_path = dir.path().join("config.toml");
+        let mut config = Config::default();
+        config.profiles.push(slideshow_profile("p", dir.path()));
+        config.save_to(&config_path).unwrap();
+        let mut s = DaemonState::for_tests_with_path(config, config_path);
+        s.active_profile = Some("p".to_owned());
+        s.slideshow_picker = Some(picker_with_history(vec![]));
+        let state = make_state_arc(s);
+        let (timer_tx, mut timer_rx) =
+            watch::channel::<Option<Duration>>(Some(Duration::from_secs(60)));
+        // Keep one sender alive past the dispatch so `has_changed` below
+        // reads channel state instead of a closed-channel error.
+        let _keep_tx = timer_tx.clone();
+        timer_rx.mark_unchanged();
+
+        // Act — same 60 s interval, different sort.
+        let new_source = SpanSource::Slideshow {
+            images: ImageSet::from_folder(dir.path().to_path_buf(), false),
+            config: SlideshowCfg {
+                interval: Duration::from_secs(60),
+                sort: SlideshowSort::Shuffle,
+                recent_history_size: 4,
+                on_start: SlideshowStart::Resume,
+                pause_when_active: false,
+                skip_on_unavailable: false,
+            },
+        };
+        let resp = dispatch_for_tests(
+            IpcRequest {
+                v: PROTOCOL_VERSION,
+                method: "update_profile_source".to_owned(),
+                params: json!({
+                    "profile": "p",
+                    "source": serde_json::to_value(&new_source).unwrap(),
+                }),
+            },
+            Arc::clone(&state),
+            timer_tx,
+        )
+        .await;
+
+        assert!(resp.is_ok(), "got: {:?}", resp.error);
+        assert!(
+            !timer_rx.has_changed().unwrap(),
+            "unchanged interval must not wake the timer task"
+        );
     }
 
     #[tokio::test]

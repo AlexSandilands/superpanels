@@ -46,7 +46,14 @@ export type LibraryEntry = {
 export type RuntimeState = {
   version: number;
   active_profile: string | null;
-  slideshow: { current_index: number | null; history_len: number; paused: boolean } | null;
+  slideshow: {
+    current_index: number | null;
+    history_len: number;
+    paused: boolean;
+    current_path: string | null;
+    remaining_secs: number | null;
+    pool_len: number | null;
+  } | null;
   last_apply_unix_secs: number | null;
 };
 

@@ -4,7 +4,7 @@
 // the active profile's persisted state.
 
 import { api, errorMessage, type Profile } from '$lib/api';
-import { defaultSlideshowConfig } from '$lib/types/profile-helpers';
+import { defaultSlideshowConfig, isSpanBody, type SpanSource } from '$lib/types/profile-helpers';
 import { toast } from './toast.svelte';
 
 let profiles = $state<Profile[]>([]);
@@ -110,6 +110,17 @@ export const profileStore = {
    *  ensuring the in-memory profile list reflects the committed state. */
   clearDirty(): void {
     dirty = false;
+  },
+
+  /** Mirror a source change that was already persisted via
+   *  `update_profile_source` into the list and draft. Deliberately does not
+   *  touch `dirty` — the canvas may carry unrelated unsaved edits. */
+  commitSource(name: string, source: SpanSource): void {
+    const stored = profiles.find((p) => p.name === name);
+    if (stored && isSpanBody(stored.body)) stored.body.source = snapshotClone(source);
+    if (draft && draft.name === name && isSpanBody(draft.body)) {
+      draft.body.source = snapshotClone(source);
+    }
   },
 
   newProfile() {

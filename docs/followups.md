@@ -27,6 +27,17 @@ affected stacks (track upstream WebKit / `webkit2gtk` Arch package).
 
 ## Slideshows
 
+## Preemption sentinel fires on user-initiated switches
+
+`switchAndApply` claims the *new* profile name as the preemption sentinel
+before `activeName` has refreshed, so the schedule-preemption `$effect` in
+`App.svelte` briefly sees `sentinel !== activeName` and treats the user's own
+switch as an external change — it can re-select the old profile for a tick
+(and could surface a spurious "Schedule switched" toast when the canvas is
+dirty). The library modal now derives its slideshow-edit mode reactively to
+ride out the flip-flop, but the sentinel handshake itself should compare
+against "switch in flight" state instead of raw `activeName`.
+
 ## Monitor gap not loaded on app start for profile
 
 ## Repair different topology

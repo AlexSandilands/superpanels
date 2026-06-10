@@ -48,7 +48,11 @@ impl Config {
 
     /// Serialise to TOML and write. Comments are not preserved — use
     /// [`super::write_monitor_block`] for round-trip with comments.
+    ///
+    /// Validates first: [`Self::load_from`] rejects an invalid file wholesale,
+    /// so persisting one would brick every profile on the next start.
     pub fn save_to(&self, path: &Path) -> Result<(), ConfigError> {
+        validate::validate(self, path)?;
         let text = toml::to_string(self).map_err(|e| ConfigError::Serialise(e.to_string()))?;
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|e| ConfigError::Write {

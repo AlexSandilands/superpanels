@@ -100,18 +100,14 @@ fn validate_profile_body(
     body: &super::ProfileBody,
 ) -> Result<(), ConfigError> {
     if let super::ProfileBody::Span(span) = body {
-        if let super::SpanSource::Slideshow {
-            images: super::ImageSet::Playlist { paths },
-            ..
-        } = &span.source
-        {
-            if paths.len() > v::MAX_SLIDESHOW_IMAGES {
+        if let super::SpanSource::Slideshow { images, .. } = &span.source {
+            if images.sources.len() > v::MAX_SLIDESHOW_IMAGES {
                 return Err(invalid(
                     path,
-                    format!("profile[{i}].body.source.images.paths"),
+                    format!("profile[{i}].body.source.images.sources"),
                     format!(
                         "{} entries exceeds {} cap",
-                        paths.len(),
+                        images.sources.len(),
                         v::MAX_SLIDESHOW_IMAGES
                     ),
                 ));

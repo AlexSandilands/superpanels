@@ -11,7 +11,9 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::config::{ImageSet, PerMonitorAssignment, Profile, ProfileBody, SpanSource};
+use crate::config::{
+    ImageSet, ImageSource, PerMonitorAssignment, Profile, ProfileBody, SpanSource,
+};
 use crate::display::{Monitor, MonitorRef};
 use crate::schedule::{TopologyFingerprint, monitor_key};
 
@@ -32,6 +34,8 @@ pub enum DisableReason {
     FolderMissingOrEmpty {
         path: PathBuf,
     },
+    /// Slideshow image set has no sources at all — nothing was picked yet.
+    SlideshowEmpty,
     MonitorNotConnected {
         monitor: MonitorRef,
     },
@@ -79,23 +83,18 @@ impl ProfileValidity {
                         reasons.push(DisableReason::ImageMissing { path: path.clone() });
                     }
                 }
-                SpanSource::Slideshow { images, .. } => match images {
-                    ImageSet::Folder { path, .. } => {
-                        let empty_or_missing = !path.exists()
-                            || std::fs::read_dir(path).map_or(true, |mut it| it.next().is_none());
-                        if empty_or_missing {
-                            reasons
-                                .push(DisableReason::FolderMissingOrEmpty { path: path.clone() });
-                        }
+                SpanSource::Slideshow { images, .. } => {
+                    // A mixed set is usable as long as any one source can
+                    // yield an image; a vanished folder next to a healthy one
+                    // is the picker's problem, not a disable reason.
+                    if images.is_empty() {
+                        reasons.push(DisableReason::SlideshowEmpty);
+                    } else if !image_set_has_candidates(images) {
+                        reasons.push(DisableReason::FolderMissingOrEmpty {
+                            path: image_set_representative_path(images),
+                        });
                     }
-                    ImageSet::Playlist { paths } => {
-                        if paths.iter().all(|p| !p.exists()) {
-                            reasons.push(DisableReason::FolderMissingOrEmpty {
-                                path: paths.first().cloned().unwrap_or_default(),
-                            });
-                        }
-                    }
-                },
+                }
             },
             ProfileBody::PerMonitor(pm) => {
                 for PerMonitorAssignment { monitor, path } in &pm.assignments {
@@ -124,4 +123,22 @@ impl ProfileValidity {
     pub fn is_ok(&self) -> bool {
         matches!(self, Self::Ok)
     }
+}
+
+fn image_set_has_candidates(set: &ImageSet) -> bool {
+    set.sources.iter().any(|source| match source {
+        ImageSource::Image { path } => path.exists(),
+        ImageSource::Folder { path, .. } => {
+            path.exists() && std::fs::read_dir(path).is_ok_and(|mut it| it.next().is_some())
+        }
+    })
+}
+
+fn image_set_representative_path(set: &ImageSet) -> PathBuf {
+    set.sources
+        .first()
+        .map(|source| match source {
+            ImageSource::Image { path } | ImageSource::Folder { path, .. } => path.clone(),
+        })
+        .unwrap_or_default()
 }

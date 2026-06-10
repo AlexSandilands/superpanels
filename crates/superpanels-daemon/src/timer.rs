@@ -10,7 +10,7 @@ use tokio::time::MissedTickBehavior;
 use tracing::{debug, info, warn};
 
 use crate::apply::run_span_apply;
-use crate::pool::{pool_from_cache, scan_blocking};
+use crate::pool::resolve_pool;
 use crate::state::DaemonState;
 
 /// Runs forever. Watches `ctrl_rx` for the active slideshow interval.
@@ -24,6 +24,7 @@ pub(crate) async fn run_timer(
         let interval = *ctrl_rx.borrow_and_update();
         match interval {
             None => {
+                set_next_fire(&state, None).await;
                 // No active slideshow — wait for a change.
                 if ctrl_rx.changed().await.is_err() {
                     return; // sender was dropped; daemon is shutting down
@@ -34,6 +35,7 @@ pub(crate) async fn run_timer(
                 tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
                 // Skip the immediate first tick so we don't fire on activation.
                 tick.tick().await;
+                set_next_fire(&state, Some(interval)).await;
 
                 loop {
                     tokio::select! {
@@ -43,6 +45,7 @@ pub(crate) async fn run_timer(
                             if current != Some(interval) {
                                 break; // profile or interval changed; restart
                             }
+                            set_next_fire(&state, Some(interval)).await;
                             slideshow_tick(Arc::clone(&state)).await;
                         }
                         changed = ctrl_rx.changed() => {
@@ -56,6 +59,12 @@ pub(crate) async fn run_timer(
             }
         }
     }
+}
+
+/// Record when the timer will next attempt an advance, for the GUI countdown.
+async fn set_next_fire(state: &Arc<Mutex<DaemonState>>, interval: Option<Duration>) {
+    let mut guard = state.lock().await;
+    guard.slideshow_next_fire_unix = interval.map(|d| DaemonState::now_unix_secs() + d.as_secs());
 }
 
 /// Pick and apply the next slideshow image for the active profile. Skips if
@@ -93,38 +102,21 @@ pub(crate) async fn slideshow_tick(state: Arc<Mutex<DaemonState>>) {
             },
             ProfileBody::PerMonitor(_) => return,
         };
-        let cached_pool = pool_from_cache(&images, &guard.library);
         let backend_kind = profile
             .backend_override
             .unwrap_or(guard.config.backend.prefer);
         let custom_cmd = guard.config.backend.custom_command.clone();
         let monitors = guard.monitors.clone();
-        (
-            profile,
-            monitors,
-            backend_kind,
-            custom_cmd,
-            images,
-            cached_pool,
-        )
+        (profile, monitors, backend_kind, custom_cmd, images)
     };
-    let (profile, monitors, backend_kind, custom_cmd, images, cached_pool) = snapshot;
+    let (profile, monitors, backend_kind, custom_cmd, images) = snapshot;
 
-    // Resolve the pool with the lock dropped — scan_folder is Rayon-blocking
-    // work; holding state.lock() across it would stall every other handler.
-    let pool = match cached_pool {
-        Some(p) if !p.is_empty() => p,
-        _ => match tokio::task::spawn_blocking(move || scan_blocking(&images)).await {
-            Ok(p) if !p.is_empty() => p,
-            Ok(_) => {
-                warn!("slideshow tick: pool is empty");
-                return;
-            }
-            Err(e) => {
-                warn!(error = %e, "slideshow tick: pool resolver task panicked");
-                return;
-            }
-        },
+    // resolve_pool drops the lock across any disk walk — scan_folder is
+    // Rayon-blocking work; holding state.lock() across it would stall every
+    // other handler.
+    let Some(pool) = resolve_pool(&state, &images).await else {
+        warn!("slideshow tick: pool is empty");
+        return;
     };
 
     // Briefly re-acquire the lock to advance the picker.
@@ -200,10 +192,7 @@ mod tests {
             name: name.to_owned(),
             body: ProfileBody::Span(SpanProfile {
                 source: SpanSource::Slideshow {
-                    images: ImageSet::Folder {
-                        path: folder.to_path_buf(),
-                        recursive: false,
-                    },
+                    images: ImageSet::from_folder(folder.to_path_buf(), false),
                     config: SlideshowCfg {
                         interval: Duration::from_secs(60),
                         sort: SlideshowSort::Alphabetical,

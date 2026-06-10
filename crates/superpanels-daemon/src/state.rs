@@ -38,6 +38,12 @@ pub(crate) struct DaemonState {
     /// Picker for the currently active profile's slideshow; `None` when the
     /// active profile has no slideshow source.
     pub slideshow_picker: Option<SlideshowPicker>,
+    /// Unix seconds of the timer task's next scheduled tick; `None` when no
+    /// slideshow timer is armed. Owned by `timer::run_timer`.
+    pub slideshow_next_fire_unix: Option<u64>,
+    /// Size of the most recently resolved slideshow pool, for the GUI's
+    /// "n of m" counter. Updated wherever a pool is resolved.
+    pub slideshow_pool_len: Option<usize>,
     pub last_apply_unix_secs: Option<u64>,
     pub schedule_checker: ScheduleChecker,
     /// Inotify-backed FS watcher over [`LibraryConfig::roots`]. Rebuilt by
@@ -83,6 +89,8 @@ impl DaemonState {
             library_db,
             active_profile: None,
             slideshow_picker: None,
+            slideshow_next_fire_unix: None,
+            slideshow_pool_len: None,
             last_apply_unix_secs: None,
             schedule_checker: ScheduleChecker::new(),
             watcher: None,
@@ -125,14 +133,33 @@ impl DaemonState {
         }
     }
 
+    /// Drop picker-derived runtime state. Call whenever the active profile
+    /// stops being a slideshow so `current_state` doesn't report stale data.
+    pub(crate) fn clear_slideshow_runtime(&mut self) {
+        self.slideshow_picker = None;
+        self.slideshow_pool_len = None;
+    }
+
     /// Snapshot suitable for the `current_state` IPC response.
     pub(crate) fn to_runtime_state(&self) -> RuntimeState {
+        let now = Self::now_unix_secs();
         let slideshow = self.slideshow_picker.as_ref().map(|p| {
             let s = p.state();
             SlideshowSummary {
-                current_index: s.current_index,
+                // The persisted index can outlive a pool shrink; an
+                // out-of-range position would render as "43/5" in the GUI.
+                current_index: s
+                    .current_index
+                    .filter(|&i| self.slideshow_pool_len.is_some_and(|n| i < n)),
                 history_len: s.history.len(),
                 paused: s.paused,
+                current_path: s.history.front().cloned(),
+                remaining_secs: if s.paused {
+                    None
+                } else {
+                    self.slideshow_next_fire_unix.map(|t| t.saturating_sub(now))
+                },
+                pool_len: self.slideshow_pool_len,
             }
         });
         RuntimeState {
@@ -258,6 +285,8 @@ impl DaemonState {
             library_db: None,
             active_profile: None,
             slideshow_picker: None,
+            slideshow_next_fire_unix: None,
+            slideshow_pool_len: None,
             last_apply_unix_secs: None,
             schedule_checker: ScheduleChecker::new(),
             watcher: None,
@@ -388,10 +417,7 @@ mod tests {
             name: name.to_owned(),
             body: ProfileBody::Span(SpanProfile {
                 source: SpanSource::Slideshow {
-                    images: ImageSet::Folder {
-                        path: PathBuf::from("/walls"),
-                        recursive: false,
-                    },
+                    images: ImageSet::from_folder(PathBuf::from("/walls"), false),
                     config: SlideshowCfg {
                         interval: Duration::from_secs(60),
                         sort: SlideshowSort::Alphabetical,

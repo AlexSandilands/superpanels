@@ -18,7 +18,7 @@ mod validate;
 
 pub use monitor_edit::{MonitorEditError, MonitorIdentifier, diagonal_to_mm, write_monitor_block};
 pub use profile::{
-    ImageSet, PerMonitorAssignment, PerMonitorProfile, ProfileBody, ProfileTimestamp,
+    ImageSet, ImageSource, PerMonitorAssignment, PerMonitorProfile, ProfileBody, ProfileTimestamp,
     SlideshowConfig, SlideshowSort, SlideshowStart, SpanProfile, SpanSource, now_timestamp,
 };
 
@@ -202,6 +202,36 @@ impl Profile {
     pub fn touch(&mut self) {
         self.updated_at = now_timestamp();
     }
+}
+
+impl Config {
+    /// Replace the span source of profile `name`, refreshing its modified
+    /// timestamp. Does not persist — callers follow up with [`Config::save_to`].
+    pub fn set_span_source(
+        &mut self,
+        name: &str,
+        source: SpanSource,
+    ) -> Result<(), SpanSourceError> {
+        let profile = self
+            .profiles
+            .iter_mut()
+            .find(|p| p.name == name)
+            .ok_or_else(|| SpanSourceError::ProfileNotFound(name.to_owned()))?;
+        let ProfileBody::Span(span) = &mut profile.body else {
+            return Err(SpanSourceError::NotSpan);
+        };
+        span.source = source;
+        profile.touch();
+        Ok(())
+    }
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum SpanSourceError {
+    #[error("profile '{0}' not found")]
+    ProfileNotFound(String),
+    #[error("source updates require a Span profile")]
+    NotSpan,
 }
 
 #[derive(Debug, Error)]

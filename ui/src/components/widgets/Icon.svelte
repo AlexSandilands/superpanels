@@ -24,6 +24,7 @@
     | 'next'
     | 'play'
     | 'pause'
+    | 'shuffle'
     | 'search'
     | 'star'
     | 'star-filled'
@@ -302,6 +303,24 @@
   <svg width={size} height={size} viewBox="0 0 12 12" aria-hidden="true">
     <rect x="3" y="2" width="2.4" height="8" fill="currentColor"></rect>
     <rect x="6.6" y="2" width="2.4" height="8" fill="currentColor"></rect>
+  </svg>
+{:else if name === 'shuffle'}
+  <svg width={size} height={size} viewBox="0 0 14 14" aria-hidden="true">
+    <path
+      d="M1.5 4h2.3c1 0 1.9.5 2.5 1.3l2.4 3.4c.6.8 1.5 1.3 2.5 1.3h1.3M1.5 10h2.3c.7 0 1.4-.3 1.9-.7M8.3 4.7c.5-.4 1.2-.7 1.9-.7h1.3"
+      stroke="currentColor"
+      stroke-width="1.2"
+      fill="none"
+      stroke-linecap="round"
+    ></path>
+    <path
+      d="M10.8 2.3L12.5 4l-1.7 1.7M10.8 8.3L12.5 10l-1.7 1.7"
+      stroke="currentColor"
+      stroke-width="1.2"
+      fill="none"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    ></path>
   </svg>
 {:else if name === 'search'}
   <svg width={size} height={size} viewBox="0 0 12 12" aria-hidden="true">
