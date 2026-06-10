@@ -1,6 +1,7 @@
 // Pure helpers for editing a slideshow ImageSet. All functions return new
 // objects — callers persist the result via `update_profile_source`.
 
+import type { ImageOverride } from '$lib/types/ImageOverride';
 import type { ImageSet } from '$lib/types/ImageSet';
 import type { ImageSource } from '$lib/types/ImageSource';
 
@@ -47,6 +48,44 @@ export function addFolder(set: ImageSet, path: string, recursive: boolean): Imag
 
 export function removeSourceAt(set: ImageSet, index: number): ImageSet {
   return { sources: set.sources.filter((_, i) => i !== index) };
+}
+
+/** Drop per-image overrides whose image is no longer covered by `set`
+ *  (hand-picked image or folder source removed). Folder-covered paths
+ *  survive, so a tweak inside a kept folder is preserved. */
+export function gcOverrides(
+  overrides: { [key in string]: ImageOverride } | undefined,
+  set: ImageSet,
+): { [key in string]: ImageOverride } {
+  if (!overrides) return {};
+  const member = membershipLookup(set);
+  return Object.fromEntries(Object.entries(overrides).filter(([path]) => member(path) !== null));
+}
+
+// Relative aspect-ratio slack treated as "the same shape" — covers rounding
+// from odd pixel counts without masking a real 16:9 vs 21:9 mismatch.
+const ASPECT_TOLERANCE = 0.02;
+
+export type AspectMismatch = { mismatched: number; known: number };
+
+/** Of the library entries covered by `set`, how many would be distorted by a
+ *  uniform layout with `rectAspect`? Dimension data comes from the library
+ *  index, so images outside it aren't counted (`known` says how many were). */
+export function countAspectMismatches(
+  entries: { path: string; aspect_ratio: number }[],
+  set: ImageSet,
+  rectAspect: number,
+): AspectMismatch {
+  const member = membershipLookup(set);
+  let known = 0;
+  let mismatched = 0;
+  if (!Number.isFinite(rectAspect) || rectAspect <= 0) return { mismatched, known };
+  for (const e of entries) {
+    if (member(e.path) === null) continue;
+    known += 1;
+    if (Math.abs(e.aspect_ratio - rectAspect) / rectAspect > ASPECT_TOLERANCE) mismatched += 1;
+  }
+  return { mismatched, known };
 }
 
 export function sourceLabel(source: ImageSource): string {

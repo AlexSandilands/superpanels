@@ -11,13 +11,19 @@
     onToggle: (path: string) => void;
   };
 
+  export type CustomLayouts = {
+    has: (path: string) => boolean;
+    onReset: (path: string) => void;
+  };
+
   type Props = {
     entries: LibraryEntry[];
     onApply: (entry: LibraryEntry) => void;
     onPin: (monitorId: string, path: string) => void;
     selection?: SlideshowSelection | null;
+    customLayouts?: CustomLayouts | null;
   };
-  let { entries, onApply, onPin, selection = null }: Props = $props();
+  let { entries, onApply, onPin, selection = null, customLayouts = null }: Props = $props();
 
   let scrollEl: HTMLDivElement | undefined = $state();
   let scrollTop = $state(0);
@@ -101,6 +107,7 @@
     <div class="relative w-full" style:height="{totalH}px">
       {#each visibleRange as item (item.entry.path)}
         {@const m = selection ? selection.membershipOf(item.entry.path) : null}
+        {@const hasCustom = customLayouts ? customLayouts.has(item.entry.path) : false}
         <div
           class="lib-card absolute"
           style:top="{item.row * (ROW_HEIGHT_PX + ROW_GAP_PX)}px"
@@ -136,6 +143,15 @@
                   <Icon name="folder" size={10} /> via folder
                 </div>
               {/if}
+            {/if}
+            {#if hasCustom}
+              <div
+                class="member member-custom"
+                style:top={selection && m !== null ? '28px' : '6px'}
+                title="This image has its own canvas layout in the slideshow"
+              >
+                <Icon name="layout" size={10} /> custom layout
+              </div>
             {/if}
             <button
               class="fav"
@@ -226,6 +242,21 @@
                 </button>
               </div>
             {/if}
+            {#if hasCustom && customLayouts}
+              <button
+                class="btn sm"
+                style:width="100%"
+                style:margin-top="4px"
+                style:font-size="10px"
+                title="Remove this image's custom layout (back to the profile layout)"
+                onclick={(ev) => {
+                  ev.stopPropagation();
+                  customLayouts.onReset(item.entry.path);
+                }}
+              >
+                <Icon name="reset" size={10} /> Reset custom layout
+              </button>
+            {/if}
             {#if pinFor === item.entry.path}
               <LibraryPinMenu
                 onPin={(monitorId) => {
@@ -279,6 +310,10 @@
   .member-folder {
     background: oklch(0 0 0 / 0.55);
     color: oklch(1 0 0 / 0.85);
+  }
+  .member-custom {
+    background: color-mix(in oklab, var(--accent) 35%, oklch(0 0 0 / 0.6));
+    color: oklch(1 0 0 / 0.9);
   }
   .fav {
     position: absolute;

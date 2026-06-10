@@ -217,29 +217,40 @@ pub(super) async fn cmd_apply_canvas(
         return IpcResponse::success(applied_json(&report));
     }
 
-    let image_path = match &profile.body {
-        ProfileBody::Span(span) => match &span.source {
-            SpanSource::Single { path } => path.clone(),
-            SpanSource::Slideshow { images, .. } => {
-                let Some(pool) = resolve_pool(&state, images).await else {
-                    return IpcResponse::failure("slideshow pool is empty");
-                };
-                let Some(first) = pool.into_iter().next() else {
-                    return IpcResponse::failure("slideshow pool is empty");
-                };
-                first
-            }
-        },
+    let (image_path, image_rect_mm) = match &profile.body {
+        ProfileBody::Span(span) => {
+            let path = match &span.source {
+                SpanSource::Single { path } => path.clone(),
+                SpanSource::Slideshow { images, .. } => {
+                    let Some(pool) = resolve_pool(&state, images).await else {
+                        return IpcResponse::failure("slideshow pool is empty");
+                    };
+                    let resolved = {
+                        let guard = state.lock().await;
+                        canvas_slideshow_image(&guard, active_name.as_deref(), &pool)
+                    };
+                    let Some(path) = resolved else {
+                        return IpcResponse::failure("slideshow pool is empty");
+                    };
+                    path
+                }
+            };
+            (path, span.image_rect_mm)
+        }
         ProfileBody::PerMonitor(_) => unreachable!("handled above"),
     };
 
-    let profile_clone = profile.clone();
+    // The canvas is the source of truth for this apply: use the payload's
+    // top-level layout directly. Funnelling through `run_span_apply` would
+    // let a stored per-image override shadow the user's live canvas edits.
+    let placements = profile.monitor_state.clone();
     let monitors_clone = monitors.clone();
     let report = tokio::task::spawn_blocking(move || {
-        run_span_apply(
+        run_immediate_span_apply(
             &image_path,
             &monitors_clone,
-            &profile_clone,
+            &placements,
+            Some(image_rect_mm),
             backend_kind,
             &custom_cmd,
         )
@@ -256,6 +267,24 @@ pub(super) async fn cmd_apply_canvas(
         restart_timer(&state, &timer_tx).await;
     }
     IpcResponse::success(applied_json(&report))
+}
+
+/// The image a canvas apply targets for a slideshow source: the image on
+/// screen (the active picker's newest history entry) when the canvas belongs
+/// to the active profile and that image is still in the pool, else the pool's
+/// first image. Applying the canvas must not re-show a different image than
+/// the one the user is looking at.
+fn canvas_slideshow_image(
+    state: &DaemonState,
+    active_name: Option<&str>,
+    pool: &[PathBuf],
+) -> Option<PathBuf> {
+    let on_screen = active_name
+        .filter(|n| state.active_profile.as_deref() == Some(n))
+        .and(state.slideshow_picker.as_ref())
+        .and_then(|p| p.state().history.front().cloned())
+        .filter(|p| pool.contains(p));
+    on_screen.or_else(|| pool.first().cloned())
 }
 
 /// 55 s safety timeout, well under the IPC client's 120 s read timeout.
@@ -324,6 +353,59 @@ mod tests {
         let mut ds = DaemonState::for_tests(Config::default());
         ds.monitors_tx = Some(tx);
         Arc::new(Mutex::new(ds))
+    }
+
+    fn state_showing(active: Option<&str>, on_screen: Option<&str>) -> DaemonState {
+        use superpanels_core::slideshow::{
+            SlideshowConfig, SlideshowPicker, SlideshowSort, SlideshowStart,
+        };
+        let mut ds = DaemonState::for_tests(Config::default());
+        ds.active_profile = active.map(str::to_owned);
+        if let Some(path) = on_screen {
+            let mut picker = SlideshowPicker::new(SlideshowConfig {
+                interval: Duration::from_secs(60),
+                sort: SlideshowSort::Alphabetical,
+                recent_history_size: 4,
+                on_start: SlideshowStart::Resume,
+                pause_when_active: false,
+                skip_on_unavailable: false,
+            });
+            picker.state_mut().history.push_front(PathBuf::from(path));
+            ds.slideshow_picker = Some(picker);
+        }
+        ds
+    }
+
+    fn pool() -> Vec<PathBuf> {
+        vec![PathBuf::from("/walls/a.png"), PathBuf::from("/walls/b.png")]
+    }
+
+    #[test]
+    fn canvas_slideshow_image_prefers_on_screen_image() {
+        let ds = state_showing(Some("p"), Some("/walls/b.png"));
+        let resolved = canvas_slideshow_image(&ds, Some("p"), &pool());
+        assert_eq!(resolved, Some(PathBuf::from("/walls/b.png")));
+    }
+
+    #[test]
+    fn canvas_slideshow_image_falls_back_when_profile_not_active() {
+        let ds = state_showing(Some("other"), Some("/walls/b.png"));
+        let resolved = canvas_slideshow_image(&ds, Some("p"), &pool());
+        assert_eq!(resolved, Some(PathBuf::from("/walls/a.png")));
+    }
+
+    #[test]
+    fn canvas_slideshow_image_falls_back_when_on_screen_left_the_pool() {
+        let ds = state_showing(Some("p"), Some("/walls/removed.png"));
+        let resolved = canvas_slideshow_image(&ds, Some("p"), &pool());
+        assert_eq!(resolved, Some(PathBuf::from("/walls/a.png")));
+    }
+
+    #[test]
+    fn canvas_slideshow_image_falls_back_without_active_name() {
+        let ds = state_showing(Some("p"), Some("/walls/b.png"));
+        let resolved = canvas_slideshow_image(&ds, None, &pool());
+        assert_eq!(resolved, Some(PathBuf::from("/walls/a.png")));
     }
 
     #[tokio::test]

@@ -12,10 +12,20 @@
     sourceThumbUrl: string | null;
     slideshow: SlideshowState;
     slideshowConfig: SlideshowConfig | null;
+    /** A live slideshow image is up — the canvas can be saved for it. */
+    canSaveForImage: boolean;
+    /** The live image already has a per-image canvas override. */
+    hasImageOverride: boolean;
+    /** The slideshow applies one profile-level layout to every image. */
+    uniformLayoutOn: boolean;
     onPrev: () => void;
     onNext: () => void;
     onTogglePause: () => void;
     onUpdateConfig: (config: SlideshowConfig) => void;
+    onSaveForImage: () => void;
+    onResetForImage: () => void;
+    onApplyToAll: () => void;
+    onResetUniform: () => void;
     onOpenLibrary: () => void;
   };
   let {
@@ -24,10 +34,17 @@
     sourceThumbUrl,
     slideshow,
     slideshowConfig,
+    canSaveForImage,
+    hasImageOverride,
+    uniformLayoutOn,
     onPrev,
     onNext,
     onTogglePause,
     onUpdateConfig,
+    onSaveForImage,
+    onResetForImage,
+    onApplyToAll,
+    onResetUniform,
     onOpenLibrary,
   }: Props = $props();
 
@@ -157,6 +174,48 @@
           <Icon name="next" size={12} />
         </button>
       </div>
+      {#if canSaveForImage}
+        <div class="flex items-center" style:gap="2px">
+          <button
+            class="btn ghost icon sm"
+            class:override-on={hasImageOverride}
+            title={hasImageOverride
+              ? 'This image has a custom layout — save the canvas over it'
+              : 'Save the current canvas (gaps + image position) for this image only'}
+            onclick={onSaveForImage}
+          >
+            <Icon name="save" size={12} />
+          </button>
+          {#if hasImageOverride}
+            <button
+              class="btn ghost icon sm"
+              title="Remove this image's custom layout (back to the profile layout)"
+              onclick={onResetForImage}
+            >
+              <Icon name="reset" size={12} />
+            </button>
+          {/if}
+          <button
+            class="btn ghost icon sm"
+            class:override-on={uniformLayoutOn}
+            title={uniformLayoutOn
+              ? 'Uniform layout is on — re-save the current canvas as the layout for all images'
+              : 'Apply the current canvas (gaps + image position) to all images in the slideshow'}
+            onclick={onApplyToAll}
+          >
+            <Icon name="stack" size={12} />
+          </button>
+          {#if uniformLayoutOn}
+            <button
+              class="btn ghost icon sm"
+              title="Turn off uniform layout (auto-fit each image to the monitors)"
+              onclick={onResetUniform}
+            >
+              <Icon name="fit" size={12} />
+            </button>
+          {/if}
+        </div>
+      {/if}
       <div class="mono counter" style:font-size="10px" style:color="var(--text-3)">
         {counterText}
         {#if slideshow.paused}
@@ -219,6 +278,9 @@
     color: var(--accent);
   }
   .shuffle-on {
+    color: var(--accent);
+  }
+  .override-on {
     color: var(--accent);
   }
 </style>

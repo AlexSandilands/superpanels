@@ -79,6 +79,12 @@ fit  = "fill"
 
 [profile.body.source]
 type = "slideshow"
+# Optional: apply the profile-level layout (monitor_state + image_rect_mm)
+# to every image instead of cover-fitting each untuned image at its own
+# aspect. Suits sets authored at one fixed resolution (the GUI's
+# "apply to all" button sets this, warning when the set mixes aspects).
+# Default false; omitted when false.
+uniform_layout = false
 
 # Mixed source list: any number of live folders and hand-picked images.
 # Folders are re-scanned on each pool resolve, so new files join the rotation.
@@ -96,6 +102,22 @@ interval_secs       = 1800
 sort                = "shuffle"
 recent_history_size = 10
 on_start            = "resume"
+
+# Optional per-image canvas overrides: a sparse map keyed by the image's
+# absolute path, holding the same placement + image-rect snapshot a profile
+# persists at top level. Resolved daemon-side at apply time, so a hand-tuned
+# image keeps its layout with the GUI closed. Renaming or moving the file
+# drops the tweak (the key no longer matches). Images WITHOUT an override
+# keep the profile's monitor placements but are cover-fit at their own
+# aspect ratio (unless `uniform_layout` is set) — the profile-level
+# image_rect_mm otherwise only applies to single sources, since it was
+# authored against one specific image.
+[profile.body.source.overrides."/home/me/walls/specials/skyline.png"]
+image_rect_mm = { x_mm = 0.0, y_mm = -40.0, w_mm = 1900.0, h_mm = 720.0 }
+
+[profile.body.source.overrides."/home/me/walls/specials/skyline.png".monitor_state."f7f0f124-..."]
+x_mm = 0.0
+y_mm = 0.0
 
 [[schedule]]
 display_name = "Day mode"
@@ -120,7 +142,7 @@ A profile is **the mode the user is in**, not a one-shot apply request. It bundl
 
 - `monitor_state: HashMap<String, MonitorPlacement>` — physical mm placements keyed by `stable_id` (or `name` fallback). Gaps between monitors fall out of these placements; there is no separate bezel field.
 - `topology: TopologyFingerprint` — opaque hash over the connected `stable_id`s + rotations the profile was authored against. Compared by equality at apply time; mismatch disables the profile until the user re-authors via the **topology-repair flow**.
-- `body: ProfileBody` — `Span { source, fit, offset, image_rect_mm }` or `PerMonitor { assignments, fit }`.
+- `body: ProfileBody` — `Span { source, fit, offset, image_rect_mm }` or `PerMonitor { assignments, fit }`. A slideshow source may carry sparse per-image `overrides` (placements + image rect keyed by absolute path); the daemon's span-apply choke point swaps them in when that image comes up, and the GUI canvas follows live. Untuned slideshow images use the profile's placements with a per-image cover-fit rect (aspect preserved, sliced across the placed desktop plane), unless the slideshow sets `uniform_layout` — then the profile-level rect applies to every untuned image. `Span.image_rect_mm` is otherwise only authoritative for `Single` sources.
 
 A profile is **disabled** when any of:
 
@@ -154,6 +176,7 @@ Bounded invariants enforced in `superpanels-core::ipc::validate` (so daemon and 
 | `stable_id`, `name` | non-empty, `≤ 256` chars, no control chars |
 | `Profile.name` | non-empty, `≤ 64` chars post-trim |
 | `Profile.body::Span::Slideshow.images.sources` | `≤ 10_000` entries |
+| `Profile.body::Span::Slideshow.overrides` | `≤ 1_000` entries; placements + rect finite |
 | `Config.profiles` | `≤ 256` entries |
 | `Config.monitors` | `≤ 64` entries |
 | `offset`/`image_size_px` components | finite, `|v| ≤ 1_000_000` |

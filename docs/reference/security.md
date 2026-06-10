@@ -29,6 +29,7 @@ Every `#[tauri::command]` and every daemon-socket handler validates its inputs a
 - `path` (any library command): canonicalised + verified inside library roots before lookup.
 - `Profile.name`: non-empty, `≤ 64` chars post-trim.
 - `Profile.body::Span::Slideshow.images`: `≤ 10_000` entries.
+- `Profile.body::Span::Slideshow.overrides`: `≤ 1_000` entries, placements + rect finite.
 - `Config.profiles`: `≤ 256` entries.
 - `Config.monitors`: `≤ 64` entries.
 - `offset_px`, `image_size_px`: each component `|v| ≤ 1_000_000`.

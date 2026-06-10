@@ -12,6 +12,7 @@
   import { toast } from '$lib/stores/toast.svelte';
   import { applyDocumentTokens } from '$lib/stores/ui.svelte';
   import {
+    followSlideshowLayout,
     imageTransform,
     seedOverridesFromMonitors,
     sourceImageState,
@@ -29,8 +30,14 @@
     setSpanImage,
     switchAndApply,
   } from '$lib/actions';
-  import { canvasOverridesDirty, imageTransformDirty } from '$lib/canvas/dirty';
-  import { buildPreviewMonitors } from '$lib/canvas/preview-layout';
+  import {
+    canvasOverridesDirty,
+    coverRectDirty,
+    imageTransformDirty,
+    placementsDirty,
+    rectDirty,
+  } from '$lib/canvas/dirty';
+  import { buildPreviewMonitors, defaultOverrides } from '$lib/canvas/preview-layout';
   import {
     resetLayout as runResetLayout,
     resetTransform as runResetTransform,
@@ -45,6 +52,13 @@
     uniformGap,
     vNeighbourPairs,
   } from '$lib/canvas/preview-layout';
+  import { removeOverrideForImage, saveOverrideForImage } from '$lib/slideshow-overrides';
+  import {
+    countAspectMismatches,
+    emptyImageSet,
+    gcOverrides,
+    type AspectMismatch,
+  } from '$lib/slideshow-set';
   import { slideshowController } from '$lib/slideshow-controller.svelte';
   import { attachWindowEvents } from '$lib/events/window';
   import { dispatchKey } from '$lib/keymap';
@@ -52,6 +66,8 @@
     defaultSlideshowConfig,
     isSlideshowSource,
     isSpanBody,
+    overrideFor,
+    type ImageOverride,
     type ImageSet,
     type ProfileKind,
     type SlideshowConfig,
@@ -66,6 +82,7 @@
   import Toast from './components/widgets/Toast.svelte';
   import ToolDock from './components/chrome/ToolDock.svelte';
   import ConfirmDiscardModal from './components/overlays/ConfirmDiscardModal.svelte';
+  import ConfirmDialog from './components/widgets/ConfirmDialog.svelte';
   import LibraryModal from './components/overlays/LibraryModal.svelte';
   import ProfileManagerModal from './components/overlays/ProfileManagerModal.svelte';
   import SettingsModal from './components/overlays/SettingsModal.svelte';
@@ -81,42 +98,59 @@
   let saveDialogOpen = $state(false);
   let profileManagerOpen = $state(false);
 
+  // Default canvas: detected placements with no gap, image rect over their
+  // bounding box. The clean slate a new slideshow starts from.
+  function defaultCanvasLayout() {
+    const defaults = defaultOverrides(monitorStore.monitors, 0);
+    const previews = buildPreviewMonitors(monitorStore.monitors, defaults);
+    const bb = bbox(previews);
+    return { defaults, previews, bb };
+  }
+
   async function saveAsNew(name: string, description: string | null, kind: ProfileKind = 'single') {
     saveDialogOpen = false;
     try {
-      const monitor_state: Record<string, { x_mm: number; y_mm: number }> = {};
-      for (const m of previewMonitors) {
-        monitor_state[m.id] = {
-          x_mm: m.xMm,
-          y_mm: m.yMm,
+      let monitor_state: Record<string, { x_mm: number; y_mm: number }> = {};
+      let image_rect_mm = { x_mm: 0, y_mm: 0, w_mm: 0, h_mm: 0 };
+      let body;
+      if (kind === 'slideshow') {
+        // A new slideshow starts from a clean slate — empty set, default
+        // timer config, default placements. The canvas's image and layout
+        // belong to the previous profile and must not bleed in (duplication
+        // lives in the profile manager).
+        const { previews, bb } = defaultCanvasLayout();
+        for (const m of previews) {
+          monitor_state[m.id] = { x_mm: m.xMm, y_mm: m.yMm };
+        }
+        image_rect_mm = { x_mm: bb.x, y_mm: bb.y, w_mm: bb.w, h_mm: bb.h };
+        body = {
+          type: 'span' as const,
+          source: {
+            type: 'slideshow' as const,
+            images: emptyImageSet(),
+            config: defaultSlideshowConfig(),
+          },
+          image_rect_mm,
         };
+      } else {
+        for (const m of previewMonitors) {
+          monitor_state[m.id] = { x_mm: m.xMm, y_mm: m.yMm };
+        }
+        const t = imageTransform.value;
+        image_rect_mm = {
+          x_mm: t.offsetMmX,
+          y_mm: t.offsetMmY,
+          w_mm: t.widthMm,
+          h_mm: t.heightMm,
+        };
+        body = span
+          ? { ...span, image_rect_mm }
+          : {
+              type: 'span' as const,
+              source: { type: 'single' as const, path: sourcePath ?? '' },
+              image_rect_mm,
+            };
       }
-      const t = imageTransform.value;
-      const image_rect_mm = {
-        x_mm: t.offsetMmX,
-        y_mm: t.offsetMmY,
-        w_mm: t.widthMm,
-        h_mm: t.heightMm,
-      };
-      // Duplicating a slideshow keeps its sources and timer config. A fresh
-      // slideshow starts from the current image (if any) so the desktop
-      // doesn't go blank; more sources come from the library.
-      const seed: ImageSet = {
-        sources: sourcePath ? [{ type: 'image', path: sourcePath }] : [],
-      };
-      const slideshowSrc: SlideshowSource = slideshowSource
-        ? ($state.snapshot(slideshowSource) as SlideshowSource)
-        : { type: 'slideshow', images: seed, config: defaultSlideshowConfig() };
-      const body =
-        kind === 'slideshow'
-          ? { type: 'span' as const, source: slideshowSrc, image_rect_mm }
-          : span
-            ? { ...span, image_rect_mm }
-            : {
-                type: 'span' as const,
-                source: { type: 'single' as const, path: sourcePath ?? '' },
-                image_rect_mm,
-              };
       const now = new Date().toISOString();
       const profile = {
         name,
@@ -135,18 +169,15 @@
       toast.success(`Saved '${name}'`);
       const saved = profileStore.profiles.find((p) => p.name === name);
       if (kind === 'slideshow') {
-        // A new slideshow needs populating — drop straight into the library.
-        // With images on board (a duplicate, or the seeded canvas image) the
-        // profile is applied first so the desktop follows along.
-        const isDuplicate = slideshowSource !== null;
-        const hasImages = slideshowSrc.images.sources.length > 0;
-        if (saved && hasImages) {
-          await switchAndApply(saved);
-        } else {
-          profileStore.select(name);
-          toast.info('Add images', 'pick images or folders for the slideshow');
-        }
-        if (!isDuplicate || !hasImages) libraryOpen = true;
+        // Reset the live canvas to the clean slate just persisted, then drop
+        // straight into the library — the first images added there activate
+        // the slideshow (see `updateSlideshowImages`).
+        const { defaults, bb } = defaultCanvasLayout();
+        canvasView.setOverrides(defaults);
+        imageTransform.set({ offsetMmX: bb.x, offsetMmY: bb.y, widthMm: bb.w, heightMm: bb.h });
+        profileStore.select(name);
+        toast.info('Add images', 'pick images or folders for the slideshow');
+        libraryOpen = true;
       } else if (saved) {
         await switchAndApply(saved);
       }
@@ -167,7 +198,11 @@
   const slideshowTarget = $derived.by(() => {
     if (!draft || !slideshowSource) return null;
     if (!profileStore.profiles.some((p) => p.name === draft.name)) return null;
-    return { name: draft.name, images: slideshowSource.images };
+    return {
+      name: draft.name,
+      images: slideshowSource.images,
+      overrides: slideshowSource.overrides ?? {},
+    };
   });
 
   // While the active profile is a slideshow, mirror its live image onto the
@@ -177,6 +212,14 @@
       ? (slideshowController.state?.currentPath ?? null)
       : null,
   );
+
+  // Per-image canvas override authored for the live slideshow image, if any.
+  const liveOverride = $derived<ImageOverride | null>(
+    slideshowSource && liveSlideshowPath ? overrideFor(slideshowSource, liveSlideshowPath) : null,
+  );
+
+  // The slideshow applies one profile-level layout to every untuned image.
+  const uniformLayoutOn = $derived(Boolean(slideshowSource?.uniform_layout));
 
   // The dock's slideshow controls follow the profile the dock displays (the
   // draft), never whatever happens to be active — editing B while A runs
@@ -203,8 +246,113 @@
   async function updateSlideshowImages(images: ImageSet) {
     const target = slideshowTarget;
     if (!target || !slideshowSource) return;
-    const ok = await persistSlideshowSource(target.name, { ...slideshowSource, images });
-    if (ok) void slideshowController.refresh();
+    const source = $state.snapshot(slideshowSource) as SlideshowSource;
+    const hadImages = source.images.sources.length > 0;
+    // Editing the set is the natural GC point for overrides orphaned by a
+    // removed image or folder source.
+    const overrides = gcOverrides(source.overrides, images);
+    const ok = await persistSlideshowSource(target.name, { ...source, images, overrides });
+    if (!ok) return;
+    void slideshowController.refresh();
+    // First images for a slideshow that isn't showing anything yet: apply it
+    // so the canvas and desktop stop displaying the previous profile's
+    // leftovers. Later edits never yank the wallpaper.
+    const isActive = profileStore.activeName === target.name;
+    if (!isActive && !hadImages && images.sources.length > 0) {
+      const saved = profileStore.profiles.find((p) => p.name === target.name);
+      if (saved) {
+        await switchAndApply(saved);
+        void slideshowController.refresh();
+      }
+    } else if (isActive && !slideshowController.state?.currentPath) {
+      await slideshowController.next();
+    }
+  }
+
+  // Save / reset the canvas as a per-image override for the live slideshow
+  // image (logic in `lib/slideshow-overrides.ts`).
+  async function saveCanvasForCurrentImage() {
+    const target = dockSlideshowProfile;
+    const path = liveSlideshowPath;
+    if (!target || !path || !draft) return;
+    const monitor_state: Record<string, { x_mm: number; y_mm: number }> = {};
+    for (const m of previewMonitors) {
+      monitor_state[m.id] = { x_mm: m.xMm, y_mm: m.yMm };
+    }
+    const t = imageTransform.value;
+    await saveOverrideForImage(
+      target.name,
+      $state.snapshot(target.source) as SlideshowSource,
+      $state.snapshot(draft) as Profile,
+      path,
+      {
+        monitor_state,
+        image_rect_mm: { x_mm: t.offsetMmX, y_mm: t.offsetMmY, w_mm: t.widthMm, h_mm: t.heightMm },
+      },
+    );
+  }
+
+  async function removeImageOverride(path: string) {
+    const target = slideshowTarget;
+    if (!target || !slideshowSource || !draft) return;
+    await removeOverrideForImage(
+      target.name,
+      $state.snapshot(slideshowSource) as SlideshowSource,
+      $state.snapshot(draft) as Profile,
+      path,
+      liveSlideshowPath,
+    );
+  }
+
+  // Apply the current canvas to every slideshow image (uniform layout). When
+  // the library knows of set images with a different shape, confirm first —
+  // those would be stretched into this rect.
+  let uniformWarning = $state<AspectMismatch | null>(null);
+
+  function requestApplyToAll(): void {
+    const target = dockSlideshowProfile;
+    if (!target) return;
+    const t = imageTransform.value;
+    const counts = countAspectMismatches(
+      libraryStore.entries,
+      target.source.images,
+      t.widthMm / t.heightMm,
+    );
+    if (counts.mismatched > 0) {
+      uniformWarning = counts;
+      return;
+    }
+    void applyCanvasToAllImages();
+  }
+
+  async function applyCanvasToAllImages(): Promise<void> {
+    uniformWarning = null;
+    if (!dockSlideshowProfile) return;
+    profileStore.patchDraft((d) => {
+      if (isSpanBody(d.body) && isSlideshowSource(d.body.source)) {
+        d.body.source.uniform_layout = true;
+      }
+    });
+    // Save persists the canvas (placements + rect) as the profile layout;
+    // the flag rides along in the same write. Then apply so the desktop
+    // reflects it without waiting for the next advance.
+    const ok = await saveActiveProfile();
+    if (!ok) return;
+    await applyDraftProfile();
+    void slideshowController.refresh();
+  }
+
+  async function disableUniformLayout(): Promise<void> {
+    const target = dockSlideshowProfile;
+    if (!target) return;
+    const source = $state.snapshot(target.source) as SlideshowSource;
+    const ok = await persistSlideshowSource(target.name, { ...source, uniform_layout: false });
+    if (!ok) return;
+    toast.success('Uniform layout off', 'untuned images auto-fit at their own aspect');
+    if (liveSlideshowPath && !liveOverride) {
+      snapCover();
+      await applyDraftProfile();
+    }
   }
 
   // An empty slideshow can't be applied (its pool is empty and validity
@@ -257,11 +405,29 @@
   // explicit `patchDraft` calls (image source, body shape); on top of that we
   // diff the live canvas state — monitor overrides + image transform — against
   // the active profile so drag / rotate / image-resize edits show up here too.
+  // When the live slideshow image carries a per-image override, that override
+  // is the baseline instead: matching its saved layout is clean.
   const canvasDirty = $derived.by(() => {
     if (profileStore.dirty) return true;
     const active = profileStore.activeProfile;
     if (!active) return false;
+    if (liveOverride) {
+      return (
+        placementsDirty(canvasView.overrides, liveOverride.monitor_state) ||
+        rectDirty(imageTransform.value, liveOverride.image_rect_mm)
+      );
+    }
     if (canvasOverridesDirty(canvasView.overrides, active)) return true;
+    if (liveSlideshowPath && !uniformLayoutOn) {
+      // Untuned slideshow image: clean means the cover-fit seed, not the
+      // profile rect (which belongs to a different image's aspect). Under a
+      // uniform layout the profile rect IS the baseline — fall through.
+      return coverRectDirty(
+        imageTransform.value,
+        previewMonitors,
+        sourceImageState.value.naturalDims,
+      );
+    }
     return imageTransformDirty(imageTransform.value, active);
   });
   const canSave = $derived(Boolean(profileStore.activeName) && !profileStore.saving);
@@ -346,6 +512,25 @@
   useSourceImage(
     () => sourcePath ?? liveSlideshowPath,
     () => previewMonitors,
+    // An authored rect for a slideshow image is its per-image override, or
+    // the profile-level rect when the slideshow runs one uniform layout.
+    // Otherwise untuned images fall through to the cover-fit seed, matching
+    // the daemon's per-image cover fallback.
+    (path) => {
+      if (path !== liveSlideshowPath) return null;
+      const active = profileStore.activeProfile;
+      const r =
+        liveOverride?.image_rect_mm ??
+        (uniformLayoutOn && active && isSpanBody(active.body) ? active.body.image_rect_mm : null);
+      return r ? { offsetMmX: r.x_mm, offsetMmY: r.y_mm, widthMm: r.w_mm, heightMm: r.h_mm } : null;
+    },
+  );
+
+  // The canvas follows per-image overrides live: on slideshow advance,
+  // re-gap and re-place to the new image's effective layout.
+  followSlideshowLayout(
+    () => liveSlideshowPath,
+    () => liveOverride?.monitor_state ?? profileStore.activeProfile?.monitor_state ?? null,
   );
 
   const imageUrl = $derived(sourceImageState.value.url);
@@ -531,12 +716,31 @@
     sourceThumbUrl={imageUrl}
     slideshow={dockSlideshowState}
     slideshowConfig={dockSlideshowProfile?.source.config ?? null}
+    canSaveForImage={Boolean(dockSlideshowProfile && liveSlideshowPath)}
+    hasImageOverride={Boolean(liveOverride)}
+    {uniformLayoutOn}
     onPrev={() => void slideshowController.prev()}
     onNext={() => void slideshowController.next()}
     onTogglePause={() => void slideshowController.togglePause()}
     onUpdateConfig={(c) => void updateSlideshowConfig(c)}
+    onSaveForImage={() => void saveCanvasForCurrentImage()}
+    onResetForImage={() => {
+      if (liveSlideshowPath) void removeImageOverride(liveSlideshowPath);
+    }}
+    onApplyToAll={requestApplyToAll}
+    onResetUniform={() => void disableUniformLayout()}
     onOpenLibrary={() => (libraryOpen = true)}
   />
+
+  {#if uniformWarning}
+    <ConfirmDialog
+      title="Apply this layout to all images?"
+      body={`${uniformWarning.mismatched} of ${uniformWarning.known} images in this slideshow have a different aspect ratio and may look stretched under one shared layout. Images with their own saved layout are not affected.`}
+      confirmLabel="Apply to all"
+      onCancel={() => (uniformWarning = null)}
+      onConfirm={() => void applyCanvasToAllImages()}
+    />
+  {/if}
 
   {#if selectedMonitor}
     <MonitorInspector
@@ -593,6 +797,7 @@
       onPinToMonitor={pinImageToMonitor}
       {slideshowTarget}
       onUpdateSlideshow={(images) => void updateSlideshowImages(images)}
+      onResetOverride={(path) => void removeImageOverride(path)}
     />
   {/if}
 

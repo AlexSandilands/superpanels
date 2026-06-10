@@ -100,7 +100,10 @@ fn validate_profile_body(
     body: &super::ProfileBody,
 ) -> Result<(), ConfigError> {
     if let super::ProfileBody::Span(span) = body {
-        if let super::SpanSource::Slideshow { images, .. } = &span.source {
+        if let super::SpanSource::Slideshow {
+            images, overrides, ..
+        } = &span.source
+        {
             if images.sources.len() > v::MAX_SLIDESHOW_IMAGES {
                 return Err(invalid(
                     path,
@@ -111,6 +114,34 @@ fn validate_profile_body(
                         v::MAX_SLIDESHOW_IMAGES
                     ),
                 ));
+            }
+            if overrides.len() > v::MAX_IMAGE_OVERRIDES {
+                return Err(invalid(
+                    path,
+                    format!("profile[{i}].body.source.overrides"),
+                    format!(
+                        "{} entries exceeds {} cap",
+                        overrides.len(),
+                        v::MAX_IMAGE_OVERRIDES
+                    ),
+                ));
+            }
+            for (image, o) in overrides {
+                let finite_placements = o
+                    .monitor_state
+                    .values()
+                    .all(|p| p.x_mm.is_finite() && p.y_mm.is_finite());
+                let r = o.image_rect_mm;
+                let finite_rect = [r.x_mm, r.y_mm, r.w_mm, r.h_mm]
+                    .iter()
+                    .all(|v| v.is_finite());
+                if !finite_placements || !finite_rect {
+                    return Err(invalid(
+                        path,
+                        format!("profile[{i}].body.source.overrides.{}", image.display()),
+                        "placements and image_rect_mm must be finite",
+                    ));
+                }
             }
         }
     }
@@ -139,4 +170,117 @@ fn validate_general(cfg: &Config, path: &Path) -> Result<(), ConfigError> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)] // reason: tests fail loudly on harness errors
+mod tests {
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    use crate::config::{
+        ImageOverride, ImageSet, Profile, ProfileBody, SlideshowConfig, SlideshowSort,
+        SlideshowStart, SpanProfile, SpanSource,
+    };
+    use crate::layout::ImageRectMm;
+    use crate::schedule::{MonitorPlacement, TopologyFingerprint};
+
+    use super::*;
+
+    fn slideshow_profile_with_overrides(
+        overrides: HashMap<PathBuf, ImageOverride>,
+    ) -> super::super::Config {
+        let now = crate::config::now_timestamp();
+        let profile = Profile {
+            name: "show".to_owned(),
+            body: ProfileBody::Span(SpanProfile {
+                source: SpanSource::Slideshow {
+                    images: ImageSet::from_folder(PathBuf::from("/walls"), false),
+                    config: SlideshowConfig {
+                        interval: std::time::Duration::from_secs(600),
+                        sort: SlideshowSort::Shuffle,
+                        recent_history_size: 10,
+                        on_start: SlideshowStart::Resume,
+                        pause_when_active: false,
+                        skip_on_unavailable: true,
+                    },
+                    overrides,
+                    uniform_layout: false,
+                },
+                image_rect_mm: ImageRectMm::default(),
+            }),
+            monitor_state: HashMap::new(),
+            topology: TopologyFingerprint(String::new()),
+            description: None,
+            created_at: now,
+            updated_at: now,
+            last_applied_at: None,
+            backend_override: None,
+        };
+        Config {
+            profiles: vec![profile],
+            ..Config::default()
+        }
+    }
+
+    fn finite_override() -> ImageOverride {
+        ImageOverride {
+            monitor_state: HashMap::from([(
+                "uuid-a".to_owned(),
+                MonitorPlacement {
+                    x_mm: 0.0,
+                    y_mm: 0.0,
+                },
+            )]),
+            image_rect_mm: ImageRectMm {
+                x_mm: 0.0,
+                y_mm: 0.0,
+                w_mm: 100.0,
+                h_mm: 100.0,
+            },
+        }
+    }
+
+    #[test]
+    fn overrides_within_cap_pass_validation() {
+        let overrides = HashMap::from([(PathBuf::from("/walls/a.png"), finite_override())]);
+        let cfg = slideshow_profile_with_overrides(overrides);
+        assert!(validate(&cfg, Path::new("/x/config.toml")).is_ok());
+    }
+
+    #[test]
+    fn overrides_above_cap_are_rejected() {
+        let overrides: HashMap<PathBuf, ImageOverride> = (0..=v::MAX_IMAGE_OVERRIDES)
+            .map(|i| (PathBuf::from(format!("/walls/{i}.png")), finite_override()))
+            .collect();
+        let cfg = slideshow_profile_with_overrides(overrides);
+        let err = validate(&cfg, Path::new("/x/config.toml")).unwrap_err();
+        assert!(err.to_string().contains("exceeds"), "got: {err}");
+    }
+
+    #[test]
+    fn non_finite_override_rect_is_rejected() {
+        let mut bad = finite_override();
+        bad.image_rect_mm.w_mm = f32::NAN;
+        let overrides = HashMap::from([(PathBuf::from("/walls/a.png"), bad)]);
+        let cfg = slideshow_profile_with_overrides(overrides);
+        let err = validate(&cfg, Path::new("/x/config.toml")).unwrap_err();
+        assert!(err.to_string().contains("finite"), "got: {err}");
+    }
+
+    #[test]
+    fn non_finite_override_placement_is_rejected() {
+        let mut bad = finite_override();
+        bad.monitor_state.insert(
+            "uuid-b".to_owned(),
+            MonitorPlacement {
+                x_mm: f32::INFINITY,
+                y_mm: 0.0,
+            },
+        );
+        let overrides = HashMap::from([(PathBuf::from("/walls/a.png"), bad)]);
+        let cfg = slideshow_profile_with_overrides(overrides);
+        let err = validate(&cfg, Path::new("/x/config.toml")).unwrap_err();
+        assert!(err.to_string().contains("finite"), "got: {err}");
+    }
 }

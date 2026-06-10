@@ -8,6 +8,7 @@ import type { PerMonitorProfile } from './PerMonitorProfile';
 import type { SlideshowConfig } from './SlideshowConfig';
 import type { SpanSource } from './SpanSource';
 import type { ImageSet } from './ImageSet';
+import type { ImageOverride } from './ImageOverride';
 
 export type { Profile } from './Profile';
 export type { ProfileBody } from './ProfileBody';
@@ -28,6 +29,7 @@ export type { Trigger } from './Trigger';
 export type { ProfileValidity } from './ProfileValidity';
 export type { DisableReason } from './DisableReason';
 export type { FitMode } from './FitMode';
+export type { ImageOverride } from './ImageOverride';
 
 export function isSpanBody(body: ProfileBody): body is { type: 'span' } & SpanProfile {
   return body.type === 'span';
@@ -39,13 +41,25 @@ export function isPerMonitorBody(
   return body.type === 'per_monitor';
 }
 
-export type SlideshowSource = { type: 'slideshow'; images: ImageSet; config: SlideshowConfig };
+export type SlideshowSource = {
+  type: 'slideshow';
+  images: ImageSet;
+  config: SlideshowConfig;
+  overrides?: { [key in string]: ImageOverride };
+  /** One layout for every image — see `SpanSource::Slideshow::uniform_layout`. */
+  uniform_layout?: boolean;
+};
 
 /** Profile flavour offered by the save-as-new dialog. */
 export type ProfileKind = 'single' | 'slideshow';
 
 export function isSlideshowSource(source: SpanSource): source is SlideshowSource {
   return source.type === 'slideshow';
+}
+
+/** The per-image canvas override for `path`, when one was authored. */
+export function overrideFor(source: SlideshowSource, path: string): ImageOverride | null {
+  return source.overrides?.[path] ?? null;
 }
 
 export function defaultSlideshowConfig(): SlideshowConfig {

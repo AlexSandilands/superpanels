@@ -63,6 +63,10 @@ export function applyMonitorStateToCanvas(p: Profile): void {
   }
   canvasView.setOverrides(next);
   if (isSpanBody(p.body)) {
+    // Slideshow rects are owned by the per-image seed (override / uniform /
+    // cover-fit, see `useSourceImage`) — forcing the profile rect here would
+    // crop the live image to a rect authored for a different aspect.
+    if (p.body.source.type === 'slideshow') return;
     const r = p.body.image_rect_mm;
     imageTransform.set({
       offsetMmX: r.x_mm,

@@ -315,8 +315,7 @@
       style:width="{imgRect.w}px"
       style:height="{imgRect.h}px"
       style:background-image="url({imageUrl})"
-      style:background-size="cover"
-      style:background-position="center"
+      style:background-size="100% 100%"
       style:opacity={canvasView.dim ? '0.18' : '1'}
       style:transition={dragController.drag ? 'none' : 'opacity 200ms ease'}
       style:box-shadow={canvasView.dim ? 'none' : '0 0 0 1px oklch(1 0 0 / 0.06)'}

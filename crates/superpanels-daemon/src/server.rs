@@ -171,6 +171,8 @@ mod tests {
                         pause_when_active: false,
                         skip_on_unavailable: false,
                     },
+                    overrides: HashMap::new(),
+                    uniform_layout: false,
                 },
                 image_rect_mm: ImageRectMm::default(),
             }),
@@ -474,6 +476,8 @@ mod tests {
                 pause_when_active: false,
                 skip_on_unavailable: true,
             },
+            overrides: HashMap::new(),
+            uniform_layout: false,
         };
         let resp = dispatch_for_tests(
             IpcRequest {
@@ -522,6 +526,8 @@ mod tests {
                 pause_when_active: false,
                 skip_on_unavailable: false,
             },
+            overrides: HashMap::new(),
+            uniform_layout: false,
         };
         let resp = dispatch_for_tests(
             IpcRequest {
@@ -575,6 +581,8 @@ mod tests {
                 pause_when_active: false,
                 skip_on_unavailable: false,
             },
+            overrides: HashMap::new(),
+            uniform_layout: false,
         };
         let resp = dispatch_for_tests(
             IpcRequest {

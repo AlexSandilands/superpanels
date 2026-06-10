@@ -179,10 +179,23 @@ pub fn compute_crop_specs<S: BuildHasher>(
 /// `set --image`, daemon dry-run preview) that don't carry a canvas state.
 #[must_use]
 pub fn cover_image_rect_mm(monitors: &[Monitor], image_size_px: (u32, u32)) -> ImageRectMm {
+    let placements = synthesise_placements(monitors);
+    cover_image_rect_for(monitors, &placements, image_size_px)
+}
+
+/// [`cover_image_rect_mm`] over explicit placements: covers the bounding box
+/// of the *placed* monitors (profile gaps included), aspect preserved. Used
+/// for slideshow images without a per-image override, so the desktop matches
+/// the GUI canvas's cover-fit seed.
+#[must_use]
+pub fn cover_image_rect_for<S: BuildHasher>(
+    monitors: &[Monitor],
+    placements: &HashMap<String, MonitorPlacement, S>,
+    image_size_px: (u32, u32),
+) -> ImageRectMm {
     if monitors.is_empty() || image_size_px.0 == 0 || image_size_px.1 == 0 {
         return ImageRectMm::default();
     }
-    let placements = synthesise_placements(monitors);
     let mut x0 = f32::INFINITY;
     let mut y0 = f32::INFINITY;
     let mut x1 = f32::NEG_INFINITY;
@@ -417,6 +430,27 @@ mod tests {
             result,
             Err(LayoutError::ImageRectDegenerate { .. })
         ));
+    }
+
+    #[test]
+    fn cover_rect_for_placements_spans_profile_gaps() {
+        // Two 527 mm panels with a 40 mm authored gap: the cover rect must
+        // span the full 1094 mm placed width, not the detected 1054 mm.
+        let monitors = vec![
+            monitor(0, "DP-1", 1920, 1080, 0, 0, 527, 296),
+            monitor(1, "DP-2", 1920, 1080, 1920, 0, 527, 296),
+        ];
+        let mut placements = HashMap::new();
+        placements.insert(monitor_key(&monitors[0]), place(0.0, 0.0));
+        placements.insert(monitor_key(&monitors[1]), place(527.0 + 40.0, 0.0));
+
+        let rect = cover_image_rect_for(&monitors, &placements, (3840, 2160));
+
+        assert!((rect.w_mm - 1094.0).abs() < 0.5, "got w={}", rect.w_mm);
+        // 16:9 at 1094 mm wide is ~615 mm tall — covers and overhangs the
+        // 296 mm bounding box, centred on it.
+        assert!(rect.h_mm > 296.0);
+        assert!(rect.y_mm < 0.0);
     }
 
     #[test]

@@ -17,6 +17,9 @@ pub const MAX_PROFILES: usize = 256;
 pub const MAX_PROFILE_NAME_CHARS: usize = 64;
 /// Maximum slideshow image-pool size per profile.
 pub const MAX_SLIDESHOW_IMAGES: usize = 10_000;
+/// Maximum per-image canvas overrides per slideshow profile. Overrides are
+/// hand-tuned one at a time, so this is far past plausible use.
+pub const MAX_IMAGE_OVERRIDES: usize = 1_000;
 /// Maximum monitor `stable_id` / `name` length, in characters.
 pub const MAX_MONITOR_ID_CHARS: usize = 256;
 /// Maximum library tag length, post-trim, in characters.

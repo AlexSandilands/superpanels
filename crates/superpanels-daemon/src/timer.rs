@@ -201,6 +201,8 @@ mod tests {
                         pause_when_active: false,
                         skip_on_unavailable: false,
                     },
+                    overrides: HashMap::new(),
+                    uniform_layout: false,
                 },
                 image_rect_mm: ImageRectMm::default(),
             }),

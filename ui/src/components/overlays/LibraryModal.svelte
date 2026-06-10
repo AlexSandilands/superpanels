@@ -13,6 +13,7 @@
     removeSourceAt,
     sourceLabel,
   } from '$lib/slideshow-set';
+  import type { ImageOverride } from '$lib/types/ImageOverride';
   import type { ImageSet } from '$lib/types/ImageSet';
   import Backdrop from '../widgets/Backdrop.svelte';
   import StepperInput from '../widgets/StepperInput.svelte';
@@ -40,8 +41,13 @@
     onApplyAsSpan: (path: string) => void;
     onPinToMonitor: (monitorId: string, path: string) => void;
     /** Slideshow profile whose image set can be edited from here, if any. */
-    slideshowTarget?: { name: string; images: ImageSet } | null;
+    slideshowTarget?: {
+      name: string;
+      images: ImageSet;
+      overrides: { [key in string]: ImageOverride };
+    } | null;
     onUpdateSlideshow?: (images: ImageSet) => void;
+    onResetOverride?: (path: string) => void;
   };
   let {
     onClose,
@@ -49,6 +55,7 @@
     onPinToMonitor,
     slideshowTarget = null,
     onUpdateSlideshow,
+    onResetOverride,
   }: Props = $props();
 
   let searchEl: HTMLInputElement | undefined = $state();
@@ -101,6 +108,17 @@
       ? {
           membershipOf: membershipLookup(slideshowTarget.images),
           onToggle: toggleMembership,
+        }
+      : null,
+  );
+
+  // Per-image override badges follow the slideshow target regardless of
+  // select mode — a custom layout matters even while just browsing.
+  const customLayouts = $derived(
+    slideshowTarget && onResetOverride
+      ? {
+          has: (path: string) => path in slideshowTarget.overrides,
+          onReset: onResetOverride,
         }
       : null,
   );
@@ -375,7 +393,13 @@
           {/if}
         </div>
 
-        <LibraryGrid entries={visible} onApply={applyEntry} onPin={onPinToMonitor} {selection} />
+        <LibraryGrid
+          entries={visible}
+          onApply={applyEntry}
+          onPin={onPinToMonitor}
+          {selection}
+          {customLayouts}
+        />
       </div>
     {/if}
   </div>
