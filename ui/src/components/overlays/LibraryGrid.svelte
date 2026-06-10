@@ -9,6 +9,8 @@
   export type SlideshowSelection = {
     membershipOf: (path: string) => 'image' | 'folder' | null;
     onToggle: (path: string) => void;
+    /** Jump the slideshow to this image; offered on member cards only. */
+    onShow?: (path: string) => void;
   };
 
   export type CustomLayouts = {
@@ -188,6 +190,20 @@
             </div>
             {#if selection}
               <div class="flex" style:gap="4px" style:margin-top="8px">
+                {#if m !== null && selection.onShow}
+                  <button
+                    class="btn primary sm"
+                    style:flex="1"
+                    style:font-size="10px"
+                    title="Show this image on the canvas and desktop now"
+                    onclick={(ev) => {
+                      ev.stopPropagation();
+                      selection.onShow?.(item.entry.path);
+                    }}
+                  >
+                    Set
+                  </button>
+                {/if}
                 <button
                   class="btn sm"
                   class:primary={m === null}
@@ -216,7 +232,7 @@
                     onApply(item.entry);
                   }}
                 >
-                  Apply
+                  Set
                 </button>
                 <button
                   class="btn sm"

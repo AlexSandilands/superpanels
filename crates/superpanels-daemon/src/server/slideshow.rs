@@ -1,5 +1,6 @@
-//! Slideshow next/prev/pause IPC handlers.
+//! Slideshow next/prev/goto/pause IPC handlers.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -16,10 +17,12 @@ use crate::state::DaemonState;
 
 use super::helpers::{applied_json, init_picker_if_needed, restart_timer, update_active_profile};
 
+/// Advance to the picker's next image, or — when `goto` is set — jump
+/// straight to that image (it must be in the resolved pool).
 pub(super) async fn cmd_slideshow_advance(
     state: Arc<Mutex<DaemonState>>,
     timer_tx: watch::Sender<Option<Duration>>,
-    is_prev: bool,
+    goto: Option<PathBuf>,
 ) -> IpcResponse {
     let snapshot = {
         let guard = state.lock().await;
@@ -59,25 +62,21 @@ pub(super) async fn cmd_slideshow_advance(
         return IpcResponse::failure("slideshow pool is empty");
     };
 
-    let image_path = {
+    let picked = {
         let mut guard = state.lock().await;
         init_picker_if_needed(&mut guard, &name);
-        if is_prev {
-            // Mutates history so `current_path` tracks what's on screen.
-            guard
-                .slideshow_picker
-                .as_mut()
-                .and_then(SlideshowPicker::step_back)
-        } else {
-            guard
-                .slideshow_picker
-                .as_mut()
-                .and_then(|p| p.next(&pool).ok())
+        let Some(picker) = guard.slideshow_picker.as_mut() else {
+            return IpcResponse::failure("active profile has no slideshow");
+        };
+        match goto {
+            Some(path) => picker.jump_to(&pool, &path).map(|()| path),
+            None => picker.next(&pool),
         }
     };
 
-    let Some(image_path) = image_path else {
-        return IpcResponse::failure("slideshow pool is empty or no previous image");
+    let image_path = match picked {
+        Ok(path) => path,
+        Err(e) => return IpcResponse::failure(e.to_string()),
     };
 
     let report = tokio::task::spawn_blocking(move || {
@@ -93,6 +92,17 @@ pub(super) async fn cmd_slideshow_advance(
     update_active_profile(&state, &name).await;
     restart_timer(&state, &timer_tx).await;
     IpcResponse::success(applied_json(&report))
+}
+
+pub(super) async fn cmd_slideshow_goto(
+    req: IpcRequest,
+    state: Arc<Mutex<DaemonState>>,
+    timer_tx: watch::Sender<Option<Duration>>,
+) -> IpcResponse {
+    let Some(path) = req.params.get("path").and_then(serde_json::Value::as_str) else {
+        return IpcResponse::failure("missing 'path' param");
+    };
+    cmd_slideshow_advance(state, timer_tx, Some(PathBuf::from(path))).await
 }
 
 pub(super) async fn cmd_slideshow_prev(state: Arc<Mutex<DaemonState>>) -> IpcResponse {

@@ -73,6 +73,8 @@ pub enum SlideshowError {
     /// widen the pool, shrink history, or wait for the next scan.
     #[error("no eligible image: every candidate was in recent history or unavailable")]
     NoEligibleEntry,
+    #[error("image is not in the slideshow pool")]
+    NotInPool,
 }
 
 pub struct SlideshowPicker {
@@ -179,6 +181,24 @@ impl SlideshowPicker {
         let path = choice.ok_or(SlideshowError::NoEligibleEntry)?;
         self.record(&path, &ordered);
         Ok(path)
+    }
+
+    /// Jump straight to `path`, recording it as the current image so prev
+    /// and sequential next continue from it.
+    pub fn jump_to(&mut self, pool: &[PathBuf], path: &Path) -> Result<(), SlideshowError> {
+        if pool.is_empty() {
+            return Err(SlideshowError::EmptyPool);
+        }
+        let ordered = sorted_pool(pool, self.config.sort);
+        if !ordered.iter().any(|p| p.as_path() == path) {
+            return Err(SlideshowError::NotInPool);
+        }
+        // Already current — re-recording would stack a duplicate history entry.
+        if self.state.history.front().is_some_and(|cur| cur == path) {
+            return Ok(());
+        }
+        self.record(path, &ordered);
+        Ok(())
     }
 
     fn pick_shuffle(
@@ -528,6 +548,57 @@ mod tests {
         // Next after stepping back to `a` is `b` again, not `c`.
         let next = picker.next(&images).unwrap();
         assert_eq!(next, b);
+    }
+
+    #[test]
+    fn jump_to_records_target_as_current() {
+        let images = pool(&["a.png", "b.png", "c.png"]);
+        let mut picker = SlideshowPicker::new(config_with(SlideshowSort::Alphabetical, 2));
+        picker.next(&images).unwrap(); // a
+
+        picker.jump_to(&images, Path::new("c.png")).unwrap();
+
+        assert_eq!(
+            picker.state().history.front(),
+            Some(&PathBuf::from("c.png"))
+        );
+        assert_eq!(picker.state().current_index, Some(2));
+    }
+
+    #[test]
+    fn jump_to_rejects_path_outside_pool() {
+        let images = pool(&["a.png", "b.png"]);
+        let mut picker = SlideshowPicker::new(config_with(SlideshowSort::Alphabetical, 2));
+        picker.next(&images).unwrap();
+
+        let err = picker.jump_to(&images, Path::new("x.png")).unwrap_err();
+
+        assert_eq!(err, SlideshowError::NotInPool);
+        assert_eq!(
+            picker.state().history.front(),
+            Some(&PathBuf::from("a.png"))
+        );
+    }
+
+    #[test]
+    fn jump_to_current_image_does_not_duplicate_history() {
+        let images = pool(&["a.png", "b.png"]);
+        let mut picker = SlideshowPicker::new(config_with(SlideshowSort::Alphabetical, 5));
+        picker.next(&images).unwrap(); // a
+
+        picker.jump_to(&images, Path::new("a.png")).unwrap();
+
+        assert_eq!(picker.state().history.len(), 1);
+    }
+
+    #[test]
+    fn sequential_next_continues_from_jump_target() {
+        let images = pool(&["a.png", "b.png", "c.png"]);
+        let mut picker = SlideshowPicker::new(config_with(SlideshowSort::Alphabetical, 0));
+
+        picker.jump_to(&images, Path::new("b.png")).unwrap();
+
+        assert_eq!(picker.next(&images).unwrap(), PathBuf::from("c.png"));
     }
 
     #[test]

@@ -141,6 +141,7 @@ export const api = {
   libraryRescan: () => call<{ count: number }>('library_rescan'),
   slideshowNext: () => call<AppliedReport>('slideshow_next'),
   slideshowPrev: () => call<AppliedReport>('slideshow_prev'),
+  slideshowGoto: (path: string) => call<AppliedReport>('slideshow_goto', { path }),
   slideshowPause: (paused?: boolean) =>
     call<{ paused: boolean }>('slideshow_pause', paused === undefined ? {} : { paused }),
   getConfig: () => call<unknown>('get_config'),

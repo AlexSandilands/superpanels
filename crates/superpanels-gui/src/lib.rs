@@ -94,6 +94,7 @@ fn build_app() -> tauri::App {
             commands::library::library_rescan,
             commands::slideshow::slideshow_next,
             commands::slideshow::slideshow_prev,
+            commands::slideshow::slideshow_goto,
             commands::slideshow::slideshow_pause,
             commands::config::get_config,
             commands::config::save_config,

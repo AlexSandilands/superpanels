@@ -22,7 +22,7 @@ pub(crate) type CallResult = Result<Value, IpcError>;
 fn has_in_process_fallback(method: &str) -> bool {
     !matches!(
         method,
-        "slideshow_next" | "slideshow_prev" | "slideshow_pause"
+        "slideshow_next" | "slideshow_prev" | "slideshow_goto" | "slideshow_pause"
     )
 }
 
@@ -88,6 +88,7 @@ mod tests {
     fn slideshow_methods_have_no_in_process_fallback() {
         assert!(!has_in_process_fallback("slideshow_next"));
         assert!(!has_in_process_fallback("slideshow_prev"));
+        assert!(!has_in_process_fallback("slideshow_goto"));
         assert!(!has_in_process_fallback("slideshow_pause"));
     }
 

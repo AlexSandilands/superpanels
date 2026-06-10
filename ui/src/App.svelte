@@ -270,6 +270,21 @@
     }
   }
 
+  // Jump the slideshow to a specific image (picked from the library) so the
+  // canvas — and the desktop — show it immediately. The daemon's goto only
+  // works on the active profile, so a merely-selected slideshow is switched
+  // to first.
+  async function showImageOnCanvas(path: string) {
+    const target = slideshowTarget;
+    if (!target) return;
+    if (profileStore.activeName !== target.name) {
+      const saved = profileStore.profiles.find((p) => p.name === target.name);
+      if (!saved) return;
+      await switchAndApply(saved);
+    }
+    await slideshowController.goto(path);
+  }
+
   // Save / reset the canvas as a per-image override for the live slideshow
   // image (logic in `lib/slideshow-overrides.ts`).
   async function saveCanvasForCurrentImage() {
@@ -847,6 +862,7 @@
       {slideshowTarget}
       onUpdateSlideshow={(images) => void updateSlideshowImages(images)}
       onResetOverride={(path) => void removeImageOverride(path)}
+      onShowImage={(path) => void showImageOnCanvas(path)}
     />
   {/if}
 

@@ -93,8 +93,9 @@ async fn dispatch(
         "set" => apply::cmd_set(req, state).await,
         "apply_profile" => apply::cmd_apply_profile(req, state, timer_tx).await,
         "apply_canvas" => apply::cmd_apply_canvas(req, state, timer_tx).await,
-        "slideshow_next" => slideshow::cmd_slideshow_advance(state, timer_tx, false).await,
+        "slideshow_next" => slideshow::cmd_slideshow_advance(state, timer_tx, None).await,
         "slideshow_prev" => slideshow::cmd_slideshow_prev(state).await,
+        "slideshow_goto" => slideshow::cmd_slideshow_goto(req, state, timer_tx).await,
         "slideshow_pause" => slideshow::cmd_slideshow_pause(req, state).await,
         "redetect" => apply::cmd_redetect(state).await,
         "wait_for_monitor_change" => apply::cmd_wait_for_monitor_change(state).await,
@@ -374,6 +375,91 @@ mod tests {
                 "unexpected missing-history error: {err}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn slideshow_goto_records_requested_image_as_current() {
+        let dir = tempdir().unwrap();
+        let a = dir.path().join("a.png");
+        let b = dir.path().join("b.png");
+        write_dummy_image(&a);
+        write_dummy_image(&b);
+        let mut config = Config::default();
+        config.profiles.push(slideshow_profile("p", dir.path()));
+        let mut s = DaemonState::for_tests(config);
+        s.active_profile = Some("p".to_owned());
+        s.slideshow_picker = Some(picker_with_history(vec![a.clone()]));
+        let state = make_state_arc(s);
+
+        let resp = dispatch_for_tests(
+            IpcRequest {
+                v: PROTOCOL_VERSION,
+                method: "slideshow_goto".to_owned(),
+                params: json!({"path": b.to_string_lossy()}),
+            },
+            Arc::clone(&state),
+            timer_pair(),
+        )
+        .await;
+
+        // The apply itself may fail in the test environment (no real
+        // backend); the picker must still have jumped before it ran.
+        if let Some(err) = &resp.error {
+            assert!(
+                !err.contains("not in the slideshow pool"),
+                "pool membership check rejected an in-pool image: {err}"
+            );
+        }
+        let guard = state.lock().await;
+        let picker = guard.slideshow_picker.as_ref().expect("picker kept");
+        assert_eq!(picker.state().history.front(), Some(&b));
+    }
+
+    #[tokio::test]
+    async fn slideshow_goto_rejects_image_outside_pool() {
+        let dir = tempdir().unwrap();
+        let a = dir.path().join("a.png");
+        write_dummy_image(&a);
+        let mut config = Config::default();
+        config.profiles.push(slideshow_profile("p", dir.path()));
+        let mut s = DaemonState::for_tests(config);
+        s.active_profile = Some("p".to_owned());
+        s.slideshow_picker = Some(picker_with_history(vec![a.clone()]));
+        let state = make_state_arc(s);
+
+        let resp = dispatch_for_tests(
+            IpcRequest {
+                v: PROTOCOL_VERSION,
+                method: "slideshow_goto".to_owned(),
+                params: json!({"path": "/elsewhere/x.png"}),
+            },
+            Arc::clone(&state),
+            timer_pair(),
+        )
+        .await;
+
+        assert!(!resp.is_ok());
+        assert!(resp.error.unwrap().contains("not in the slideshow pool"));
+        let guard = state.lock().await;
+        let picker = guard.slideshow_picker.as_ref().expect("picker kept");
+        assert_eq!(picker.state().history.front(), Some(&a));
+    }
+
+    #[tokio::test]
+    async fn slideshow_goto_errors_without_path_param() {
+        let state = make_state_arc(DaemonState::for_tests(Config::default()));
+        let resp = dispatch_for_tests(
+            IpcRequest {
+                v: PROTOCOL_VERSION,
+                method: "slideshow_goto".to_owned(),
+                params: json!({}),
+            },
+            state,
+            timer_pair(),
+        )
+        .await;
+        assert!(!resp.is_ok());
+        assert!(resp.error.unwrap().contains("missing 'path' param"));
     }
 
     #[tokio::test]

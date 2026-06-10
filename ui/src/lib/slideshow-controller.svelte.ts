@@ -5,6 +5,7 @@
 
 import {
   refreshRuntime,
+  slideshowGoto as runGoto,
   slideshowNext as runNext,
   slideshowPrev as runPrev,
   slideshowTogglePause as runTogglePause,
@@ -29,6 +30,10 @@ export const slideshowController = {
   },
   async prev() {
     await runPrev();
+    await refresh();
+  },
+  async goto(path: string) {
+    await runGoto(path);
     await refresh();
   },
   async togglePause() {

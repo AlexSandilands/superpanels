@@ -48,6 +48,8 @@
     } | null;
     onUpdateSlideshow?: (images: ImageSet) => void;
     onResetOverride?: (path: string) => void;
+    /** Jump the slideshow (and canvas) straight to this image. */
+    onShowImage?: (path: string) => void;
   };
   let {
     onClose,
@@ -56,6 +58,7 @@
     slideshowTarget = null,
     onUpdateSlideshow,
     onResetOverride,
+    onShowImage,
   }: Props = $props();
 
   let searchEl: HTMLInputElement | undefined = $state();
@@ -64,8 +67,13 @@
   // mount) until the user explicitly toggles the chip.
   let selectModeOverride = $state<boolean | null>(null);
   const selectMode = $derived(selectModeOverride ?? slideshowTarget !== null);
+  let membersOnly = $state(false);
 
-  const visible = $derived(libraryStore.visible);
+  const visible = $derived.by(() => {
+    if (!membersOnly || !slideshowTarget) return libraryStore.visible;
+    const member = membershipLookup(slideshowTarget.images);
+    return libraryStore.visible.filter((e) => member(e.path) !== null);
+  });
 
   onMount(() => {
     if (libraryStore.entries.length === 0 && !libraryStore.loading) {
@@ -103,11 +111,17 @@
     }
   }
 
+  function showEntry(path: string) {
+    onShowImage?.(path);
+    onClose();
+  }
+
   const selection = $derived(
     selectMode && slideshowTarget && onUpdateSlideshow
       ? {
           membershipOf: membershipLookup(slideshowTarget.images),
           onToggle: toggleMembership,
+          ...(onShowImage ? { onShow: showEntry } : {}),
         }
       : null,
   );
@@ -183,6 +197,14 @@
           onclick={() => (selectModeOverride = !selectMode)}
         >
           <Icon name="stack" size={11} /> add to slideshow
+        </button>
+        <button
+          class="chip"
+          class:active={membersOnly}
+          title={`Show only images in '${slideshowTarget.name}'`}
+          onclick={() => (membersOnly = !membersOnly)}
+        >
+          <Icon name="check" size={11} /> in slideshow
         </button>
       {/if}
       <div style:flex="1"></div>

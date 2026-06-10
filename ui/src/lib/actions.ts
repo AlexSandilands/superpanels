@@ -219,6 +219,14 @@ export async function slideshowPrev(): Promise<void> {
   }
 }
 
+export async function slideshowGoto(path: string): Promise<void> {
+  try {
+    await api.slideshowGoto(path);
+  } catch (err) {
+    toast.error('Could not show image', errorMessage(err));
+  }
+}
+
 export function setSpanImage(path: string): void {
   if (!profileStore.draft) profileStore.newProfile();
   profileStore.patchDraft((d) => {
