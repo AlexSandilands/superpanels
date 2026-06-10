@@ -10,6 +10,8 @@ Reference for the on-disk files Superpanels reads and writes. Code: [`crates/sup
 | Library DB | `$XDG_DATA_HOME/superpanels/library.db` | daemon (SQLite, schema-versioned) |
 | Slideshow state | `$XDG_STATE_HOME/superpanels/slideshow-state.json` | daemon |
 | Last-applied state | `$XDG_STATE_HOME/superpanels/state.toml` | daemon |
+| Window geometry | `$XDG_STATE_HOME/superpanels/window.json` | GUI on window close |
+| Tray icon style | `$XDG_STATE_HOME/superpanels/tray.json` | GUI (Settings → Appearance) |
 | Autostart desktop | `$XDG_CONFIG_HOME/autostart/superpanels.desktop` | GUI when autostart is on |
 | App-menu desktop | `$XDG_DATA_HOME/applications/superpanels-gui.desktop` | GUI on every launch (taskbar icon on Wayland) |
 | App icons | `$XDG_DATA_HOME/icons/hicolor/<size>/apps/superpanels-gui.png` | GUI on every launch |
@@ -198,6 +200,8 @@ SQLite at `$XDG_DATA_HOME/superpanels/library.db`. Schema versioned via `PRAGMA 
 ## State files
 
 `state.toml` and `slideshow-state.json` record the active profile, slideshow position/history, last-apply timestamp. **Never** per-monitor temp file paths — those are wiped at the start of each apply, so persisting them would always be stale. If the daemon needs to repaint after re-detection, it re-runs the pipeline from the source.
+
+`window.json` (window geometry) and `tray.json` (tray icon style: `white` or `blue`) are GUI-only and read at launch, before the webview loads — which is why the tray style lives here rather than in the frontend's localStorage. Missing or malformed files fall back to defaults.
 
 ## Migration
 

@@ -101,6 +101,8 @@ fn build_app() -> tauri::App {
             commands::runtime::current_state,
             commands::autostart::set_autostart,
             commands::autostart::get_autostart,
+            commands::tray::set_tray_icon_style,
+            commands::tray::get_tray_icon_style,
             commands::daemon::daemon_status,
             commands::daemon::start_daemon,
         ]);

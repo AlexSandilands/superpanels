@@ -56,6 +56,8 @@ export type RuntimeState = {
   last_apply_unix_secs: number | null;
 };
 
+export type TrayIconStyle = 'white' | 'blue';
+
 export type AppliedReport = {
   monitors_set?: number;
   backend?: string;
@@ -149,6 +151,9 @@ export const api = {
   currentState: () => call<RuntimeState>('current_state'),
   setAutostart: (enabled: boolean) => call<{ enabled: boolean }>('set_autostart', { enabled }),
   getAutostart: () => call<{ enabled: boolean }>('get_autostart'),
+  setTrayIconStyle: (style: TrayIconStyle) =>
+    call<{ style: TrayIconStyle }>('set_tray_icon_style', { style }),
+  getTrayIconStyle: () => call<{ style: TrayIconStyle }>('get_tray_icon_style'),
   daemonStatus: () => call<{ connected: boolean }>('daemon_status'),
   startDaemon: () => call<{ exe: string }>('start_daemon'),
 };

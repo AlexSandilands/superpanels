@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
+  import { api, errorMessage, type TrayIconStyle } from '$lib/api';
+  import { toast } from '$lib/stores/toast.svelte';
   import { ui, ACCENT_OPTIONS, type Density, type Theme } from '$lib/stores/ui.svelte';
   import SectionHeader from './SectionHeader.svelte';
   import SettingRow from './SettingRow.svelte';
@@ -6,6 +9,26 @@
 
   const themes: Theme[] = ['auto', 'light', 'dark'];
   const densities: Density[] = ['compact', 'regular', 'spacious'];
+  const trayStyles: TrayIconStyle[] = ['white', 'blue'];
+
+  let trayStyle = $state<TrayIconStyle>('white');
+
+  onMount(async () => {
+    try {
+      trayStyle = (await api.getTrayIconStyle()).style;
+    } catch (err) {
+      toast.error('Could not read tray icon style', errorMessage(err));
+    }
+  });
+
+  async function setTrayStyle(style: TrayIconStyle) {
+    try {
+      await api.setTrayIconStyle(style);
+      trayStyle = style;
+    } catch (err) {
+      toast.error('Could not change tray icon', errorMessage(err));
+    }
+  }
 </script>
 
 <SectionHeader title="Appearance" />
@@ -49,6 +72,19 @@
 
 <SettingRow label="Follow KDE system accent">
   <Toggle value={ui.followSystemAccent} onChange={(v) => ui.set({ followSystemAccent: v })} />
+</SettingRow>
+
+<SettingRow
+  label="Tray icon"
+  sub="White suits monochrome panel themes; blue uses the coloured app icon."
+>
+  <div class="seg">
+    {#each trayStyles as s (s)}
+      <button class:seg-active={trayStyle === s} onclick={() => setTrayStyle(s)}>
+        {s}
+      </button>
+    {/each}
+  </div>
 </SettingRow>
 
 <SettingRow label="Window blur" sub="Disable on low-power machines.">

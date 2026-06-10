@@ -15,7 +15,10 @@ use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{App, AppHandle, Emitter, Manager, Wry};
 
+pub(crate) mod icon;
+
 use crate::bridge;
+use crate::errors::IpcError;
 use crate::state::{AppState, RuntimeSnapshot};
 
 // Tray sync runs on a background thread; the user only feels this cadence on
@@ -23,6 +26,8 @@ use crate::state::{AppState, RuntimeSnapshot};
 // suppresses no-op rebuilds. 5s matches the App.svelte refresh cadence so
 // tray and main window stay loosely in step.
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
+
+const TRAY_ID: &str = "main-tray";
 
 const ID_NEXT: &str = "tray.slideshow.next";
 const ID_PREV: &str = "tray.slideshow.prev";
@@ -35,9 +40,10 @@ const PROFILE_PREFIX: &str = "tray.profile.";
 pub(crate) fn install(app: &App, state: Arc<AppState>) -> tauri::Result<()> {
     let handle = app.handle().clone();
     let menu = build_initial_menu(&handle, &state)?;
-    let _tray = TrayIconBuilder::with_id("main-tray")
-        .icon(tray_icon_image())
-        .icon_as_template(true)
+    let style = icon::load_style();
+    let _tray = TrayIconBuilder::with_id(TRAY_ID)
+        .icon(icon::image(style))
+        .icon_as_template(icon::is_template(style))
         .menu(&menu)
         .show_menu_on_left_click(false)
         .tooltip("Superpanels")
@@ -123,12 +129,20 @@ fn menu_signature(snap: &RuntimeSnapshot, profiles: &[String]) -> String {
     )
 }
 
-fn tray_icon_image() -> tauri::image::Image<'static> {
-    // PNG bytes embedded at build time. Falls back to a 1x1 transparent
-    // image only if decode fails, so tray construction can never panic.
-    const TRAY_PNG: &[u8] = include_bytes!("../icons/tray.png");
-    tauri::image::Image::from_bytes(TRAY_PNG)
-        .unwrap_or_else(|_| tauri::image::Image::new_owned(vec![0; 4], 1, 1))
+/// Persist `style` and swap the live tray glyph. The persisted value is what
+/// [`install`] reads at the next launch, so the icon is right from first
+/// paint without waiting for the webview.
+pub(crate) fn apply_icon_style(
+    handle: &AppHandle,
+    style: icon::TrayIconStyle,
+) -> Result<(), IpcError> {
+    icon::save_style(style)?;
+    if let Some(tray) = handle.tray_by_id(TRAY_ID) {
+        tray.set_icon(Some(icon::image(style)))
+            .and_then(|()| tray.set_icon_as_template(icon::is_template(style)))
+            .map_err(|e| IpcError::internal(e.to_string()))?;
+    }
+    Ok(())
 }
 
 fn refresh_snapshot(state: &Arc<AppState>) {
@@ -179,14 +193,14 @@ fn apply_menu(
     snap: &RuntimeSnapshot,
 ) -> tauri::Result<()> {
     let menu = build_menu(handle, profiles, snap)?;
-    if let Some(tray) = handle.tray_by_id("main-tray") {
+    if let Some(tray) = handle.tray_by_id(TRAY_ID) {
         tray.set_menu(Some(menu))?;
     }
     Ok(())
 }
 
 fn apply_tooltip(handle: &AppHandle, tooltip: &str) -> tauri::Result<()> {
-    if let Some(tray) = handle.tray_by_id("main-tray") {
+    if let Some(tray) = handle.tray_by_id(TRAY_ID) {
         tray.set_tooltip(Some(tooltip))?;
     }
     Ok(())

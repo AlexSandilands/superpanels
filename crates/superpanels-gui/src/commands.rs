@@ -27,6 +27,7 @@ pub(crate) mod preview;
 pub(crate) mod profiles;
 pub(crate) mod runtime;
 pub(crate) mod slideshow;
+pub(crate) mod tray;
 
 /// Run `work` on the blocking thread pool. A panicked or cancelled task
 /// surfaces as an internal error instead of poisoning the command channel.
