@@ -39,7 +39,6 @@ fn make_monitor(id: u32, col: u32, row: u32, res: (u32, u32), physical_mm: (u32,
         scale: 1.0,
         rotation: Rotation::None,
         refresh_hz: None,
-        primary: id == 0,
         ppi: None,
     }
 }

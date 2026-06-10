@@ -18,9 +18,8 @@
     imageUrl: string | null;
     imageTransform: ImageTransform;
     onClose: () => void;
-    onSetPrimary: () => void;
   };
-  let { monitor, imageUrl, imageTransform, onClose, onSetPrimary }: Props = $props();
+  let { monitor, imageUrl, imageTransform, onClose }: Props = $props();
 
   const cropInner = $derived({
     leftPct: ((imageTransform.offsetMmX - monitor.xMm) / monitor.wMm) * 100,
@@ -51,9 +50,6 @@
   <div class="flex items-center" style:gap="8px" style:margin-bottom="12px">
     <span class="dot live"></span>
     <div style:font-size="13px" style:font-weight="600">{monitor.name}</div>
-    {#if monitor.primary}
-      <span class="chip active">PRIMARY</span>
-    {/if}
     <button
       class="btn ghost icon sm"
       style:margin-left="auto"
@@ -146,12 +142,6 @@
       />
     </div>
   </div>
-
-  {#if !monitor.primary}
-    <div class="flex" style:gap="6px" style:margin-top="14px">
-      <button class="btn sm" style:margin-left="auto" onclick={onSetPrimary}>Set as primary</button>
-    </div>
-  {/if}
 </div>
 
 <style>

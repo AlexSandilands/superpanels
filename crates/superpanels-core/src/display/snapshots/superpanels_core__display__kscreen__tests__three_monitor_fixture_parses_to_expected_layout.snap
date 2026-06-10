@@ -25,7 +25,6 @@ expression: monitors
         refresh_hz: Some(
             155.0,
         ),
-        primary: true,
         ppi: None,
     },
     Monitor {
@@ -50,7 +49,6 @@ expression: monitors
         refresh_hz: Some(
             279.96,
         ),
-        primary: false,
         ppi: None,
     },
     Monitor {
@@ -75,7 +73,6 @@ expression: monitors
         refresh_hz: Some(
             155.0,
         ),
-        primary: false,
         ppi: None,
     },
 ]

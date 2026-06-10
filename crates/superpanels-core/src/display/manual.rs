@@ -79,7 +79,6 @@ fn parse_one(entry: &str, idx: usize) -> Result<Monitor, DetectError> {
         scale,
         rotation,
         refresh_hz: None,
-        primary: false,
         ppi,
     })
 }
@@ -170,7 +169,6 @@ mod tests {
         assert_eq!(monitors[0].ppi, None);
         assert_eq!(monitors[0].name, "manual-0");
         assert_eq!(monitors[0].stable_id, None);
-        assert!(!monitors[0].primary);
     }
 
     #[test]

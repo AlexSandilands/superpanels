@@ -34,7 +34,6 @@ fn monitor(id: u32, name: &str, x: i32, w_px: u32, h_px: u32, w_mm: u32, h_mm: u
         scale: 1.0,
         rotation: Rotation::None,
         refresh_hz: None,
-        primary: id == 0,
         ppi: None,
     }
 }

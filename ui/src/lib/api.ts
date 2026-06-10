@@ -27,7 +27,6 @@ export type Monitor = {
   scale: number;
   rotation: 'none' | 'right' | 'inverted' | 'left';
   refresh_hz: number | null;
-  primary: boolean;
   ppi: number | null;
 };
 

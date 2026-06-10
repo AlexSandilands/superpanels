@@ -57,8 +57,6 @@ struct RawMonitor {
     transform: u8,
     #[serde(default)]
     serial: Option<String>,
-    #[serde(default, rename = "focused")]
-    focused: bool,
     #[serde(default)]
     disabled: bool,
 }
@@ -102,7 +100,6 @@ pub(crate) fn parse_hyprctl_json(
             scale: output.scale.unwrap_or(1.0),
             rotation,
             refresh_hz,
-            primary: output.focused,
             ppi: None,
         });
         next_id = next_id.saturating_add(1);
@@ -139,11 +136,9 @@ mod tests {
         assert_eq!(monitors[0].name, "DP-1");
         assert_eq!(monitors[0].resolution, (2560, 1440));
         assert_eq!(monitors[0].position, (0, 0));
-        assert!(monitors[0].primary);
         assert_eq!(monitors[1].name, "HDMI-A-1");
         assert_eq!(monitors[1].resolution, (1920, 1080));
         assert_eq!(monitors[1].position, (2560, 0));
-        assert!(!monitors[1].primary);
     }
 
     #[test]

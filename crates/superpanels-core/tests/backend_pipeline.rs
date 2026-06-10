@@ -31,7 +31,6 @@ fn monitor(id: u32, name: &str, x: i32) -> Monitor {
         scale: 1.0,
         rotation: Rotation::None,
         refresh_hz: None,
-        primary: id == 0,
         ppi: None,
     }
 }

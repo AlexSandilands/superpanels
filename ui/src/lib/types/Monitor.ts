@@ -27,7 +27,7 @@ resolution: [number, number],
  * don't expose this. `None` until the user fills it in; bezel math
  * returns `LayoutError::PhysicalSizeMissing` until then.
  */
-physical_size_mm: [number, number] | null, scale: number, rotation: Rotation, refresh_hz: number | null, primary: boolean, 
+physical_size_mm: [number, number] | null, scale: number, rotation: Rotation, refresh_hz: number | null, 
 /**
  * Post-rotation, derived from `resolution` and `physical_size_mm`.
  */

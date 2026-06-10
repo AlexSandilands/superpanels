@@ -298,7 +298,6 @@ mod tests {
             scale: 1.0,
             rotation: Rotation::None,
             refresh_hz: None,
-            primary: false,
             ppi: None,
         }
     }
@@ -479,7 +478,6 @@ mod tests {
             scale: 1.0,
             rotation: Rotation::None,
             refresh_hz: None,
-            primary: true,
             ppi: None,
         };
         let portrait = Monitor {
@@ -492,7 +490,6 @@ mod tests {
             scale: 1.0,
             rotation: Rotation::Right,
             refresh_hz: None,
-            primary: false,
             ppi: None,
         };
         let monitors = vec![landscape, portrait];

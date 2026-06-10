@@ -221,7 +221,6 @@ mod tests {
             scale: 1.0,
             rotation: rot,
             refresh_hz: None,
-            primary: true,
             ppi: None,
         }
     }

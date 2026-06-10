@@ -19,7 +19,6 @@ function monitor(over: Partial<Monitor> = {}): Monitor {
     scale: 1,
     rotation: 'none',
     refresh_hz: 60,
-    primary: false,
     ppi: 92,
     ...over,
   };

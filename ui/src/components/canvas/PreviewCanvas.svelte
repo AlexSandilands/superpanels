@@ -385,7 +385,7 @@
         style:color={isSel ? 'var(--accent)' : 'var(--text-2)'}
         style:text-shadow="0 1px 2px oklch(0 0 0 / 0.6)"
       >
-        {m.name}{m.primary ? ' ★' : ''}
+        {m.name}
       </div>
       <div
         class="pointer-events-none mono absolute"

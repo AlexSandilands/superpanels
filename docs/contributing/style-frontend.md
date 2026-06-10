@@ -173,19 +173,19 @@ If a `$derived` belongs visually next to the `$state` it consumes, group them. T
 Markup expressions should be one identifier or a trivial accessor. Anything more goes in a `$derived`. Bad:
 
 ```text
-{monitors.filter(m => m.primary).map(m => m.name).join(', ')}
+{monitors.filter(m => !m.physical_size_mm).map(m => m.name).join(', ')}
 ```
 
 Good:
 
 ```text
 <script>
-  const primaries = $derived(
-    monitors.filter(m => m.primary).map(m => m.name).join(', ')
+  const missingSizes = $derived(
+    monitors.filter(m => !m.physical_size_mm).map(m => m.name).join(', ')
   );
 </script>
 
-{primaries}
+{missingSizes}
 ```
 
 ---

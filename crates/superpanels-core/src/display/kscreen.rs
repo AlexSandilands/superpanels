@@ -154,7 +154,6 @@ struct RawOutput {
     stable_id: Option<String>,
     enabled: bool,
     connected: bool,
-    priority: Option<u32>,
     geometry: Option<Geometry>,
     scale: Option<f64>,
     rotation: Option<Rotation>,
@@ -199,13 +198,7 @@ fn absorb_field(
         _ => {}
     }
 
-    if let Some(pri) = trimmed.strip_prefix("priority ") {
-        let value: u32 = pri.trim().parse().map_err(|e| DetectError::Parse {
-            cmd: cmd_name.to_owned(),
-            message: format!("line {lineno}: invalid priority '{pri}': {e}"),
-        })?;
-        state.priority = Some(value);
-    } else if let Some(rest) = trimmed.strip_prefix("Geometry:") {
+    if let Some(rest) = trimmed.strip_prefix("Geometry:") {
         state.geometry = Some(parse_geometry(rest.trim(), cmd_name, lineno)?);
     } else if let Some(rest) = trimmed.strip_prefix("Scale:") {
         let s: f64 = rest.trim().parse().map_err(|e| DetectError::Parse {
@@ -319,7 +312,6 @@ fn finalize(
         scale: raw.scale.unwrap_or(1.0),
         rotation,
         refresh_hz: raw.refresh_hz,
-        primary: raw.priority == Some(1),
         ppi: None,
     };
     *next_id += 1;
@@ -377,7 +369,6 @@ mod tests {
         assert_eq!(monitors.len(), 1);
         assert_eq!(monitors[0].name, "DP-1");
         assert_eq!(monitors[0].resolution, (1920, 1080));
-        assert!(monitors[0].primary);
     }
 
     #[test]

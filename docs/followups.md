@@ -33,5 +33,3 @@ slideshow images otherwise.
 ## Per Monitor Wallpapers
 
 ## Set icon in taskbar
-
-## Remove everything related to primary monitor

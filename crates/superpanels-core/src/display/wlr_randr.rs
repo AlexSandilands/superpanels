@@ -149,7 +149,6 @@ pub(crate) fn parse_wlr_randr_json(
             scale,
             rotation,
             refresh_hz,
-            primary: false,
             ppi: None,
         });
         next_id = next_id.saturating_add(1);

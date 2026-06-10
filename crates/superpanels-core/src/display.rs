@@ -39,7 +39,6 @@ pub struct Monitor {
     pub scale: f64,
     pub rotation: Rotation,
     pub refresh_hz: Option<f32>,
-    pub primary: bool,
     /// Post-rotation, derived from `resolution` and `physical_size_mm`.
     pub ppi: Option<f64>,
 }
@@ -156,7 +155,6 @@ mod tests {
             scale: 1.0,
             rotation: Rotation::None,
             refresh_hz: Some(60.0),
-            primary: true,
             ppi: physical_size_mm.map(|_| 108.79),
         }
     }

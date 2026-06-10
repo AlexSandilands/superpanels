@@ -277,7 +277,6 @@ fn finalize(
         scale: 1.0,
         rotation: raw.rotation,
         refresh_hz: raw.refresh_hz,
-        primary: false,
         ppi: None,
     };
     *next_id = next_id.saturating_add(1);

@@ -675,11 +675,6 @@
     };
   });
 
-  function setPrimary() {
-    if (!canvasView.selectId) return;
-    toast.info('Primary change is preview-only', 'will not be pushed to compositor');
-  }
-
   // Source dock metadata — lifted from the active draft for display.
   const sourceName = $derived.by(() => {
     if (sourcePath) return sourcePath.split('/').pop() ?? sourcePath;
@@ -803,7 +798,6 @@
       {imageUrl}
       imageTransform={imageTransform.value}
       onClose={() => canvasView.setSelectId(null)}
-      onSetPrimary={setPrimary}
     />
   {/if}
 

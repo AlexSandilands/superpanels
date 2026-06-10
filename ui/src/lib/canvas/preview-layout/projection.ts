@@ -12,7 +12,6 @@ export type PreviewMonitor = {
   name: string;
   model: string;
   refreshHz: number | null;
-  primary: boolean;
   rotation: 0 | 90 | 180 | 270;
   // Native (un-rotated) physical dims in mm.
   nativeWmm: number;
@@ -99,7 +98,6 @@ export function buildPreviewMonitors(
       name: m.name,
       model: '',
       refreshHz: m.refresh_hz,
-      primary: m.primary,
       rotation: rot,
       nativeWmm: nm.w,
       nativeHmm: nm.h,

@@ -34,7 +34,6 @@
       <div style:flex="1">
         <div style:font-size="13px" style:font-weight="600" style:display="flex" style:gap="8px">
           {m.name}
-          {#if m.primary}<span class="chip active">PRIMARY</span>{/if}
         </div>
         <div class="mono" style:font-size="11px" style:color="var(--text-3)" style:margin-top="2px">
           {m.resolution[0]}×{m.resolution[1]}{m.refresh_hz ? ` @ ${m.refresh_hz}Hz` : ''}

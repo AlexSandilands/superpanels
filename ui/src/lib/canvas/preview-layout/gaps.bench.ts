@@ -12,7 +12,6 @@ function pm(id: string, x: number, y: number, w = 500, h = 300): PreviewMonitor 
     name: id,
     model: '',
     refreshHz: 60,
-    primary: false,
     rotation: 0,
     nativeWmm: w,
     nativeHmm: h,

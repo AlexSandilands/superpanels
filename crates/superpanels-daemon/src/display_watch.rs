@@ -164,7 +164,6 @@ mod tests {
             scale: 1.0,
             rotation: Rotation::None,
             refresh_hz: None,
-            primary: true,
             ppi: None,
         }
     }

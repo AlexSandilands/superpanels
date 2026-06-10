@@ -25,7 +25,6 @@ expression: monitors
         refresh_hz: Some(
             60.0,
         ),
-        primary: true,
         ppi: None,
     },
 ]

@@ -8,7 +8,6 @@ function pm(over: Partial<PreviewMonitor> & { id: string }): PreviewMonitor {
     name: over.id,
     model: '',
     refreshHz: 60,
-    primary: false,
     rotation: 0,
     nativeWmm: over.wMm ?? 500,
     nativeHmm: over.hMm ?? 300,
