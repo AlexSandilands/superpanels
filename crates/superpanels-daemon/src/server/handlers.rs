@@ -108,6 +108,7 @@ pub(super) async fn cmd_rename_profile(
     let active_renamed = guard.active_profile.as_deref() == Some(old);
     if active_renamed {
         guard.active_profile = Some(new_name.to_owned());
+        super::helpers::persist_resume(&guard);
     }
     if let Err(e) = guard.config.save_to(&path) {
         return IpcResponse::failure(e.to_string());

@@ -5,6 +5,7 @@
 
 import { api, errorMessage, type Profile } from '$lib/api';
 import { defaultSlideshowConfig, isSpanBody, type SpanSource } from '$lib/types/profile-helpers';
+import { runtime as runtimeStore } from './runtime.svelte';
 import { toast } from './toast.svelte';
 
 let profiles = $state<Profile[]>([]);
@@ -48,6 +49,12 @@ export const profileStore = {
       const list = resp.profiles;
       profiles = list;
       activeName = runtime.active_profile;
+      if (runtime.last_apply_backend && runtime.last_apply_unix_secs) {
+        runtimeStore.seedFromDaemon(
+          runtime.last_apply_backend,
+          runtime.last_apply_unix_secs * 1000,
+        );
+      }
       // Don't clobber an in-progress edit. If the user has unsaved changes
       // (including a brand-new untitled profile that hasn't been saved yet),
       // leave the editor alone — refresh is just keeping the *list* current.

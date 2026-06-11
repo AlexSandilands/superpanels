@@ -51,8 +51,8 @@ pub struct Config {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../ui/src/lib/types/")]
 pub struct GeneralConfig {
-    /// Profile to apply on daemon start when `state.toml` has no
-    /// `active_profile` recorded; `None` means do nothing.
+    /// Profile to apply on daemon start, overriding the resumed last-active
+    /// profile from `resume-state.json`; `None` resumes (or does nothing).
     #[serde(default)]
     pub default_profile: Option<String>,
     #[serde(default)]

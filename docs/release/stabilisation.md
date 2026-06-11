@@ -12,10 +12,10 @@ The list of things that have to be true before Superpanels claims a 1.0. Updated
 
 ## Schema freeze
 
-- [ ] Audit `Config`, `Profile`, `state.toml`, `library.db` schemas; make any pending changes.
+- [ ] Audit `Config`, `Profile`, `resume-state.json`, `library.db` schemas; make any pending changes.
 - [ ] Tag the schemas as `v1`. Future changes require migrations, not breakage.
 
-Current state: `library.db` carries `PRAGMA user_version` and runs migrations on startup. `state.toml` is loose JSON-ish. `config.toml` has no explicit version field. Add one before freeze so we can detect downgrades.
+Current state: `library.db` carries `PRAGMA user_version` and runs migrations on startup. `resume-state.json` has no version field (additive fields use serde defaults). `config.toml` has no explicit version field. Add one before freeze so we can detect downgrades.
 
 ## Performance enforcement
 

@@ -35,10 +35,16 @@ pub(super) fn init_picker_if_needed(state: &mut DaemonState, profile_name: &str)
     state.slideshow_picker = Some(SlideshowPicker::new(picker_cfg));
 }
 
-pub(super) async fn update_active_profile(state: &Arc<Mutex<DaemonState>>, name: &str) {
+pub(super) async fn update_active_profile(
+    state: &Arc<Mutex<DaemonState>>,
+    name: &str,
+    backend: &str,
+) {
     let mut guard = state.lock().await;
     guard.active_profile = Some(name.to_owned());
+    guard.last_apply_backend = Some(backend.to_owned());
     guard.last_apply_unix_secs = Some(DaemonState::now_unix_secs());
+    persist_resume(&guard);
     // A leftover picker would keep `current_state` reporting a slideshow
     // (with stale pool/counter data) after switching to a non-slideshow.
     let is_slideshow = guard.config.profiles.iter().any(|p| {
@@ -68,6 +74,25 @@ pub(super) async fn update_active_profile(state: &Arc<Mutex<DaemonState>>, name:
         if let Err(e) = guard.config.save_to(&path) {
             tracing::warn!(error = %e, "could not persist last_applied_at");
         }
+    }
+}
+
+/// Best-effort write of the resume file so a daemon restart lands back on the
+/// current profile. Failure only warns — the apply itself already succeeded.
+pub(super) fn persist_resume(state: &DaemonState) {
+    let (Some(path), Some(active)) = (
+        state.resume_path.as_deref(),
+        state.active_profile.as_deref(),
+    ) else {
+        return;
+    };
+    let resume = superpanels_core::resume::ResumeState {
+        active_profile: active.to_owned(),
+        last_apply_backend: state.last_apply_backend.clone(),
+        last_apply_unix_secs: state.last_apply_unix_secs,
+    };
+    if let Err(e) = superpanels_core::resume::save(&resume, path) {
+        tracing::warn!(error = %e, "could not persist resume state");
     }
 }
 
@@ -105,4 +130,38 @@ pub(super) fn applied_json(report: &AppliedReport) -> serde_json::Value {
         "backend": report.backend,
         "elapsed_ms": report.duration.as_millis(),
     })
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)] // reason: tests fail loudly on harness errors
+mod tests {
+    use super::*;
+    use superpanels_core::config::Config;
+    use superpanels_core::resume;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn update_active_profile_persists_resume_state() {
+        let dir = tempdir().unwrap();
+        let resume_path = dir.path().join("resume-state.json");
+        let mut ds = DaemonState::for_tests(Config::default());
+        ds.resume_path = Some(resume_path.clone());
+        let state = Arc::new(Mutex::new(ds));
+
+        update_active_profile(&state, "Lofi", "kde").await;
+
+        let saved = resume::load(&resume_path).unwrap().unwrap();
+        assert_eq!(saved.active_profile, "Lofi");
+        assert_eq!(saved.last_apply_backend.as_deref(), Some("kde"));
+        assert!(saved.last_apply_unix_secs.is_some());
+    }
+
+    #[tokio::test]
+    async fn update_active_profile_without_resume_path_skips_persist() {
+        let state = Arc::new(Mutex::new(DaemonState::for_tests(Config::default())));
+        update_active_profile(&state, "Lofi", "kde").await;
+        let guard = state.lock().await;
+        assert_eq!(guard.active_profile.as_deref(), Some("Lofi"));
+        assert_eq!(guard.last_apply_backend.as_deref(), Some("kde"));
+    }
 }

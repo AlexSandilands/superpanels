@@ -9,6 +9,7 @@ pub mod image;
 pub mod ipc;
 pub mod layout;
 pub mod library;
+pub mod resume;
 pub mod schedule;
 pub mod slideshow;
 pub mod validity;

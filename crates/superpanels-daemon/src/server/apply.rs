@@ -106,7 +106,7 @@ pub(super) async fn cmd_apply_profile(
             Ok(Err(e)) => return IpcResponse::failure(format!("{e:#}")),
             Err(e) => return IpcResponse::failure(format!("task panic: {e}")),
         };
-        update_active_profile(&state, &name).await;
+        update_active_profile(&state, &name, report.backend).await;
         restart_timer(&state, &timer_tx).await;
         return IpcResponse::success(applied_json(&report));
     }
@@ -156,7 +156,7 @@ pub(super) async fn cmd_apply_profile(
         Err(e) => return IpcResponse::failure(format!("task panic: {e}")),
     };
 
-    update_active_profile(&state, &name).await;
+    update_active_profile(&state, &name, report.backend).await;
     restart_timer(&state, &timer_tx).await;
     IpcResponse::success(applied_json(&report))
 }
@@ -211,7 +211,7 @@ pub(super) async fn cmd_apply_canvas(
             Err(e) => return IpcResponse::failure(format!("task panic: {e}")),
         };
         if let Some(name) = active_name.as_deref() {
-            update_active_profile(&state, name).await;
+            update_active_profile(&state, name, report.backend).await;
             restart_timer(&state, &timer_tx).await;
         }
         return IpcResponse::success(applied_json(&report));
@@ -263,7 +263,7 @@ pub(super) async fn cmd_apply_canvas(
     };
 
     if let Some(name) = active_name.as_deref() {
-        update_active_profile(&state, name).await;
+        update_active_profile(&state, name, report.backend).await;
         restart_timer(&state, &timer_tx).await;
     }
     IpcResponse::success(applied_json(&report))

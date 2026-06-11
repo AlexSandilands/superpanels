@@ -2,7 +2,7 @@
 
 export type GeneralConfig = { 
 /**
- * Profile to apply on daemon start when `state.toml` has no
- * `active_profile` recorded; `None` means do nothing.
+ * Profile to apply on daemon start, overriding the resumed last-active
+ * profile from `resume-state.json`; `None` resumes (or does nothing).
  */
 default_profile: string | null, autostart: boolean, notifications: string, theme: string, };

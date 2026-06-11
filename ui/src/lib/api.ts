@@ -54,6 +54,7 @@ export type RuntimeState = {
     pool_len: number | null;
   } | null;
   last_apply_unix_secs: number | null;
+  last_apply_backend?: string | null;
 };
 
 export type TrayIconStyle = 'white' | 'blue';

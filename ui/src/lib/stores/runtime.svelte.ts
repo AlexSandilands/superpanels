@@ -4,8 +4,9 @@
 
 export type ApplyMeta = {
   backend: string;
-  elapsedMs: number;
-  monitorsSet: number;
+  /** Null when seeded from daemon state — only session applies report these. */
+  elapsedMs: number | null;
+  monitorsSet: number | null;
   at: number;
 };
 
@@ -37,6 +38,14 @@ export const runtime = {
     last = meta;
     flashKey += 1;
     flashAt = meta.at;
+  },
+  /** Seed the pill from daemon `current_state` (launch, tray/CLI applies)
+   *  without triggering the apply flash. A session apply wins unless the
+   *  daemon's apply is clearly newer — the margin absorbs clock skew between
+   *  `Date.now()` and the daemon's unix-seconds stamp. */
+  seedFromDaemon(backend: string, atMs: number) {
+    if (last && atMs <= last.at + 5000) return;
+    last = { backend, elapsedMs: null, monitorsSet: null, at: atMs };
   },
   describeLastApply(now: number = Date.now()): string {
     return last ? formatRelative(now - last.at) : '—';

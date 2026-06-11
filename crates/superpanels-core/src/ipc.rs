@@ -66,6 +66,9 @@ pub struct RuntimeState {
     pub slideshow: Option<SlideshowSummary>,
     /// Unix seconds of the most recent successful apply; `None` if never applied.
     pub last_apply_unix_secs: Option<u64>,
+    /// Backend that served the most recent apply; `None` if never applied.
+    #[serde(default)]
+    pub last_apply_backend: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

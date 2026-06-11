@@ -152,9 +152,26 @@ async fn run_daemon(cli: Cli) -> Result<()> {
 
     let mut daemon_state = DaemonState::load(cli.config.as_deref())?;
 
-    // If a default profile is configured, restore its slideshow picker from disk
-    // so history and sort order survive a restart, then apply it at startup.
-    let initial_profile = daemon_state.config.general.default_profile.clone();
+    // Resume where the user left off: an explicit `default_profile` wins,
+    // otherwise the persisted last-active profile from the previous run.
+    let resume = daemon_state.resume_path.as_deref().and_then(|p| {
+        superpanels_core::resume::load(p).unwrap_or_else(|e| {
+            warn!(error = %e, "ignoring unreadable resume state");
+            None
+        })
+    });
+    let initial_profile = choose_initial_profile(&daemon_state.config, resume.as_ref());
+    if let Some(r) = resume {
+        // Seed apply metadata immediately — the wallpaper from the previous
+        // run is still on screen (compositors persist it), so `current_state`
+        // should reflect it even before the startup re-apply lands.
+        daemon_state.active_profile = initial_profile.clone();
+        daemon_state.last_apply_backend = r.last_apply_backend;
+        daemon_state.last_apply_unix_secs = r.last_apply_unix_secs;
+    }
+
+    // Restore the initial profile's slideshow picker from disk so history and
+    // sort order survive a restart, then apply it at startup.
     if let Some(ref name) = initial_profile {
         if let Some(dir) = DaemonState::state_dir() {
             daemon_state.restore_slideshow(name, &dir.join("slideshow-state.json"));
@@ -321,6 +338,21 @@ async fn bind_exclusive(path: &std::path::Path) -> Result<UnixListener> {
     Ok(UnixListener::bind(path)?)
 }
 
+/// Startup profile: an explicit `default_profile` is honoured unconditionally
+/// (a not-found apply error is more actionable than a silent skip); a resumed
+/// last-active profile must still exist in config, since a stale resume file
+/// would otherwise warn on every boot.
+fn choose_initial_profile(
+    config: &superpanels_core::config::Config,
+    resume: Option<&superpanels_core::resume::ResumeState>,
+) -> Option<String> {
+    config.general.default_profile.clone().or_else(|| {
+        resume
+            .map(|r| r.active_profile.clone())
+            .filter(|name| config.profiles.iter().any(|p| p.name == *name))
+    })
+}
+
 /// Re-exec the daemon in the foreground via a child process.
 fn daemonize(cli: &Cli) -> Result<()> {
     let exe = std::env::current_exe().context("resolving current executable")?;
@@ -364,4 +396,75 @@ fn init_tracing(verbose: u8, quiet: bool) {
         .with_env_filter(filter)
         .with_writer(std::io::stderr)
         .try_init();
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)] // reason: tests fail loudly on harness errors
+mod tests {
+    use super::*;
+    use superpanels_core::config::Config;
+    use superpanels_core::resume::ResumeState;
+
+    fn resume(name: &str) -> ResumeState {
+        ResumeState {
+            active_profile: name.to_owned(),
+            last_apply_backend: None,
+            last_apply_unix_secs: None,
+        }
+    }
+
+    fn config_with_profile(name: &str) -> Config {
+        use std::collections::HashMap;
+        use superpanels_core::TopologyFingerprint;
+        use superpanels_core::config::{Profile, ProfileBody, SpanProfile, SpanSource};
+        use superpanels_core::layout::ImageRectMm;
+
+        let now = superpanels_core::config::now_timestamp();
+        let mut cfg = Config::default();
+        cfg.profiles.push(Profile {
+            name: name.to_owned(),
+            body: ProfileBody::Span(SpanProfile {
+                source: SpanSource::Single {
+                    path: "/img.png".into(),
+                },
+                image_rect_mm: ImageRectMm::default(),
+            }),
+            monitor_state: HashMap::new(),
+            topology: TopologyFingerprint(String::new()),
+            description: None,
+            created_at: now,
+            updated_at: now,
+            last_applied_at: None,
+            backend_override: None,
+        });
+        cfg
+    }
+
+    #[test]
+    fn default_profile_wins_over_resume() {
+        let mut cfg = config_with_profile("resumed");
+        cfg.general.default_profile = Some("explicit".to_owned());
+        let got = choose_initial_profile(&cfg, Some(&resume("resumed")));
+        assert_eq!(got.as_deref(), Some("explicit"));
+    }
+
+    #[test]
+    fn resume_used_when_no_default_profile() {
+        let cfg = config_with_profile("resumed");
+        let got = choose_initial_profile(&cfg, Some(&resume("resumed")));
+        assert_eq!(got.as_deref(), Some("resumed"));
+    }
+
+    #[test]
+    fn stale_resume_profile_is_dropped() {
+        let cfg = config_with_profile("other");
+        let got = choose_initial_profile(&cfg, Some(&resume("deleted")));
+        assert_eq!(got, None);
+    }
+
+    #[test]
+    fn no_default_and_no_resume_yields_none() {
+        let got = choose_initial_profile(&Config::default(), None);
+        assert_eq!(got, None);
+    }
 }

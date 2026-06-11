@@ -35,6 +35,12 @@ pub(crate) struct DaemonState {
     /// opened — the daemon still serves library reads from the cached vector.
     pub library_db: Option<LibraryDb>,
     pub active_profile: Option<String>,
+    /// Backend that served the most recent apply, for `current_state` and the
+    /// persisted resume file.
+    pub last_apply_backend: Option<String>,
+    /// Where to persist [`superpanels_core::resume::ResumeState`] after each
+    /// apply. `None` disables persistence (no resolvable state dir, tests).
+    pub resume_path: Option<PathBuf>,
     /// Picker for the currently active profile's slideshow; `None` when the
     /// active profile has no slideshow source.
     pub slideshow_picker: Option<SlideshowPicker>,
@@ -88,6 +94,8 @@ impl DaemonState {
             library,
             library_db,
             active_profile: None,
+            last_apply_backend: None,
+            resume_path: superpanels_core::resume::resume_path(),
             slideshow_picker: None,
             slideshow_next_fire_unix: None,
             slideshow_pool_len: None,
@@ -167,6 +175,7 @@ impl DaemonState {
             active_profile: self.active_profile.clone(),
             slideshow,
             last_apply_unix_secs: self.last_apply_unix_secs,
+            last_apply_backend: self.last_apply_backend.clone(),
         }
     }
 
@@ -256,19 +265,7 @@ impl DaemonState {
 
     /// State-dir path: `$XDG_STATE_HOME/superpanels/` (or `~/.local/state/superpanels/`).
     pub(crate) fn state_dir() -> Option<PathBuf> {
-        if let Ok(dir) = std::env::var("XDG_STATE_HOME") {
-            let p = PathBuf::from(dir);
-            if !p.as_os_str().is_empty() {
-                return Some(p.join("superpanels"));
-            }
-        }
-        let home = std::env::var_os("HOME")?;
-        Some(
-            PathBuf::from(home)
-                .join(".local")
-                .join("state")
-                .join("superpanels"),
-        )
+        superpanels_core::resume::state_dir()
     }
 }
 
@@ -284,6 +281,8 @@ impl DaemonState {
             library: Vec::new(),
             library_db: None,
             active_profile: None,
+            last_apply_backend: None,
+            resume_path: None,
             slideshow_picker: None,
             slideshow_next_fire_unix: None,
             slideshow_pool_len: None,

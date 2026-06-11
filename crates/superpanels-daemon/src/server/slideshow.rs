@@ -89,7 +89,7 @@ pub(super) async fn cmd_slideshow_advance(
         Err(e) => return IpcResponse::failure(format!("task panic: {e}")),
     };
 
-    update_active_profile(&state, &name).await;
+    update_active_profile(&state, &name, report.backend).await;
     restart_timer(&state, &timer_tx).await;
     IpcResponse::success(applied_json(&report))
 }

@@ -618,15 +618,28 @@
     });
   }
 
+  // Cold-start canvas seeding: pull the active profile's placements (monitor
+  // gaps) and single-source rect into the canvas. An effect rather than a
+  // one-shot in onMount because the first `current_state` polls can race the
+  // daemon's own startup restore (it re-applies its resume/default profile
+  // shortly after boot) — the active profile may only arrive a poll later.
+  // Unconditional on the first active: `seedOverridesFromMonitors` fills
+  // overrides with zero-gap defaults as soon as detection lands, so the
+  // canvas is never "untouched" to test against — and the seed merges over
+  // those defaults safely in either arrival order. Guarding on `canvasDirty`
+  // is circular: an unseeded canvas always diffs dirty against its profile.
+  let canvasSeeded = false;
+  $effect(() => {
+    const active = profileStore.activeProfile;
+    if (canvasSeeded || !active) return;
+    canvasSeeded = true;
+    applyMonitorStateToCanvas(active);
+  });
+
   onMount(() => {
     void monitorStore.refresh();
     void profileStore.refresh().then(() => {
       void slideshowController.refresh();
-      // Cold start: pull the active profile's placements (monitor gaps) and
-      // single-source rect into the canvas — nothing else seeds them until
-      // the user switches profiles.
-      const active = profileStore.activeProfile;
-      if (active) applyMonitorStateToCanvas(active);
     });
     void libraryStore.refresh();
 
@@ -672,7 +685,12 @@
     }
 
     window.addEventListener('keydown', onKey);
-    void daemonStatus.probe();
+    void daemonStatus.probe().then(() => {
+      // Bring up the daemon when it isn't running — Apply and slideshow
+      // control have no in-process fallback, and a daemon restored this way
+      // resumes the last-active profile by itself.
+      if (!daemonStatus.connected) void daemonStatus.start();
+    });
     const interval = window.setInterval(() => {
       void profileStore.refresh();
       void slideshowController.refresh();

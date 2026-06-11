@@ -279,11 +279,28 @@ fn set_monitor_physical_size(params: &Value, config_path: Option<&Path>) -> Call
 }
 
 fn current_state() -> Value {
+    // No daemon to ask, but the previous run's resume file still describes
+    // what's on screen — compositors persist the wallpaper across sessions.
+    let resume = superpanels_core::resume::resume_path()
+        .and_then(|p| superpanels_core::resume::load(&p).ok().flatten());
+    current_state_from(resume)
+}
+
+fn current_state_from(resume: Option<superpanels_core::resume::ResumeState>) -> Value {
+    let (active, secs, backend) = match resume {
+        Some(r) => (
+            Value::from(r.active_profile),
+            r.last_apply_unix_secs.map_or(Value::Null, Value::from),
+            r.last_apply_backend.map_or(Value::Null, Value::from),
+        ),
+        None => (Value::Null, Value::Null, Value::Null),
+    };
     json!({
-        "version": 1,
-        "active_profile": Value::Null,
+        "version": superpanels_core::ipc::PROTOCOL_VERSION,
+        "active_profile": active,
         "slideshow": Value::Null,
-        "last_apply_unix_secs": Value::Null,
+        "last_apply_unix_secs": secs,
+        "last_apply_backend": backend,
     })
 }
 
@@ -336,9 +353,24 @@ mod tests {
     }
 
     #[test]
-    fn current_state_returns_null_fields_in_process() {
-        let v = current_state();
+    fn current_state_without_resume_returns_null_fields() {
+        let v = current_state_from(None);
         assert_eq!(v["active_profile"], Value::Null);
+        assert_eq!(v["slideshow"], Value::Null);
+        assert_eq!(v["last_apply_backend"], Value::Null);
+    }
+
+    #[test]
+    fn current_state_reports_resumed_profile() {
+        let v = current_state_from(Some(superpanels_core::resume::ResumeState {
+            active_profile: "Lofi".to_owned(),
+            last_apply_backend: Some("kde".to_owned()),
+            last_apply_unix_secs: Some(1_781_213_342),
+        }));
+        assert_eq!(v["active_profile"], "Lofi");
+        assert_eq!(v["last_apply_backend"], "kde");
+        assert_eq!(v["last_apply_unix_secs"], 1_781_213_342);
+        // No daemon means no live slideshow state, resumed or not.
         assert_eq!(v["slideshow"], Value::Null);
     }
 

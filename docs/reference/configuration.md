@@ -9,7 +9,7 @@ Reference for the on-disk files Superpanels reads and writes. Code: [`crates/sup
 | Config | `$XDG_CONFIG_HOME/superpanels/config.toml` | user-edited or written by GUI |
 | Library DB | `$XDG_DATA_HOME/superpanels/library.db` | daemon (SQLite, schema-versioned) |
 | Slideshow state | `$XDG_STATE_HOME/superpanels/slideshow-state.json` | daemon |
-| Last-applied state | `$XDG_STATE_HOME/superpanels/state.toml` | daemon |
+| Resume state | `$XDG_STATE_HOME/superpanels/resume-state.json` | daemon (read by GUI as fallback) |
 | Window geometry | `$XDG_STATE_HOME/superpanels/window.json` | GUI on window close |
 | Tray icon style | `$XDG_STATE_HOME/superpanels/tray.json` | GUI (Settings → Appearance) |
 | Autostart desktop | `$XDG_CONFIG_HOME/autostart/superpanels.desktop` | GUI when autostart is on |
@@ -199,7 +199,7 @@ SQLite at `$XDG_DATA_HOME/superpanels/library.db`. Schema versioned via `PRAGMA 
 
 ## State files
 
-`state.toml` and `slideshow-state.json` record the active profile, slideshow position/history, last-apply timestamp. **Never** per-monitor temp file paths — those are wiped at the start of each apply, so persisting them would always be stale. If the daemon needs to repaint after re-detection, it re-runs the pipeline from the source.
+`resume-state.json` (`superpanels-core/src/resume.rs`) records the active profile, last-apply backend, and last-apply timestamp; the daemon rewrites it on every successful apply and restores it at startup — `general.default_profile`, when set, overrides the resumed profile. The GUI's in-process `current_state` fallback reads the same file so a daemon-less launch still lands on the last profile. `slideshow-state.json` records slideshow position/history. **Never** persist per-monitor temp file paths — those are wiped at the start of each apply, so persisting them would always be stale. If the daemon needs to repaint after re-detection, it re-runs the pipeline from the source.
 
 `window.json` (window geometry) and `tray.json` (tray icon style: `white` or `blue`) are GUI-only and read at launch, before the webview loads — which is why the tray style lives here rather than in the frontend's localStorage. Missing or malformed files fall back to defaults.
 
