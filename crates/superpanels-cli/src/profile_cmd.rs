@@ -11,16 +11,17 @@ use serde_json::json;
 use std::collections::HashMap;
 use superpanels_core::backends::detect_backend;
 use superpanels_core::config::{
-    BackendKind, Config, PerMonitorAssignment, Profile, ProfileBody, SpanSource,
+    BackendKind, CompositeLayer, Config, PerMonitorAssignment, Profile, ProfileBody, SpanSource,
 };
 use superpanels_core::detect;
 use superpanels_core::display::{Monitor, MonitorRef};
 use superpanels_core::image::{
-    FitMode as ImageFitMode, clear_temp_dir, load, render_slice, save_temp, scale_to_fit,
+    FitMode as ImageFitMode, clear_temp_dir, load, render_composite, render_slice, save_temp,
+    scale_to_fit,
 };
 use superpanels_core::layout::{
-    FitMode as LayoutFitMode, ImageRectMm, compute_crop_specs, cover_image_rect_mm,
-    synthesise_placements,
+    FitMode as LayoutFitMode, ImageRectMm, compute_composite_crop_specs, compute_crop_specs,
+    cover_image_rect_mm, synthesise_placements,
 };
 use superpanels_core::schedule::MonitorPlacement;
 use tracing::{info, warn};
@@ -115,6 +116,15 @@ pub(crate) fn apply_cmd(
                 &pm.assignments,
                 &monitors,
                 pm.fit,
+                backend_kind,
+                &custom_cmd,
+            )?;
+        }
+        ProfileBody::Composite(composite) => {
+            run_composite_apply(
+                &composite.layers,
+                &monitors,
+                &profile.monitor_state,
                 backend_kind,
                 &custom_cmd,
             )?;
@@ -276,6 +286,70 @@ fn run_span_apply(
         // Save at canvas/post-rotation dims; backends paint into the
         // rotated framebuffer themselves (memory: KDE wallpaper orientation).
         let composed = render_slice(&source, spec)?;
+        let safe = sanitise_filename(&monitor.name);
+        let path = save_temp(&composed, &format!("{safe}-{token}.png"))?;
+        assignments.push((monitor_ref(monitor), path));
+    }
+    backend.apply(&assignments).context("backend apply")?;
+    Ok(())
+}
+
+fn run_composite_apply(
+    layers: &[CompositeLayer],
+    monitors: &[Monitor],
+    placements: &HashMap<String, MonitorPlacement>,
+    backend_kind: BackendKind,
+    custom_cmd: &str,
+) -> Result<()> {
+    let synth;
+    let p: &HashMap<String, MonitorPlacement> = if placements.is_empty() {
+        synth = synthesise_placements(monitors);
+        &synth
+    } else {
+        placements
+    };
+    let mut images = Vec::new();
+    let mut by_path: HashMap<PathBuf, usize> = HashMap::with_capacity(layers.len());
+    let mut layer_image = Vec::with_capacity(layers.len());
+    for layer in layers {
+        let idx = if let Some(&i) = by_path.get(&layer.path) {
+            i
+        } else {
+            let img =
+                load(&layer.path).with_context(|| format!("loading {}", layer.path.display()))?;
+            let i = images.len();
+            images.push(img);
+            by_path.insert(layer.path.clone(), i);
+            i
+        };
+        layer_image.push(idx);
+    }
+    let layer_inputs: Vec<((u32, u32), ImageRectMm)> = layers
+        .iter()
+        .enumerate()
+        .map(|(i, layer)| {
+            let img = &images[layer_image[i]];
+            ((img.width(), img.height()), layer.image_rect_mm)
+        })
+        .collect();
+    let composites = compute_composite_crop_specs(monitors, p, &layer_inputs)?;
+    let backend = detect_backend(backend_kind, custom_cmd);
+    clear_temp_dir()?;
+    let token = apply_token();
+    let mut assignments: Vec<(MonitorRef, PathBuf)> = Vec::with_capacity(composites.len());
+    for comp in &composites {
+        let monitor = monitors
+            .iter()
+            .find(|m| m.id == comp.monitor_id)
+            .ok_or_else(|| {
+                anyhow::anyhow!("crop spec references unknown monitor {:?}", comp.monitor_id)
+            })?;
+        let layer_refs: Vec<_> = comp
+            .slices
+            .iter()
+            .map(|s| (&images[layer_image[s.layer]], &s.spec))
+            .collect();
+        let composed = render_composite(&layer_refs, comp.dst_size)?;
         let safe = sanitise_filename(&monitor.name);
         let path = save_temp(&composed, &format!("{safe}-{token}.png"))?;
         assignments.push((monitor_ref(monitor), path));

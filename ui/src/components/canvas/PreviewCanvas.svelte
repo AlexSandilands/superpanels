@@ -1,9 +1,12 @@
-<!-- reason: coherent rendering+hit-test surface; geometry is shared by draw and hit-test, further splitting would fragment a single concern -->
+<!-- reason: one coherent rendering + hit-test surface. Projection geometry is
+     shared by drawing and unified pointer hit-testing across monitors, the span
+     image, and composite layers; splitting hit-test from projection would
+     fragment a single concern. Visual sub-surfaces live in Canvas*.svelte. -->
 <script lang="ts">
-  // Bezel-aware monitor preview canvas. Free-positioning model: the source
-  // image floats in mm-space and monitors are crop windows that hover over
-  // it. Unified hit-testing — drag a monitor to rearrange (preview override),
-  // drag the image to pan, drag the empty stage to pan the view.
+  // Bezel-aware monitor preview canvas. Free-positioning model: source images
+  // float in mm-space and monitors are crop windows hovering over them. Single
+  // image (span) or several (composite) — unified hit-testing routes drags to a
+  // monitor (rearrange), an image/layer (pan), a resize handle, or the stage.
 
   import { onMount } from 'svelte';
   import type { Monitor } from '$lib/api';
@@ -18,15 +21,14 @@
     type PreviewMonitor,
   } from '$lib/canvas/preview-layout';
   import { createDragController } from '$lib/canvas/drag.svelte';
+  import { cursorFor, hitTest, type Hit } from '$lib/canvas/hit-test';
+  import type { ImageTransform } from '$lib/stores/image-transform.svelte';
+  import type { CanvasLayer } from '$lib/stores/canvas-layers.svelte';
   import CanvasGrid from './CanvasGrid.svelte';
+  import CanvasMonitors from './CanvasMonitors.svelte';
+  import CanvasSpanImage from './CanvasSpanImage.svelte';
+  import CanvasImageLayers from './CanvasImageLayers.svelte';
   import DimensionLines from './DimensionLines.svelte';
-
-  type ImageTransform = {
-    offsetMmX: number;
-    offsetMmY: number;
-    widthMm: number;
-    heightMm: number;
-  };
 
   type Props = {
     monitors: Monitor[];
@@ -35,6 +37,12 @@
     imageTransform: ImageTransform;
     onImageTransformChange: (next: ImageTransform) => void;
     onMonitorDrop?: (monitorId: string, path: string) => void;
+    // Composite mode — non-empty `layers` switches the canvas from the single
+    // span image to a stack of independently-draggable, removable layers.
+    layers?: CanvasLayer[];
+    onLayerTransformChange?: (id: string, next: ImageTransform) => void;
+    onLayerRemove?: (id: string) => void;
+    onLayerSelect?: (id: string) => void;
   };
 
   let {
@@ -44,7 +52,13 @@
     imageTransform,
     onImageTransformChange,
     onMonitorDrop,
+    layers = [],
+    onLayerTransformChange,
+    onLayerRemove,
+    onLayerSelect,
   }: Props = $props();
+
+  const compositeMode = $derived(layers.length > 0);
 
   let stageEl: HTMLDivElement | undefined = $state();
   let stageW = $state(1200);
@@ -52,6 +66,7 @@
 
   let tip = $state<{ x: number; y: number; m: PreviewMonitor } | null>(null);
   let dropHover = $state<string | null>(null);
+  let hoverLayerId = $state<string | null>(null);
   // Click-vs-drag disambiguation: a monitor is selected (which surfaces the
   // inspector) only on a discrete click-release. Hold-and-drag must not flash
   // the inspector open mid-gesture.
@@ -83,15 +98,53 @@
     return { x: layout.ox + mmX * layout.scale, y: layout.oy + mmY * layout.scale };
   }
 
-  const imgRect = $derived.by(() => {
-    const a = mm2px(imageTransform.offsetMmX, imageTransform.offsetMmY);
-    return {
-      x: a.x,
-      y: a.y,
-      w: imageTransform.widthMm * layout.scale,
-      h: imageTransform.heightMm * layout.scale,
-    };
-  });
+  function rectOf(t: ImageTransform): { x: number; y: number; w: number; h: number } {
+    const a = mm2px(t.offsetMmX, t.offsetMmY);
+    return { x: a.x, y: a.y, w: t.widthMm * layout.scale, h: t.heightMm * layout.scale };
+  }
+
+  const imgRect = $derived(rectOf(imageTransform));
+  const layerRects = $derived(layers.map((l) => ({ layer: l, rect: rectOf(l.transform) })));
+
+  const monitorRects = $derived(
+    previewMonitors.map((m) => {
+      const a = mm2px(m.xMm, m.yMm);
+      const b = mm2px(m.xMm + m.wMm, m.yMm + m.hMm);
+      return { x: a.x, y: a.y, w: b.x - a.x, h: b.y - a.y };
+    }),
+  );
+
+  const renderedMonitors = $derived(
+    previewMonitors.map((m, i) => {
+      const r = monitorRects[i] ?? { x: 0, y: 0, w: 0, h: 0 };
+      return {
+        id: m.id,
+        name: m.name,
+        pxW: m.pxW,
+        pxH: m.pxH,
+        missing: m.missing,
+        x: r.x,
+        y: r.y,
+        w: r.w,
+        h: r.h,
+        isSel: canvasView.selectId === m.id,
+        isHover: canvasView.hoverId === m.id || dropHover === m.id,
+      };
+    }),
+  );
+
+  const renderedLayers = $derived(
+    layerRects.map(({ layer, rect }) => ({
+      id: layer.id,
+      url: layer.url,
+      x: rect.x,
+      y: rect.y,
+      w: rect.w,
+      h: rect.h,
+      dimmed: canvasView.dim,
+      hovered: hoverLayerId === layer.id,
+    })),
+  );
 
   const dragController = createDragController({
     monitors: () => previewMonitors,
@@ -99,47 +152,56 @@
     scale: () => layout.scale,
     bezelHmm: () => bezelHmm,
     setImageTransform: (t) => onImageTransformChange(t),
+    getLayer: (id) => layers.find((l) => l.id === id)?.transform ?? null,
+    setLayerTransform: (id, t) => onLayerTransformChange?.(id, t),
   });
 
-  type Hit =
-    | { type: 'monitor'; id: string }
-    | { type: 'image' }
-    | { type: 'image-resize' }
-    | { type: 'stage' };
-
-  function hitTest(clientX: number, clientY: number): Hit {
+  function hitAt(clientX: number, clientY: number): Hit {
     if (!stageEl) return { type: 'stage' };
     const r = stageEl.getBoundingClientRect();
-    const px = clientX - r.left;
-    const py = clientY - r.top;
-    for (let i = previewMonitors.length - 1; i >= 0; i -= 1) {
-      const m = previewMonitors[i];
-      if (!m) continue;
-      const a = mm2px(m.xMm, m.yMm);
-      const b = mm2px(m.xMm + m.wMm, m.yMm + m.hMm);
-      if (px >= a.x && px <= b.x && py >= a.y && py <= b.y) {
-        return { type: 'monitor', id: m.id };
-      }
-    }
-    if (imageUrl) {
-      if (Math.hypot(imgRect.x + imgRect.w - px, imgRect.y + imgRect.h - py) < 24)
-        return { type: 'image-resize' };
-      if (
-        px >= imgRect.x &&
-        px <= imgRect.x + imgRect.w &&
-        py >= imgRect.y &&
-        py <= imgRect.y + imgRect.h
-      ) {
-        return { type: 'image' };
-      }
-    }
-    return { type: 'stage' };
+    return hitTest(clientX - r.left, clientY - r.top, {
+      compositeMode,
+      layerRects: layerRects.map(({ layer, rect }) => ({ id: layer.id, rect })),
+      monitors: previewMonitors.map((m, i) => ({
+        id: m.id,
+        rect: monitorRects[i] ?? { x: 0, y: 0, w: 0, h: 0 },
+      })),
+      imageUrl,
+      imgRect,
+    });
   }
 
   function onPointerDown(ev: PointerEvent) {
     if (ev.button !== 0) return;
-    const hit = hitTest(ev.clientX, ev.clientY);
-    if (hit.type === 'monitor') {
+    const hit = hitAt(ev.clientX, ev.clientY);
+    if (hit.type === 'layer-remove') {
+      onLayerRemove?.(hit.id);
+      return;
+    } else if (hit.type === 'layer') {
+      onLayerSelect?.(hit.id);
+      const l = layers.find((x) => x.id === hit.id);
+      if (l)
+        dragController.begin({
+          kind: 'layer-image',
+          id: hit.id,
+          startX: ev.clientX,
+          startY: ev.clientY,
+          startMmX: l.transform.offsetMmX,
+          startMmY: l.transform.offsetMmY,
+        });
+    } else if (hit.type === 'layer-resize') {
+      onLayerSelect?.(hit.id);
+      const l = layers.find((x) => x.id === hit.id);
+      if (l)
+        dragController.begin({
+          kind: 'layer-resize',
+          id: hit.id,
+          startX: ev.clientX,
+          startW: l.transform.widthMm,
+          startH: l.transform.heightMm,
+          aspect: l.transform.widthMm / l.transform.heightMm,
+        });
+    } else if (hit.type === 'monitor') {
       const m = previewMonitors.find((x) => x.id === hit.id);
       if (!m) return;
       pendingSelect =
@@ -188,25 +250,20 @@
     const py = ev.clientY - r.top;
 
     if (!dragController.drag) {
-      const hit = hitTest(ev.clientX, ev.clientY);
+      const hit = hitAt(ev.clientX, ev.clientY);
+      hoverLayerId =
+        hit.type === 'layer' || hit.type === 'layer-resize' || hit.type === 'layer-remove'
+          ? hit.id
+          : null;
       if (hit.type === 'monitor') {
         const m = previewMonitors.find((x) => x.id === hit.id) ?? null;
         canvasView.setHoverId(hit.id);
         tip = m ? { x: px + 14, y: py + 14, m } : null;
-        stageEl.style.cursor = 'grab';
-      } else if (hit.type === 'image') {
-        canvasView.setHoverId(null);
-        tip = null;
-        stageEl.style.cursor = 'move';
-      } else if (hit.type === 'image-resize') {
-        canvasView.setHoverId(null);
-        tip = null;
-        stageEl.style.cursor = 'nwse-resize';
       } else {
         canvasView.setHoverId(null);
         tip = null;
-        stageEl.style.cursor = 'default';
       }
+      stageEl.style.cursor = cursorFor(hit);
       return;
     }
     if (
@@ -254,7 +311,7 @@
     return out;
   });
 
-  const isFlashing = $derived(runtime.flashAt && Date.now() - runtime.flashAt < 500);
+  const isFlashing = $derived(Boolean(runtime.flashAt && Date.now() - runtime.flashAt < 500));
 
   onMount(() => {
     if (!stageEl) return;
@@ -275,14 +332,14 @@
       ev.dataTransfer?.getData('text/plain') ??
       '';
     if (!path) return;
-    const hit = hitTest(ev.clientX, ev.clientY);
+    const hit = hitAt(ev.clientX, ev.clientY);
     if (hit.type === 'monitor') onMonitorDrop?.(hit.id, path);
   }
 
   function handleDragOver(ev: DragEvent) {
     if (!ev.dataTransfer) return;
     ev.preventDefault();
-    const hit = hitTest(ev.clientX, ev.clientY);
+    const hit = hitAt(ev.clientX, ev.clientY);
     dropHover = hit.type === 'monitor' ? hit.id : null;
   }
 </script>
@@ -298,6 +355,7 @@
   onpointercancel={onPointerUp}
   onpointerleave={() => {
     canvasView.setHoverId(null);
+    hoverLayerId = null;
     tip = null;
   }}
   onwheel={onWheel}
@@ -307,110 +365,19 @@
 >
   <CanvasGrid scale={layout.scale} ox={layout.ox} oy={layout.oy} />
 
-  {#if imageUrl}
-    <div
-      class="pointer-events-none absolute"
-      style:left="{imgRect.x}px"
-      style:top="{imgRect.y}px"
-      style:width="{imgRect.w}px"
-      style:height="{imgRect.h}px"
-      style:background-image="url({imageUrl})"
-      style:background-size="100% 100%"
-      style:opacity={canvasView.dim ? '0.18' : '1'}
-      style:transition={dragController.drag ? 'none' : 'opacity 200ms ease'}
-      style:box-shadow={canvasView.dim ? 'none' : '0 0 0 1px oklch(1 0 0 / 0.06)'}
-    ></div>
-
-    {#if canvasView.dim}
-      {#each previewMonitors as m (m.id)}
-        {@const a = mm2px(m.xMm, m.yMm)}
-        {@const b = mm2px(m.xMm + m.wMm, m.yMm + m.hMm)}
-        <div
-          class="pointer-events-none absolute"
-          style:left="{a.x}px"
-          style:top="{a.y}px"
-          style:width="{b.x - a.x}px"
-          style:height="{b.y - a.y}px"
-          style:background-image="url({imageUrl})"
-          style:background-size="{imgRect.w}px {imgRect.h}px"
-          style:background-position="{imgRect.x - a.x}px {imgRect.y - a.y}px"
-          style:background-repeat="no-repeat"
-        ></div>
-      {/each}
-    {/if}
-
-    <div
-      class="pointer-events-none absolute rounded-sm"
-      style:left="{imgRect.x + imgRect.w - 6}px"
-      style:top="{imgRect.y + imgRect.h - 6}px"
-      style:width="12px"
-      style:height="12px"
-      style:background="var(--accent)"
-      style:border="2px solid var(--bg)"
-      style:opacity="0.85"
-    ></div>
+  {#if compositeMode}
+    <CanvasImageLayers layers={renderedLayers} dragging={Boolean(dragController.drag)} />
+  {:else if imageUrl}
+    <CanvasSpanImage
+      {imageUrl}
+      rect={imgRect}
+      dim={canvasView.dim}
+      dragging={Boolean(dragController.drag)}
+      {monitorRects}
+    />
   {/if}
 
-  {#each previewMonitors as m (m.id)}
-    {@const a = mm2px(m.xMm, m.yMm)}
-    {@const b = mm2px(m.xMm + m.wMm, m.yMm + m.hMm)}
-    {@const isSel = canvasView.selectId === m.id}
-    {@const isHover = canvasView.hoverId === m.id || dropHover === m.id}
-    <div
-      class="pointer-events-none absolute"
-      style:left="{a.x}px"
-      style:top="{a.y}px"
-      style:width="{b.x - a.x}px"
-      style:height="{b.y - a.y}px"
-      style:border="1.5px solid {isSel
-        ? 'var(--accent)'
-        : isHover
-          ? 'var(--text-2)'
-          : 'var(--line-2)'}"
-      style:border-radius="3px"
-      style:transition="border-color 80ms, box-shadow 80ms"
-      style:box-shadow={isSel
-        ? '0 0 0 1px color-mix(in oklab, var(--accent) 30%, transparent), 0 0 24px color-mix(in oklab, var(--accent) 25%, transparent)'
-        : isHover
-          ? '0 0 12px oklch(1 0 0 / 0.15)'
-          : 'none'}
-      style:animation={isFlashing ? 'applyFlash 380ms ease-out' : 'none'}
-    >
-      <div
-        class="pointer-events-none mono absolute font-semibold"
-        style:top="6px"
-        style:left="8px"
-        style:font-size="10px"
-        style:letter-spacing="0.04em"
-        style:color={isSel ? 'var(--accent)' : 'var(--text-2)'}
-        style:text-shadow="0 1px 2px oklch(0 0 0 / 0.6)"
-      >
-        {m.name}
-      </div>
-      <div
-        class="pointer-events-none mono absolute"
-        style:bottom="6px"
-        style:right="8px"
-        style:font-size="9px"
-        style:color="var(--text-3)"
-        style:text-shadow="0 1px 2px oklch(0 0 0 / 0.6)"
-      >
-        {m.pxW}×{m.pxH}
-      </div>
-      {#if m.missing}
-        <div
-          class="pointer-events-none absolute mono"
-          style:top="6px"
-          style:right="8px"
-          style:font-size="9px"
-          style:color="var(--warn)"
-          style:text-shadow="0 1px 2px oklch(0 0 0 / 0.6)"
-        >
-          mm?
-        </div>
-      {/if}
-    </div>
-  {/each}
+  <CanvasMonitors monitors={renderedMonitors} flashing={isFlashing} />
 
   <DimensionLines lines={dimLines} />
 

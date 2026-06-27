@@ -6,15 +6,42 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::json;
+use superpanels_core::backends::AppliedReport;
 use superpanels_core::config::{ProfileBody, SpanSource};
 use superpanels_core::ipc::{IpcRequest, IpcResponse};
 use superpanels_core::schedule::MonitorPlacement;
 use tokio::sync::{Mutex, watch};
 use tracing::info;
 
-use crate::apply::{run_immediate_span_apply, run_per_monitor_apply, run_span_apply};
+use crate::apply::{
+    run_composite_apply, run_immediate_span_apply, run_per_monitor_apply, run_span_apply,
+};
 use crate::pool::resolve_pool;
 use crate::state::DaemonState;
+
+/// Run a blocking apply closure on the pool, then (when `active_name` is set)
+/// rotate the active profile and restart the timer. Maps join / apply errors to
+/// an `IpcResponse` failure so the non-span branches stay a single early return.
+async fn apply_and_finish<F>(
+    state: &Arc<Mutex<DaemonState>>,
+    timer_tx: &watch::Sender<Option<Duration>>,
+    active_name: Option<&str>,
+    f: F,
+) -> IpcResponse
+where
+    F: FnOnce() -> anyhow::Result<AppliedReport> + Send + 'static,
+{
+    let report = match tokio::task::spawn_blocking(f).await {
+        Ok(Ok(r)) => r,
+        Ok(Err(e)) => return IpcResponse::failure(format!("{e:#}")),
+        Err(e) => return IpcResponse::failure(format!("task panic: {e}")),
+    };
+    if let Some(name) = active_name {
+        update_active_profile(state, name, report.backend).await;
+        restart_timer(state, timer_tx).await;
+    }
+    IpcResponse::success(applied_json(&report))
+}
 
 use super::helpers::{applied_json, init_picker_if_needed, restart_timer, update_active_profile};
 
@@ -97,18 +124,19 @@ pub(super) async fn cmd_apply_profile(
     if let ProfileBody::PerMonitor(pm) = &profile.body {
         let assignments = pm.assignments.clone();
         let fit = pm.fit;
-        let report = tokio::task::spawn_blocking(move || {
+        return apply_and_finish(&state, &timer_tx, Some(&name), move || {
             run_per_monitor_apply(&assignments, &monitors, fit, backend_kind, &custom_cmd)
         })
         .await;
-        let report = match report {
-            Ok(Ok(r)) => r,
-            Ok(Err(e)) => return IpcResponse::failure(format!("{e:#}")),
-            Err(e) => return IpcResponse::failure(format!("task panic: {e}")),
-        };
-        update_active_profile(&state, &name, report.backend).await;
-        restart_timer(&state, &timer_tx).await;
-        return IpcResponse::success(applied_json(&report));
+    }
+
+    if let ProfileBody::Composite(composite) = &profile.body {
+        let layers = composite.layers.clone();
+        let placements = profile.monitor_state.clone();
+        return apply_and_finish(&state, &timer_tx, Some(&name), move || {
+            run_composite_apply(&layers, &monitors, &placements, backend_kind, &custom_cmd)
+        })
+        .await;
     }
 
     let image_path = match &profile.body {
@@ -135,7 +163,7 @@ pub(super) async fn cmd_apply_profile(
                 }
             }
         },
-        ProfileBody::PerMonitor(_) => unreachable!("handled above"),
+        ProfileBody::PerMonitor(_) | ProfileBody::Composite(_) => unreachable!("handled above"),
     };
 
     let profile_clone = profile.clone();
@@ -201,20 +229,21 @@ pub(super) async fn cmd_apply_canvas(
     if let ProfileBody::PerMonitor(pm) = &profile.body {
         let assignments = pm.assignments.clone();
         let fit = pm.fit;
-        let report = tokio::task::spawn_blocking(move || {
+        return apply_and_finish(&state, &timer_tx, active_name.as_deref(), move || {
             run_per_monitor_apply(&assignments, &monitors, fit, backend_kind, &custom_cmd)
         })
         .await;
-        let report = match report {
-            Ok(Ok(r)) => r,
-            Ok(Err(e)) => return IpcResponse::failure(format!("{e:#}")),
-            Err(e) => return IpcResponse::failure(format!("task panic: {e}")),
-        };
-        if let Some(name) = active_name.as_deref() {
-            update_active_profile(&state, name, report.backend).await;
-            restart_timer(&state, &timer_tx).await;
-        }
-        return IpcResponse::success(applied_json(&report));
+    }
+
+    if let ProfileBody::Composite(composite) = &profile.body {
+        // The canvas is the source of truth: composite straight from the
+        // payload's layers + placements, like the span branch below.
+        let layers = composite.layers.clone();
+        let placements = profile.monitor_state.clone();
+        return apply_and_finish(&state, &timer_tx, active_name.as_deref(), move || {
+            run_composite_apply(&layers, &monitors, &placements, backend_kind, &custom_cmd)
+        })
+        .await;
     }
 
     let (image_path, image_rect_mm) = match &profile.body {
@@ -237,7 +266,7 @@ pub(super) async fn cmd_apply_canvas(
             };
             (path, span.image_rect_mm)
         }
-        ProfileBody::PerMonitor(_) => unreachable!("handled above"),
+        ProfileBody::PerMonitor(_) | ProfileBody::Composite(_) => unreachable!("handled above"),
     };
 
     // The canvas is the source of truth for this apply: use the payload's

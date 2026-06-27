@@ -249,9 +249,30 @@ pub fn compose_on_black(
     dst_size: (u32, u32),
     dst_offset: (u32, u32),
 ) -> DynamicImage {
+    compose_on_fill(slice, dst_size, dst_offset, image::Rgba([0, 0, 0, 255]))
+}
+
+/// Compose `slice` onto a fully transparent `dst_size` canvas at `dst_offset`.
+/// The covered sub-rect is opaque; everywhere else keeps zero alpha, so a stack
+/// of these alpha-composites cleanly (lower layers show through the gaps). The
+/// per-layer step of [`render_composite`].
+#[must_use]
+pub fn compose_on_transparent(
+    slice: &DynamicImage,
+    dst_size: (u32, u32),
+    dst_offset: (u32, u32),
+) -> DynamicImage {
+    compose_on_fill(slice, dst_size, dst_offset, image::Rgba([0, 0, 0, 0]))
+}
+
+fn compose_on_fill(
+    slice: &DynamicImage,
+    dst_size: (u32, u32),
+    dst_offset: (u32, u32),
+    fill: image::Rgba<u8>,
+) -> DynamicImage {
     let (dw, dh) = dst_size;
-    let mut canvas =
-        image::RgbaImage::from_pixel(dw.max(1), dh.max(1), image::Rgba([0, 0, 0, 255]));
+    let mut canvas = image::RgbaImage::from_pixel(dw.max(1), dh.max(1), fill);
     let (sw, sh) = (slice.width(), slice.height());
     if sw == 0 || sh == 0 || dw == 0 || dh == 0 {
         return DynamicImage::ImageRgba8(canvas);
@@ -271,6 +292,49 @@ pub fn compose_on_black(
         i64::from(dst_offset.1),
     );
     DynamicImage::ImageRgba8(canvas)
+}
+
+/// One layer's contribution to a monitor, sized to the full destination
+/// framebuffer with a *transparent* letterbox (unlike [`render_slice`], which
+/// fills black). Stacking these with [`render_composite`] lets lower layers
+/// show through wherever this one doesn't cover.
+pub fn render_layer_slice(
+    source: &DynamicImage,
+    spec: &CropSpec,
+) -> Result<DynamicImage, ImageError> {
+    if spec.slice_dst_size.0 == 0 || spec.slice_dst_size.1 == 0 {
+        let (w, h) = spec.dst_size;
+        return Ok(DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+            w.max(1),
+            h.max(1),
+            image::Rgba([0, 0, 0, 0]),
+        )));
+    }
+    let cropped = crop(source, spec.src_rect)?;
+    let resized = scale_to_fit(&cropped, spec.slice_dst_size, FitMode::Stretch);
+    Ok(compose_on_transparent(
+        &resized,
+        spec.dst_size,
+        spec.dst_offset,
+    ))
+}
+
+/// Alpha-stack `layers` (bottom-to-top `(source, spec)` pairs) onto one
+/// `dst_size` black monitor canvas. Each layer is rendered via
+/// [`render_layer_slice`] and composited in order, so the topmost opaque pixels
+/// win and uncovered regions stay black. Empty `layers` ⇒ an all-black canvas.
+pub fn render_composite(
+    layers: &[(&DynamicImage, &CropSpec)],
+    dst_size: (u32, u32),
+) -> Result<DynamicImage, ImageError> {
+    let (dw, dh) = dst_size;
+    let mut canvas =
+        image::RgbaImage::from_pixel(dw.max(1), dh.max(1), image::Rgba([0, 0, 0, 255]));
+    for (source, spec) in layers {
+        let layer = render_layer_slice(source, spec)?;
+        image::imageops::overlay(&mut canvas, &layer.to_rgba8(), 0, 0);
+    }
+    Ok(DynamicImage::ImageRgba8(canvas))
 }
 
 fn u32_from_f64(v: f64) -> Option<u32> {
@@ -564,6 +628,79 @@ mod tests {
         assert_eq!(rgba.get_pixel(3, 4).0, [255, 0, 0, 255]);
         assert_eq!(rgba.get_pixel(0, 0).0, [0, 0, 0, 255]);
         assert_eq!(rgba.get_pixel(8, 8).0, [0, 0, 0, 255]);
+    }
+
+    #[test]
+    fn compose_on_transparent_leaves_gaps_alpha_zero() {
+        let slice = solid_image(4, 4, [255, 0, 0, 255]);
+        let out = compose_on_transparent(&slice, (10, 10), (2, 3));
+        let rgba = out.to_rgba8();
+        // Covered pixel is opaque red; uncovered pixel is fully transparent.
+        assert_eq!(rgba.get_pixel(3, 4).0, [255, 0, 0, 255]);
+        assert_eq!(rgba.get_pixel(0, 0).0[3], 0);
+    }
+
+    #[test]
+    fn render_composite_top_opaque_layer_hides_lower() {
+        // Both layers fully cover a 10×10 monitor; the top (last) one wins.
+        let red = solid_image(10, 10, [255, 0, 0, 255]);
+        let blue = solid_image(10, 10, [0, 0, 255, 255]);
+        let full = span_spec(
+            Rect {
+                x: 0,
+                y: 0,
+                w: 10,
+                h: 10,
+            },
+            (0, 0),
+            (10, 10),
+            (10, 10),
+        );
+        let out = render_composite(&[(&red, &full), (&blue, &full)], (10, 10)).unwrap();
+        assert_eq!(out.to_rgba8().get_pixel(5, 5).0, [0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn render_composite_partial_overlap_shows_both_layers() {
+        // Layer 0 covers the left half (offset 0), layer 1 the right half
+        // (offset 5). Neither overlaps the other, so both survive.
+        let red = solid_image(5, 10, [255, 0, 0, 255]);
+        let blue = solid_image(5, 10, [0, 0, 255, 255]);
+        let left = span_spec(
+            Rect {
+                x: 0,
+                y: 0,
+                w: 5,
+                h: 10,
+            },
+            (0, 0),
+            (10, 10),
+            (5, 10),
+        );
+        let right = span_spec(
+            Rect {
+                x: 0,
+                y: 0,
+                w: 5,
+                h: 10,
+            },
+            (5, 0),
+            (10, 10),
+            (5, 10),
+        );
+        let out = render_composite(&[(&red, &left), (&blue, &right)], (10, 10)).unwrap();
+        let rgba = out.to_rgba8();
+        assert_eq!(rgba.get_pixel(1, 5).0, [255, 0, 0, 255]);
+        assert_eq!(rgba.get_pixel(8, 5).0, [0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn render_composite_no_layers_is_all_black() {
+        let out = render_composite(&[], (8, 6)).unwrap();
+        assert_eq!((out.width(), out.height()), (8, 6));
+        let rgba = out.to_rgba8();
+        assert_eq!(rgba.get_pixel(0, 0).0, [0, 0, 0, 255]);
+        assert_eq!(rgba.get_pixel(7, 5).0, [0, 0, 0, 255]);
     }
 
     #[test]

@@ -42,6 +42,10 @@
       if (src.type === 'single') return src.path || '(no image)';
       return 'slideshow';
     }
+    if (p.body.type === 'composite') {
+      const n = p.body.layers.length;
+      return `${n} image${n === 1 ? '' : 's'}`;
+    }
     return `${p.body.assignments.length} pins`;
   }
 </script>

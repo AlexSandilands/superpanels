@@ -5,16 +5,24 @@
     existingNames: string[];
     defaultName: string;
     hasSource: boolean;
+    hasComposite?: boolean;
     onCancel: () => void;
     onConfirm: (name: string, description: string | null, kind: ProfileKind) => void;
   };
-  let { existingNames, defaultName, hasSource, onCancel, onConfirm }: Props = $props();
+  let {
+    existingNames,
+    defaultName,
+    hasSource,
+    hasComposite = false,
+    onCancel,
+    onConfirm,
+  }: Props = $props();
 
   // svelte-ignore state_referenced_locally
   let name = $state(defaultName);
   let description = $state('');
   // svelte-ignore state_referenced_locally
-  let kind = $state<ProfileKind>(hasSource ? 'single' : 'slideshow');
+  let kind = $state<ProfileKind>(hasComposite ? 'composite' : hasSource ? 'single' : 'slideshow');
 
   function focusOnMount(node: HTMLInputElement) {
     node.focus();
@@ -67,6 +75,16 @@
         >
           Slideshow
         </button>
+        {#if hasComposite}
+          <button
+            type="button"
+            class:kind-active={kind === 'composite'}
+            title="Several images placed across the monitors"
+            onclick={() => (kind = 'composite')}
+          >
+            Composite
+          </button>
+        {/if}
       </div>
       {#if kind === 'slideshow'}
         <p class="hint">

@@ -3,6 +3,7 @@
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import type { Profile } from '$lib/api';
   import { canvasView } from '$lib/stores/canvas-view.svelte';
+  import { canvasLayers } from '$lib/stores/canvas-layers.svelte';
   import { daemonStatus } from '$lib/stores/daemon-status.svelte';
   import { libraryStore } from '$lib/stores/library.svelte';
   import { monitorStore } from '$lib/stores/monitors.svelte';
@@ -20,6 +21,7 @@
     useSourceImage,
   } from '$lib/stores/image-transform.svelte';
   import {
+    addImageToCanvas,
     applyDraftProfile,
     applyMonitorStateToCanvas,
     openMainWindow,
@@ -33,6 +35,7 @@
   } from '$lib/actions';
   import {
     canvasOverridesDirty,
+    compositeLayersDirty,
     coverRectDirty,
     imageTransformDirty,
     placementsDirty,
@@ -65,6 +68,7 @@
   import { dispatchKey } from '$lib/keymap';
   import {
     defaultSlideshowConfig,
+    isCompositeBody,
     isSlideshowSource,
     isSpanBody,
     overrideFor,
@@ -133,6 +137,11 @@
           },
           image_rect_mm,
         };
+      } else if (kind === 'composite') {
+        for (const m of previewMonitors) {
+          monitor_state[m.id] = { x_mm: m.xMm, y_mm: m.yMm };
+        }
+        body = { type: 'composite' as const, layers: canvasLayers.toCompositeLayers() };
       } else {
         for (const m of previewMonitors) {
           monitor_state[m.id] = { x_mm: m.xMm, y_mm: m.yMm };
@@ -191,6 +200,7 @@
 
   const draft = $derived<Profile | null>(profileStore.draft);
   const span = $derived(draft && isSpanBody(draft.body) ? draft.body : null);
+  const composite = $derived(draft && isCompositeBody(draft.body) ? draft.body : null);
   const sourcePath = $derived(span && span.source.type === 'single' ? span.source.path : null);
   const slideshowSource = $derived(span && isSlideshowSource(span.source) ? span.source : null);
 
@@ -427,6 +437,11 @@
     if (profileStore.dirty) return true;
     const active = profileStore.activeProfile;
     if (!active) return false;
+    if (composite) {
+      if (!isCompositeBody(active.body)) return true;
+      if (canvasOverridesDirty(canvasView.overrides, active)) return true;
+      return compositeLayersDirty(canvasLayers.toCompositeLayers(), active.body.layers);
+    }
     // While a slideshow image is still resolving, the transform (and loaded
     // dims) belong to the previous image — rect comparisons against the
     // incoming image's baseline would flag phantom edits.
@@ -710,6 +725,7 @@
 
   // Source dock metadata — lifted from the active draft for display.
   const sourceName = $derived.by(() => {
+    if (composite) return draft?.name ?? 'composite';
     if (sourcePath) return sourcePath.split('/').pop() ?? sourcePath;
     if (slideshowSource) {
       if (liveSlideshowPath) return liveSlideshowPath.split('/').pop() ?? liveSlideshowPath;
@@ -718,6 +734,10 @@
     return '— no source';
   });
   const sourceMeta = $derived.by(() => {
+    if (composite) {
+      const n = canvasLayers.list.length;
+      return `composite · ${n} image${n === 1 ? '' : 's'}`;
+    }
     if (slideshowSource) {
       const n = slideshowSource.images.sources.length;
       if (n === 0) return 'slideshow · empty — add images';
@@ -737,10 +757,14 @@
   <PreviewCanvas
     monitors={monitorStore.monitors}
     bezelHmm={snapHmm}
-    {imageUrl}
+    imageUrl={composite ? null : imageUrl}
     imageTransform={imageTransform.value}
     onImageTransformChange={(t) => imageTransform.set(t)}
     onMonitorDrop={pinImageToMonitor}
+    layers={composite ? canvasLayers.list : []}
+    onLayerTransformChange={(id, t) => canvasLayers.patch(id, t)}
+    onLayerRemove={(id) => canvasLayers.remove(id)}
+    onLayerSelect={(id) => canvasLayers.bringToFront(id)}
   />
 
   <ModeHint slideshowActive={Boolean(dockSlideshowState || dockSlideshowProfile)} />
@@ -772,6 +796,7 @@
         ? `${profileStore.activeName}-copy`
         : `untitled-${profileStore.profiles.length + 1}`}
       hasSource={Boolean(sourcePath)}
+      hasComposite={Boolean(composite)}
       onCancel={() => (saveDialogOpen = false)}
       onConfirm={(n, d, k) => void saveAsNew(n, d, k)}
     />
@@ -877,6 +902,7 @@
       onClose={() => (libraryOpen = false)}
       onApplyAsSpan={setSpanImage}
       onPinToMonitor={pinImageToMonitor}
+      onAddToCanvas={addImageToCanvas}
       {slideshowTarget}
       onUpdateSlideshow={(images) => void updateSlideshowImages(images)}
       onResetOverride={(path) => void removeImageOverride(path)}

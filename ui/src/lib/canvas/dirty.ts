@@ -8,6 +8,7 @@ import type { ImageTransform } from '$lib/stores/image-transform.svelte';
 import type { Profile } from '$lib/api';
 import type { ImageRectMm } from '$lib/types/ImageRectMm';
 import type { MonitorPlacement } from '$lib/types/MonitorPlacement';
+import type { CompositeLayer } from '$lib/types/profile-helpers';
 import { coverImageRect, type PreviewMonitor } from './preview-layout';
 
 const POSITION_TOLERANCE_MM = 0.5;
@@ -55,6 +56,23 @@ export function canvasOverridesDirty(
 export function imageTransformDirty(transform: ImageTransform, profile: Profile): boolean {
   if (profile.body.type !== 'span') return false;
   return rectDirty(transform, profile.body.image_rect_mm);
+}
+
+/** Returns `true` when the live composite layers differ from the persisted
+ *  ones — count, order, paths, or any rect beyond the slop tolerance. */
+export function compositeLayersDirty(live: CompositeLayer[], persisted: CompositeLayer[]): boolean {
+  if (live.length !== persisted.length) return true;
+  return live.some((l, i) => {
+    const p = persisted[i];
+    if (!p || p.path !== l.path) return true;
+    const r = l.image_rect_mm;
+    return (
+      Math.abs(r.x_mm - p.image_rect_mm.x_mm) > POSITION_TOLERANCE_MM ||
+      Math.abs(r.y_mm - p.image_rect_mm.y_mm) > POSITION_TOLERANCE_MM ||
+      Math.abs(r.w_mm - p.image_rect_mm.w_mm) > POSITION_TOLERANCE_MM ||
+      Math.abs(r.h_mm - p.image_rect_mm.h_mm) > POSITION_TOLERANCE_MM
+    );
+  });
 }
 
 /** [`rectDirty`] against the cover-fit rect for `naturalDims` over

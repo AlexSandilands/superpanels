@@ -22,10 +22,18 @@
     entries: LibraryEntry[];
     onApply: (entry: LibraryEntry) => void;
     onPin: (monitorId: string, path: string) => void;
+    onAddToCanvas?: ((path: string) => void) | null;
     selection?: SlideshowSelection | null;
     customLayouts?: CustomLayouts | null;
   };
-  let { entries, onApply, onPin, selection = null, customLayouts = null }: Props = $props();
+  let {
+    entries,
+    onApply,
+    onPin,
+    onAddToCanvas = null,
+    selection = null,
+    customLayouts = null,
+  }: Props = $props();
 
   let scrollEl: HTMLDivElement | undefined = $state();
   let scrollTop = $state(0);
@@ -234,6 +242,20 @@
                 >
                   Set
                 </button>
+                {#if onAddToCanvas}
+                  <button
+                    class="btn sm"
+                    style:flex="1"
+                    style:font-size="10px"
+                    title="Add this image to the canvas as a new layer"
+                    onclick={(ev) => {
+                      ev.stopPropagation();
+                      onAddToCanvas(item.entry.path);
+                    }}
+                  >
+                    + Add
+                  </button>
+                {/if}
                 <button
                   class="btn sm"
                   style:padding="0 6px"

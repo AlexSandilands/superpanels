@@ -59,6 +59,22 @@ A portrait monitor contributes its rotated dimensions to the physical canvas. In
 - Monitors with non-zero vertical offset that the desktop reports as the same row.
 - HiDPI: a 2.0-scale 4K reports `1920×1080` logical px but `3840×2160` native; layout uses native.
 
+## Composite (multiple images)
+
+A `Composite` profile places **several** image rectangles in the same mm-space
+instead of one. `compute_composite_crop_specs` reuses the single-image per-monitor
+crop (`crop_spec_for`) once per `(monitor, layer)` pair: a layer that doesn't
+overlap a monitor yields `slice_dst_size == (0, 0)` and is dropped, leaving each
+monitor an ordered list of the layers that *do* cover it (bottom-to-top).
+
+The apply pipeline then **alpha-composites** per monitor: each layer's slice is
+rendered with a *transparent* letterbox (`render_layer_slice`) and overlaid in
+order onto a black monitor canvas (`render_composite`). Topmost opaque pixels
+win; gaps fall through to lower layers; regions no layer covers stay black. This
+is pixel-accurate WYSIWYG with the GUI canvas — one image can slice across two
+monitors while another fills a third. Same mm/gap math as span; only the number
+of source rectangles and the compositing step differ.
+
 ## What the math deliberately does *not* do
 
 - It doesn't try to hide content "behind" the gap by *omitting* gap pixels — that produces visible duplication at the seam. Crop at the gap boundary and skip the gap.

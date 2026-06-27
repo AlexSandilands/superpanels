@@ -4,6 +4,7 @@
 
 import type { ProfileBody } from './ProfileBody';
 import type { SpanProfile } from './SpanProfile';
+import type { CompositeProfile } from './CompositeProfile';
 import type { PerMonitorProfile } from './PerMonitorProfile';
 import type { SlideshowConfig } from './SlideshowConfig';
 import type { SpanSource } from './SpanSource';
@@ -13,6 +14,8 @@ import type { ImageOverride } from './ImageOverride';
 export type { Profile } from './Profile';
 export type { ProfileBody } from './ProfileBody';
 export type { SpanProfile } from './SpanProfile';
+export type { CompositeProfile } from './CompositeProfile';
+export type { CompositeLayer } from './CompositeLayer';
 export type { SpanSource } from './SpanSource';
 export type { ImageSet } from './ImageSet';
 export type { ImageSource } from './ImageSource';
@@ -41,6 +44,12 @@ export function isPerMonitorBody(
   return body.type === 'per_monitor';
 }
 
+export function isCompositeBody(
+  body: ProfileBody,
+): body is { type: 'composite' } & CompositeProfile {
+  return body.type === 'composite';
+}
+
 export type SlideshowSource = {
   type: 'slideshow';
   images: ImageSet;
@@ -51,7 +60,7 @@ export type SlideshowSource = {
 };
 
 /** Profile flavour offered by the save-as-new dialog. */
-export type ProfileKind = 'single' | 'slideshow';
+export type ProfileKind = 'single' | 'slideshow' | 'composite';
 
 export function isSlideshowSource(source: SpanSource): source is SlideshowSource {
   return source.type === 'slideshow';

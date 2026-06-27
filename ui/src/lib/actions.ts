@@ -6,6 +6,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { api, errorMessage, type Profile } from '$lib/api';
 import { buildPreviewMonitors, stableId } from '$lib/canvas/preview-layout';
 import { canvasView, type MonitorOverride } from '$lib/stores/canvas-view.svelte';
+import { canvasLayers } from '$lib/stores/canvas-layers.svelte';
 import { imageTransform } from '$lib/stores/image-transform.svelte';
 import { monitorStore } from '$lib/stores/monitors.svelte';
 import { preemption } from '$lib/stores/preemption.svelte';
@@ -18,6 +19,7 @@ import { toast } from '$lib/stores/toast.svelte';
 import type { ImageRectMm } from '$lib/types/ImageRectMm';
 import type { MonitorPlacement } from '$lib/types/MonitorPlacement';
 import {
+  isCompositeBody,
   isPerMonitorBody,
   isSpanBody,
   type PerMonitorAssignment,
@@ -48,6 +50,8 @@ function syncDraftFromCanvas(): void {
     d.topology = '';
     if (isSpanBody(d.body)) {
       d.body.image_rect_mm = rect;
+    } else if (isCompositeBody(d.body)) {
+      d.body.layers = canvasLayers.toCompositeLayers();
     }
   });
 }
@@ -65,6 +69,10 @@ export function applyMonitorStateToCanvas(p: Profile): void {
     };
   }
   canvasView.setOverrides(next);
+  if (isCompositeBody(p.body)) {
+    canvasLayers.setFromLayers(p.body.layers);
+    return;
+  }
   if (isSpanBody(p.body)) {
     // Slideshow rects are owned by the per-image seed (override / uniform /
     // cover-fit, see `useSourceImage`) — forcing the profile rect here would
@@ -245,6 +253,21 @@ export function setSpanImage(path: string): void {
     }
   });
   toast.success('Source updated', path.split('/').pop() ?? path);
+}
+
+/** Add an image as a new composite layer on the canvas — the multi-image
+ *  counterpart of `setSpanImage`. Converts the draft to a composite body the
+ *  first time, then appends the layer (cover-fit, on top). */
+export function addImageToCanvas(path: string): void {
+  if (!profileStore.draft) profileStore.newProfile();
+  profileStore.patchDraft((d) => {
+    if (!isCompositeBody(d.body)) {
+      d.body = { type: 'composite', layers: [] };
+    }
+  });
+  const monitors = buildPreviewMonitors(monitorStore.monitors, canvasView.overrides);
+  void canvasLayers.add(path, monitors);
+  toast.success('Added to canvas', path.split('/').pop() ?? path);
 }
 
 export function pinImageToMonitor(monitorId: string, path: string): void {

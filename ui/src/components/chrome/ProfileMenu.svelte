@@ -29,6 +29,7 @@
   }: Props = $props();
 
   function modeLabel(p: Profile): string {
+    if (p.body.type === 'composite') return 'composite';
     return p.body.type === 'span' ? 'span' : 'per-monitor';
   }
 
@@ -37,6 +38,10 @@
       const src = p.body.source;
       if (src.type === 'single') return src.path || '(no image)';
       return 'slideshow';
+    }
+    if (p.body.type === 'composite') {
+      const n = p.body.layers.length;
+      return `${n} image${n === 1 ? '' : 's'}`;
     }
     return `${p.body.assignments.length} pins`;
   }

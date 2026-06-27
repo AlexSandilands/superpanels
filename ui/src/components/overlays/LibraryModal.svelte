@@ -40,6 +40,8 @@
     onClose: () => void;
     onApplyAsSpan: (path: string) => void;
     onPinToMonitor: (monitorId: string, path: string) => void;
+    /** Add an image to the canvas as a composite layer. */
+    onAddToCanvas?: (path: string) => void;
     /** Slideshow profile whose image set can be edited from here, if any. */
     slideshowTarget?: {
       name: string;
@@ -55,6 +57,7 @@
     onClose,
     onApplyAsSpan,
     onPinToMonitor,
+    onAddToCanvas,
     slideshowTarget = null,
     onUpdateSlideshow,
     onResetOverride,
@@ -419,6 +422,7 @@
           entries={visible}
           onApply={applyEntry}
           onPin={onPinToMonitor}
+          onAddToCanvas={selection ? null : (onAddToCanvas ?? null)}
           {selection}
           {customLayouts}
         />

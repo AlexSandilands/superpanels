@@ -45,7 +45,7 @@ pub(super) async fn cmd_slideshow_advance(
                     return IpcResponse::failure("active profile has no slideshow");
                 }
             },
-            ProfileBody::PerMonitor(_) => {
+            ProfileBody::PerMonitor(_) | ProfileBody::Composite(_) => {
                 return IpcResponse::failure("active profile has no slideshow");
             }
         };
@@ -127,7 +127,7 @@ pub(super) async fn cmd_slideshow_prev(state: Arc<Mutex<DaemonState>>) -> IpcRes
                     return IpcResponse::failure("active profile has no slideshow");
                 }
             },
-            ProfileBody::PerMonitor(_) => {
+            ProfileBody::PerMonitor(_) | ProfileBody::Composite(_) => {
                 return IpcResponse::failure("active profile has no slideshow");
             }
         }

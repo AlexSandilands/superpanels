@@ -146,12 +146,14 @@ A profile is **the mode the user is in**, not a one-shot apply request. It bundl
 
 - `monitor_state: HashMap<String, MonitorPlacement>` — physical mm placements keyed by `stable_id` (or `name` fallback). Gaps between monitors fall out of these placements; there is no separate bezel field.
 - `topology: TopologyFingerprint` — opaque hash over the connected `stable_id`s + rotations the profile was authored against. Compared by equality at apply time; mismatch disables the profile until the user re-authors via the **topology-repair flow**.
-- `body: ProfileBody` — `Span { source, fit, offset, image_rect_mm }` or `PerMonitor { assignments, fit }`. A slideshow source may carry sparse per-image `overrides` (placements + image rect keyed by absolute path); the daemon's span-apply choke point swaps them in when that image comes up, and the GUI canvas follows live. Untuned slideshow images use the profile's placements with a per-image cover-fit rect (aspect preserved, sliced across the placed desktop plane), unless the slideshow sets `uniform_layout` — then the profile-level rect applies to every untuned image. `Span.image_rect_mm` is otherwise only authoritative for `Single` sources.
+- `body: ProfileBody` — `Span { source, fit, offset, image_rect_mm }`, `PerMonitor { assignments, fit }`, or `Composite { layers }`. A slideshow source may carry sparse per-image `overrides` (placements + image rect keyed by absolute path); the daemon's span-apply choke point swaps them in when that image comes up, and the GUI canvas follows live. Untuned slideshow images use the profile's placements with a per-image cover-fit rect (aspect preserved, sliced across the placed desktop plane), unless the slideshow sets `uniform_layout` — then the profile-level rect applies to every untuned image. `Span.image_rect_mm` is otherwise only authoritative for `Single` sources.
+- `Composite { layers: Vec<CompositeLayer> }` — several free-positioned images on the canvas at once. Each `CompositeLayer` is `{ path, image_rect_mm }` in the same mm-space as `Span`; `layers` is bottom-to-top stacking order. At apply, every monitor alpha-composites the layers that overlap it (top over bottom), uncovered regions render black — so one image can slice across two monitors while another fills a third. Shares the profile-level `monitor_state` (placements/gaps) with the other bodies. No slideshow per layer (a composite layer is a static image). See `docs/reference/layout-math.md` § Composite.
 
 A profile is **disabled** when any of:
 
 - Topology mismatch (connected set or rotation differs from fingerprint).
 - Referenced single image is missing.
+- A composite layer's image is missing, or the composite has no layers (`CompositeEmpty`).
 - Slideshow image set has no sources yet (`slideshow_empty` — the GUI offers the "add images" flow instead of repair).
 - Slideshow image set has no usable source (every folder missing/empty and every picked image missing — one healthy source keeps the profile enabled).
 - Referenced `MonitorRef` in a `PerMonitor` body is not connected.

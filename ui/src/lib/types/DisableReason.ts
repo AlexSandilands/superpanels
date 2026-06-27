@@ -6,4 +6,4 @@ import type { TopologyFingerprint } from "./TopologyFingerprint";
  * Concrete reason a profile is disabled. The GUI lists every reason that
  * applies; the repair flow targets `TopologyMismatch` specifically.
  */
-export type DisableReason = { "kind": "topology_mismatch", authored: TopologyFingerprint, actual: TopologyFingerprint, } | { "kind": "image_missing", path: string, } | { "kind": "folder_missing_or_empty", path: string, } | { "kind": "slideshow_empty" } | { "kind": "monitor_not_connected", monitor: MonitorRef, } | { "kind": "physical_size_missing", stable_id: string, };
+export type DisableReason = { "kind": "topology_mismatch", authored: TopologyFingerprint, actual: TopologyFingerprint, } | { "kind": "image_missing", path: string, } | { "kind": "folder_missing_or_empty", path: string, } | { "kind": "slideshow_empty" } | { "kind": "composite_empty" } | { "kind": "monitor_not_connected", monitor: MonitorRef, } | { "kind": "physical_size_missing", stable_id: string, };

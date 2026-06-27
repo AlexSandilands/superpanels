@@ -200,7 +200,7 @@ impl DaemonState {
                 SpanSource::Slideshow { config, .. } => Some(config.clone()),
                 SpanSource::Single { .. } => None,
             },
-            ProfileBody::PerMonitor(_) => None,
+            ProfileBody::PerMonitor(_) | ProfileBody::Composite(_) => None,
         };
 
         let Some(cfg) = slideshow_cfg else {
@@ -259,7 +259,7 @@ impl DaemonState {
                 SpanSource::Slideshow { config, .. } => Some(config.interval),
                 SpanSource::Single { .. } => None,
             },
-            ProfileBody::PerMonitor(_) => None,
+            ProfileBody::PerMonitor(_) | ProfileBody::Composite(_) => None,
         }
     }
 

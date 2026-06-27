@@ -31,7 +31,29 @@ invalidate, with a toast) the per-image `overrides` maps inside
 are keyed by `stable_id`, so a monitor swap silently breaks hand-tuned
 slideshow images otherwise.
 
+## Composite profile thumbnails are single-image
+
+The profile-manager / tray preview (`preview_crop` → `PreviewArgs { image,
+image_rect_mm }`, `crates/superpanels-gui/src/commands/preview.rs`) renders one
+image + rect. `Composite` profiles have no single image, so their thumbnails
+fall back to whatever the single-image preview path produces (no layer compositing).
+**Revisit:** add a composite preview path that crops+alpha-stacks the layers into a
+thumbnail (reuse `render_composite`), or render the bottom/most-covering layer.
+
+## Composite apply has no empty/validity gate on the canvas path
+
+`cmd_apply_canvas` applies the payload directly without a `ProfileValidity`
+check, so Applying a `Composite` draft with **zero layers** pushes all-black
+wallpapers (the daemon `cmd_apply_profile` path *is* gated via `CompositeEmpty`).
+The GUI `canApply` doesn't special-case empty composites either. Also, a composite
+draft's `body.layers` is only synced from the live `canvasLayers` store at
+apply/save (`syncDraftFromCanvas`), so the schedule-preemption undo snapshot can
+capture an empty layer list mid-edit — the same staleness the span path has with
+`image_rect_mm`. **Revisit:** gate empty composites in `canApply`, and consider
+eager draft-sync (or snapshot-on-apply) for the preemption undo.
+
 ## Per Monitor Wallpapers
+
 
 ## Daemon dies with its parent session
 

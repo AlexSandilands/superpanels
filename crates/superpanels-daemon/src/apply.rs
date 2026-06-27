@@ -7,16 +7,18 @@ use std::collections::HashMap;
 use anyhow::{Context, Result};
 use superpanels_core::backends::{AppliedReport, WallpaperBackend, detect_backend};
 use superpanels_core::config::{
-    BackendKind, PerMonitorAssignment, Profile, ProfileBody,
+    BackendKind, CompositeLayer, PerMonitorAssignment, Profile, ProfileBody,
     SlideshowConfig as ProfileSlideshowConfig, SlideshowSort as ProfileSlideshowSort,
     SlideshowStart as ProfileSlideshowStart, SpanSource,
 };
 use superpanels_core::display::{Monitor, MonitorRef};
 use superpanels_core::image::{
-    FitMode as ImageFitMode, clear_temp_dir, load, render_slice, save_temp, scale_to_fit,
+    FitMode as ImageFitMode, clear_temp_dir, load, render_composite, render_slice, save_temp,
+    scale_to_fit,
 };
 use superpanels_core::layout::{
-    FitMode, ImageRectMm, compute_crop_specs, cover_image_rect_for, synthesise_placements,
+    FitMode, ImageRectMm, compute_composite_crop_specs, compute_crop_specs, cover_image_rect_for,
+    synthesise_placements,
 };
 use superpanels_core::schedule::MonitorPlacement;
 use superpanels_core::slideshow::{
@@ -98,7 +100,7 @@ fn span_layout_for<'a>(
                 SpanSource::Single { .. } => (&profile.monitor_state, Some(s.image_rect_mm)),
             },
         },
-        ProfileBody::PerMonitor(_) => (&profile.monitor_state, None),
+        ProfileBody::PerMonitor(_) | ProfileBody::Composite(_) => (&profile.monitor_state, None),
     }
 }
 
@@ -173,6 +175,94 @@ pub(crate) fn run_immediate_span_apply(
         monitors = report.monitors_set,
         elapsed_ms = report.duration.as_millis(),
         "apply complete"
+    );
+    Ok(report)
+}
+
+/// Crop and alpha-composite several free-positioned images across the canvas
+/// and push the result to a backend. Sibling of [`run_immediate_span_apply`]:
+/// each monitor stacks every overlapping layer in `layers` order (bottom→top),
+/// uncovered regions render black. Empty `placements` synthesise from detected
+/// positions, matching the span path.
+pub(crate) fn run_composite_apply(
+    layers: &[CompositeLayer],
+    monitors: &[Monitor],
+    placements: &HashMap<String, MonitorPlacement>,
+    backend_kind: BackendKind,
+    custom_cmd: &str,
+) -> Result<AppliedReport> {
+    let synthesised;
+    let resolved_placements: &HashMap<String, MonitorPlacement> = if placements.is_empty() {
+        synthesised = synthesise_placements(monitors);
+        &synthesised
+    } else {
+        placements
+    };
+
+    // Load each distinct source once; `layer_image` maps a layer index to its
+    // entry in `images` so a repeated path isn't decoded twice.
+    let mut images = Vec::new();
+    let mut by_path: HashMap<PathBuf, usize> = HashMap::with_capacity(layers.len());
+    let mut layer_image = Vec::with_capacity(layers.len());
+    for layer in layers {
+        let idx = if let Some(&i) = by_path.get(&layer.path) {
+            i
+        } else {
+            let img = load(&layer.path)
+                .with_context(|| format!("loading layer {}", layer.path.display()))?;
+            let i = images.len();
+            images.push(img);
+            by_path.insert(layer.path.clone(), i);
+            i
+        };
+        layer_image.push(idx);
+    }
+
+    let layer_inputs: Vec<((u32, u32), ImageRectMm)> = layers
+        .iter()
+        .enumerate()
+        .map(|(i, layer)| {
+            let img = &images[layer_image[i]];
+            ((img.width(), img.height()), layer.image_rect_mm)
+        })
+        .collect();
+    let composites = compute_composite_crop_specs(monitors, resolved_placements, &layer_inputs)
+        .context("computing composite crop specs")?;
+
+    let backend: Box<dyn WallpaperBackend> = detect_backend(backend_kind, custom_cmd);
+    clear_temp_dir().context("clearing temp dir")?;
+    let token = apply_token();
+    let mut assignments: Vec<(MonitorRef, PathBuf)> = Vec::with_capacity(composites.len());
+    for comp in &composites {
+        let monitor = monitors
+            .iter()
+            .find(|m| m.id == comp.monitor_id)
+            .ok_or_else(|| {
+                anyhow::anyhow!("crop spec references unknown monitor {:?}", comp.monitor_id)
+            })?;
+        // Compose at the post-rotation logical framebuffer dims, same as the
+        // span path — the backend writes the file as-is (memory: KDE wallpaper
+        // orientation).
+        let layer_refs: Vec<_> = comp
+            .slices
+            .iter()
+            .map(|s| (&images[layer_image[s.layer]], &s.spec))
+            .collect();
+        let composed =
+            render_composite(&layer_refs, comp.dst_size).context("compositing monitor slice")?;
+        let safe = sanitise_filename(&monitor.name);
+        let filename = format!("{safe}-{token}.png");
+        let path = save_temp(&composed, &filename).context("saving temp slice")?;
+        debug!(monitor = %monitor.name, file = %path.display(), "wrote composite slice");
+        assignments.push((to_monitor_ref(monitor), path));
+    }
+
+    let report = backend.apply(&assignments).context("backend apply")?;
+    info!(
+        backend = report.backend,
+        monitors = report.monitors_set,
+        elapsed_ms = report.duration.as_millis(),
+        "composite apply complete"
     );
     Ok(report)
 }

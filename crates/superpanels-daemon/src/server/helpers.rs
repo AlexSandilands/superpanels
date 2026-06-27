@@ -29,7 +29,7 @@ pub(super) fn init_picker_if_needed(state: &mut DaemonState, profile_name: &str)
             SpanSource::Slideshow { config, .. } => config.clone(),
             SpanSource::Single { .. } => return,
         },
-        ProfileBody::PerMonitor(_) => return,
+        ProfileBody::PerMonitor(_) | ProfileBody::Composite(_) => return,
     };
     let picker_cfg = profile_to_picker_config(&slideshow_cfg);
     state.slideshow_picker = Some(SlideshowPicker::new(picker_cfg));

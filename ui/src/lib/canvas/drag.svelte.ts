@@ -10,6 +10,22 @@ export type Drag =
   | { kind: 'image'; startX: number; startY: number; startMmX: number; startMmY: number }
   | { kind: 'image-resize'; startX: number; startW: number; startH: number; aspect: number }
   | {
+      kind: 'layer-image';
+      id: string;
+      startX: number;
+      startY: number;
+      startMmX: number;
+      startMmY: number;
+    }
+  | {
+      kind: 'layer-resize';
+      id: string;
+      startX: number;
+      startW: number;
+      startH: number;
+      aspect: number;
+    }
+  | {
       kind: 'monitor';
       id: string;
       startX: number;
@@ -27,6 +43,10 @@ export type DragHandlers = {
   scale: () => number;
   bezelHmm: () => number;
   setImageTransform: (t: ImageTransform) => void;
+  // Composite mode — resolve / write a layer's transform by id. No-ops in the
+  // single-image span path, which never begins a layer drag.
+  getLayer?: (id: string) => ImageTransform | null;
+  setLayerTransform?: (id: string, t: ImageTransform) => void;
 };
 
 export function createDragController(handlers: DragHandlers) {
@@ -68,6 +88,45 @@ export function createDragController(handlers: DragHandlers) {
     return { x: nx, y: ny, guides: out };
   }
 
+  // Snap a free-floating layer rect so its edges align to any monitor edge —
+  // the gesture the user means by "snap the image into place on that monitor".
+  function snapRect(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ): { x: number; y: number; guides: Guide[] } {
+    const monitors = handlers.monitors();
+    const dist = 8 / handlers.scale();
+    const out: Guide[] = [];
+    let nx = x;
+    let ny = y;
+    for (const m of monitors) {
+      const r = monitorRect(m);
+      for (const edge of [r.x, r.x + r.w]) {
+        if (Math.abs(x - edge) < dist) {
+          nx = edge;
+          out.push({ kind: 'v', x: edge });
+        }
+        if (Math.abs(x + w - edge) < dist) {
+          nx = edge - w;
+          out.push({ kind: 'v', x: edge });
+        }
+      }
+      for (const edge of [r.y, r.y + r.h]) {
+        if (Math.abs(y - edge) < dist) {
+          ny = edge;
+          out.push({ kind: 'h', y: edge });
+        }
+        if (Math.abs(y + h - edge) < dist) {
+          ny = edge - h;
+          out.push({ kind: 'h', y: edge });
+        }
+      }
+    }
+    return { x: nx, y: ny, guides: out };
+  }
+
   return {
     get drag() {
       return drag;
@@ -87,7 +146,8 @@ export function createDragController(handlers: DragHandlers) {
       const dx = ev.clientX - drag.startX;
       const scale = handlers.scale();
       const dxMm = dx / scale;
-      const dy = drag.kind === 'image-resize' ? 0 : ev.clientY - drag.startY;
+      const dy =
+        drag.kind === 'image-resize' || drag.kind === 'layer-resize' ? 0 : ev.clientY - drag.startY;
       const dyMm = dy / scale;
 
       if (drag.kind === 'image') {
@@ -100,6 +160,26 @@ export function createDragController(handlers: DragHandlers) {
         const newW = Math.max(50, drag.startW + dxMm);
         const newH = newW / drag.aspect;
         handlers.setImageTransform({ ...handlers.imageTransform(), widthMm: newW, heightMm: newH });
+      } else if (drag.kind === 'layer-image') {
+        const t = handlers.getLayer?.(drag.id);
+        if (!t) return;
+        let nx = drag.startMmX + dxMm;
+        let ny = drag.startMmY + dyMm;
+        if (!ev.altKey) {
+          const snapped = snapRect(nx, ny, t.widthMm, t.heightMm);
+          nx = snapped.x;
+          ny = snapped.y;
+          guides = snapped.guides;
+        } else {
+          guides = [];
+        }
+        handlers.setLayerTransform?.(drag.id, { ...t, offsetMmX: nx, offsetMmY: ny });
+      } else if (drag.kind === 'layer-resize') {
+        const t = handlers.getLayer?.(drag.id);
+        if (!t) return;
+        const newW = Math.max(50, drag.startW + dxMm);
+        const newH = newW / drag.aspect;
+        handlers.setLayerTransform?.(drag.id, { ...t, widthMm: newW, heightMm: newH });
       } else if (drag.kind === 'monitor') {
         let newX = drag.startMmX + dxMm;
         let newY = drag.startMmY + dyMm;

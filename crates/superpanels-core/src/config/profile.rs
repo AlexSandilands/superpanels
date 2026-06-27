@@ -20,6 +20,7 @@ use crate::schedule::MonitorPlacement;
 pub enum ProfileBody {
     Span(SpanProfile),
     PerMonitor(PerMonitorProfile),
+    Composite(CompositeProfile),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -205,6 +206,24 @@ pub enum SlideshowStart {
     Resume,
     NewRandom,
     First,
+}
+
+/// Several images placed freely on the canvas at once. Each monitor composites
+/// every overlapping layer in `layers` order (index 0 = bottom, last = top);
+/// uncovered regions render black. The canvas is the source of truth, exactly
+/// like [`SpanProfile`] — `layers` just generalises its single rect to many.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../ui/src/lib/types/")]
+pub struct CompositeProfile {
+    /// Bottom-to-top stacking order; the last layer wins where images overlap.
+    pub layers: Vec<CompositeLayer>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../ui/src/lib/types/")]
+pub struct CompositeLayer {
+    pub path: PathBuf,
+    pub image_rect_mm: ImageRectMm,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -434,5 +453,55 @@ mod tests {
             path: PathBuf::from("/walls/a.png"),
         };
         assert!(source.override_for(Path::new("/walls/a.png")).is_none());
+    }
+
+    fn composite_body() -> ProfileBody {
+        ProfileBody::Composite(CompositeProfile {
+            layers: vec![
+                CompositeLayer {
+                    path: PathBuf::from("/walls/big.png"),
+                    image_rect_mm: ImageRectMm {
+                        x_mm: 0.0,
+                        y_mm: 0.0,
+                        w_mm: 1800.0,
+                        h_mm: 600.0,
+                    },
+                },
+                CompositeLayer {
+                    path: PathBuf::from("/walls/small.png"),
+                    image_rect_mm: ImageRectMm {
+                        x_mm: 1200.0,
+                        y_mm: 0.0,
+                        w_mm: 600.0,
+                        h_mm: 600.0,
+                    },
+                },
+            ],
+        })
+    }
+
+    #[test]
+    fn composite_body_round_trips_through_toml() {
+        let body = composite_body();
+        let toml = toml::to_string(&body).unwrap();
+        assert!(toml.contains("type = \"composite\""), "got: {toml}");
+        let back: ProfileBody = toml::from_str(&toml).unwrap();
+        assert_eq!(back, body);
+    }
+
+    #[test]
+    fn composite_body_round_trips_through_json() {
+        let body = composite_body();
+        let json = serde_json::to_string(&body).unwrap();
+        let back: ProfileBody = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, body);
+    }
+
+    #[test]
+    fn composite_body_with_empty_layers_round_trips() {
+        let body = ProfileBody::Composite(CompositeProfile { layers: Vec::new() });
+        let toml = toml::to_string(&body).unwrap();
+        let back: ProfileBody = toml::from_str(&toml).unwrap();
+        assert_eq!(back, body);
     }
 }

@@ -100,7 +100,7 @@ pub(crate) async fn slideshow_tick(state: Arc<Mutex<DaemonState>>) {
                 SpanSource::Slideshow { images, .. } => images.clone(),
                 SpanSource::Single { .. } => return,
             },
-            ProfileBody::PerMonitor(_) => return,
+            ProfileBody::PerMonitor(_) | ProfileBody::Composite(_) => return,
         };
         let backend_kind = profile
             .backend_override

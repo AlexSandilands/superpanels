@@ -36,6 +36,8 @@ pub enum DisableReason {
     },
     /// Slideshow image set has no sources at all — nothing was picked yet.
     SlideshowEmpty,
+    /// Composite canvas has no image layers — nothing to render.
+    CompositeEmpty,
     MonitorNotConnected {
         monitor: MonitorRef,
     },
@@ -96,6 +98,18 @@ impl ProfileValidity {
                     }
                 }
             },
+            ProfileBody::Composite(composite) => {
+                if composite.layers.is_empty() {
+                    reasons.push(DisableReason::CompositeEmpty);
+                }
+                for layer in &composite.layers {
+                    if !layer.path.exists() {
+                        reasons.push(DisableReason::ImageMissing {
+                            path: layer.path.clone(),
+                        });
+                    }
+                }
+            }
             ProfileBody::PerMonitor(pm) => {
                 for PerMonitorAssignment { monitor, path } in &pm.assignments {
                     if !connected_keys.contains(&monitor.stable_id)

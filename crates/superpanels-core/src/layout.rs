@@ -135,12 +135,99 @@ pub fn compute_crop_specs<S: BuildHasher>(
     }
 
     let mut specs = Vec::with_capacity(monitors.len());
+    for m in monitors {
+        let key = monitor_key(m);
+        let Some(placement) = placements.get(&key) else {
+            return Err(LayoutError::PlacementMissing {
+                name: m.name.clone(),
+            });
+        };
+        specs.push(crop_spec_for(m, *placement, image_size_px, image_rect_mm));
+    }
+
+    Ok(specs)
+}
+
+/// The crop one monitor takes from one image rectangle. Pure geometry —
+/// callers validate `image_size_px` / `image_rect_mm` first. A monitor that
+/// doesn't overlap the rectangle yields `slice_dst_size == (0, 0)` (the
+/// caller letterboxes it black or, in a composite, skips the layer).
+fn crop_spec_for(
+    m: &Monitor,
+    placement: MonitorPlacement,
+    image_size_px: (u32, u32),
+    image_rect_mm: ImageRectMm,
+) -> CropSpec {
     let img_origin = (f64::from(image_rect_mm.x_mm), f64::from(image_rect_mm.y_mm));
     let px_per_mm = (
         f64::from(image_size_px.0) / f64::from(image_rect_mm.w_mm),
         f64::from(image_size_px.1) / f64::from(image_rect_mm.h_mm),
     );
+    let eff = EffectiveMonitor::from_monitor(m, placement);
+    let mon_origin = (f64::from(eff.placement.x_mm), f64::from(eff.placement.y_mm));
+    let mon_size = (eff.width_mm, eff.height_mm);
+    let mon_dst_size = (eff.pixel_w, eff.pixel_h);
 
+    let unclamped = algorithm::UnclampedSrc {
+        left: (mon_origin.0 - img_origin.0) * px_per_mm.0,
+        top: (mon_origin.1 - img_origin.1) * px_per_mm.1,
+        width: mon_size.0 * px_per_mm.0,
+        height: mon_size.1 * px_per_mm.1,
+    };
+    let slice = algorithm::clamp_to_slice(&unclamped, image_size_px, mon_dst_size);
+
+    CropSpec {
+        monitor_id: m.id,
+        src_rect: slice.src_rect,
+        dst_offset: slice.dst_offset,
+        dst_size: mon_dst_size,
+        slice_dst_size: slice.dst_size,
+        rotation: m.rotation,
+    }
+}
+
+/// One monitor's composite plan: the destination framebuffer size plus every
+/// image layer that overlaps it, in bottom-to-top render order. `slices` is
+/// empty when no layer covers the monitor — it renders fully black.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MonitorComposite {
+    pub monitor_id: MonitorId,
+    pub dst_size: (u32, u32),
+    pub slices: Vec<MonitorSlice>,
+}
+
+/// A single layer's contribution to one monitor.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MonitorSlice {
+    /// Index into the `layers` slice passed to [`compute_composite_crop_specs`].
+    pub layer: usize,
+    pub spec: CropSpec,
+}
+
+/// Composite variant of [`compute_crop_specs`]: each monitor collects a crop
+/// from every overlapping layer instead of one image. `layers` is bottom-to-top
+/// `(image_size_px, image_rect_mm)`; the apply pipeline alpha-stacks the slices
+/// in that order. Non-overlapping layers are dropped per monitor.
+pub fn compute_composite_crop_specs<S: BuildHasher>(
+    monitors: &[Monitor],
+    placements: &HashMap<String, MonitorPlacement, S>,
+    layers: &[((u32, u32), ImageRectMm)],
+) -> Result<Vec<MonitorComposite>, LayoutError> {
+    if monitors.is_empty() {
+        return Err(LayoutError::EmptyMonitorList);
+    }
+    for (size, rect) in layers {
+        validate_inputs(monitors, *size)?;
+        if !rect.w_mm.is_finite() || !rect.h_mm.is_finite() || rect.w_mm <= 0.0 || rect.h_mm <= 0.0
+        {
+            return Err(LayoutError::ImageRectDegenerate {
+                w_mm: rect.w_mm,
+                h_mm: rect.h_mm,
+            });
+        }
+    }
+
+    let mut out = Vec::with_capacity(monitors.len());
     for m in monitors {
         let key = monitor_key(m);
         let Some(placement) = placements.get(&key) else {
@@ -149,29 +236,22 @@ pub fn compute_crop_specs<S: BuildHasher>(
             });
         };
         let eff = EffectiveMonitor::from_monitor(m, *placement);
-        let mon_origin = (f64::from(eff.placement.x_mm), f64::from(eff.placement.y_mm));
-        let mon_size = (eff.width_mm, eff.height_mm);
-        let mon_dst_size = (eff.pixel_w, eff.pixel_h);
-
-        let unclamped = algorithm::UnclampedSrc {
-            left: (mon_origin.0 - img_origin.0) * px_per_mm.0,
-            top: (mon_origin.1 - img_origin.1) * px_per_mm.1,
-            width: mon_size.0 * px_per_mm.0,
-            height: mon_size.1 * px_per_mm.1,
-        };
-        let slice = algorithm::clamp_to_slice(&unclamped, image_size_px, mon_dst_size);
-
-        specs.push(CropSpec {
+        let dst_size = (eff.pixel_w, eff.pixel_h);
+        let mut slices = Vec::new();
+        for (idx, (size, rect)) in layers.iter().enumerate() {
+            let spec = crop_spec_for(m, *placement, *size, *rect);
+            if spec.slice_dst_size.0 == 0 || spec.slice_dst_size.1 == 0 {
+                continue;
+            }
+            slices.push(MonitorSlice { layer: idx, spec });
+        }
+        out.push(MonitorComposite {
             monitor_id: m.id,
-            src_rect: slice.src_rect,
-            dst_offset: slice.dst_offset,
-            dst_size: mon_dst_size,
-            slice_dst_size: slice.dst_size,
-            rotation: m.rotation,
+            dst_size,
+            slices,
         });
     }
-
-    Ok(specs)
+    Ok(out)
 }
 
 /// Pick a sensible default `ImageRectMm` that covers the monitor union with
@@ -528,5 +608,83 @@ mod tests {
             serde_json::to_string(&FitMode::Stretch).unwrap(),
             "\"stretch\""
         );
+    }
+
+    fn rect(x_mm: f32, y_mm: f32, w_mm: f32, h_mm: f32) -> ImageRectMm {
+        ImageRectMm {
+            x_mm,
+            y_mm,
+            w_mm,
+            h_mm,
+        }
+    }
+
+    #[test]
+    fn composite_monitor_covered_by_one_layer_gets_one_slice() {
+        let monitors = vec![monitor(0, "DP-1", 1920, 1080, 0, 0, 480, 270)];
+        let mut placements = HashMap::new();
+        placements.insert(monitor_key(&monitors[0]), place(0.0, 0.0));
+        // Layer 0 covers the monitor; layer 1 sits far to the right.
+        let layers = [
+            ((1920, 1080), rect(0.0, 0.0, 480.0, 270.0)),
+            ((800, 800), rect(2000.0, 0.0, 200.0, 200.0)),
+        ];
+        let out = compute_composite_crop_specs(&monitors, &placements, &layers).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].dst_size, (1920, 1080));
+        assert_eq!(out[0].slices.len(), 1);
+        assert_eq!(out[0].slices[0].layer, 0);
+    }
+
+    #[test]
+    fn composite_monitor_straddling_two_layers_keeps_both_in_order() {
+        let monitors = vec![monitor(0, "DP-1", 1920, 1080, 0, 0, 480, 270)];
+        let mut placements = HashMap::new();
+        placements.insert(monitor_key(&monitors[0]), place(0.0, 0.0));
+        // Both layers overlap the monitor (left half / right half).
+        let layers = [
+            ((1920, 1080), rect(0.0, 0.0, 240.0, 270.0)),
+            ((1920, 1080), rect(240.0, 0.0, 240.0, 270.0)),
+        ];
+        let out = compute_composite_crop_specs(&monitors, &placements, &layers).unwrap();
+        assert_eq!(out[0].slices.len(), 2);
+        // Bottom-to-top order preserved.
+        assert_eq!(out[0].slices[0].layer, 0);
+        assert_eq!(out[0].slices[1].layer, 1);
+        // Each only covers its half of the destination.
+        assert!(out[0].slices[0].spec.needs_letterbox());
+        assert!(out[0].slices[1].spec.needs_letterbox());
+    }
+
+    #[test]
+    fn composite_monitor_covered_by_no_layer_has_empty_slices() {
+        let monitors = vec![monitor(0, "DP-1", 1920, 1080, 0, 0, 480, 270)];
+        let mut placements = HashMap::new();
+        placements.insert(monitor_key(&monitors[0]), place(0.0, 0.0));
+        let layers = [((800, 800), rect(5000.0, 5000.0, 200.0, 200.0))];
+        let out = compute_composite_crop_specs(&monitors, &placements, &layers).unwrap();
+        assert!(out[0].slices.is_empty());
+        // dst_size is still reported so the apply pipeline can render black.
+        assert_eq!(out[0].dst_size, (1920, 1080));
+    }
+
+    #[test]
+    fn composite_no_layers_yields_black_monitors() {
+        let monitors = vec![monitor(0, "DP-1", 1920, 1080, 0, 0, 480, 270)];
+        let mut placements = HashMap::new();
+        placements.insert(monitor_key(&monitors[0]), place(0.0, 0.0));
+        let out = compute_composite_crop_specs(&monitors, &placements, &[]).unwrap();
+        assert_eq!(out.len(), 1);
+        assert!(out[0].slices.is_empty());
+        assert_eq!(out[0].dst_size, (1920, 1080));
+    }
+
+    #[test]
+    fn composite_missing_placement_returns_error() {
+        let monitors = vec![monitor(0, "DP-1", 1920, 1080, 0, 0, 480, 270)];
+        let placements = HashMap::new();
+        let layers = [((1920, 1080), rect(0.0, 0.0, 480.0, 270.0))];
+        let result = compute_composite_crop_specs(&monitors, &placements, &layers);
+        assert!(matches!(result, Err(LayoutError::PlacementMissing { .. })));
     }
 }

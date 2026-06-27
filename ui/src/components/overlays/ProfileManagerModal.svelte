@@ -148,6 +148,9 @@
       ].filter(Boolean);
       return `Slideshow (${parts.join(', ')})`;
     }
+    if (b.type === 'composite') {
+      return `Composite (${b.layers.length} image${b.layers.length === 1 ? '' : 's'})`;
+    }
     return `Per-monitor (${b.assignments.length})`;
   }
 
@@ -161,6 +164,8 @@
         return `folder missing or empty: ${r.path}`;
       case 'slideshow_empty':
         return 'slideshow has no images yet';
+      case 'composite_empty':
+        return 'composite has no images yet';
       case 'monitor_not_connected':
         return `monitor not connected (${r.monitor.name})`;
       case 'physical_size_missing':
