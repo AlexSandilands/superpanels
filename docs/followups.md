@@ -33,10 +33,9 @@ swap silently breaks hand-tuned slideshow images otherwise.
 
 ## Misc Bugs
 
-- "Crop on this screen" preview on the monitor info panel only shows the most recently clicked on image on the canvas. For example if I click an image that covers monitor 2, then select the monitor 2, it will show the preview correctly, but if I think click monitor 1 which has a different image covering it that I haven't clicked, it will just be black
-
-- Off monitor dim button now dims the monitors as well on a standard profile, not just the stuff outside of the monitors. Slideshow works fine. We should have this on by default
+- Off monitor dim button now dims the monitors as well on a standard profile, not just the stuff outside of the monitors. Slideshow works fine. We should also have this setting on by default
 - Should add a resize handle to the top left of the image as well
+- Lets add letting press the delete button to remove an image from the canvas
 - Should be able to filter the library by added folder
 - Fix up icons
   - Library icon in top bar is the same as the move monitor toggle in side bar.
@@ -67,9 +66,9 @@ A Standard draft's `body.layers` (and a Slideshow draft's `image_rect_mm`) is
 only synced from the live canvas stores at apply/save (`syncDraftFromCanvas`),
 so the schedule-preemption undo snapshot can capture a stale layer list / rect
 if it fires mid-edit. **Revisit:** consider eager draft-sync (or
-snapshot-on-apply) for the preemption undo. (The empty-canvas apply hole is
-closed — `cmd_apply_canvas` now rejects an empty Standard, mirroring
-`cmd_apply_profile`'s `standard_empty` gate and the GUI's `canApply`.)
+snapshot-on-apply) for the preemption undo. (An empty Standard is no longer a
+failure case — it applies as an all-black desktop — so a stale-empty snapshot
+just paints black rather than erroring.)
 
 ## Daemon dies with its parent session
 

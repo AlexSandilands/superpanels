@@ -13,20 +13,30 @@
     heightMm: number;
   };
 
+  export type InspectorLayer = { url: string | null; transform: ImageTransform };
+
   type Props = {
     monitor: PreviewMonitor;
-    imageUrl: string | null;
-    imageTransform: ImageTransform;
+    /** Bottom-to-top layers covering the canvas; each positioned relative to
+     *  this monitor so the preview composites whatever actually overlaps it. */
+    layers: InspectorLayer[];
     onClose: () => void;
   };
-  let { monitor, imageUrl, imageTransform, onClose }: Props = $props();
+  let { monitor, layers, onClose }: Props = $props();
 
-  const cropInner = $derived({
-    leftPct: ((imageTransform.offsetMmX - monitor.xMm) / monitor.wMm) * 100,
-    topPct: ((imageTransform.offsetMmY - monitor.yMm) / monitor.hMm) * 100,
-    widthPct: (imageTransform.widthMm / monitor.wMm) * 100,
-    heightPct: (imageTransform.heightMm / monitor.hMm) * 100,
-  });
+  // Each layer's rect as a percentage of the monitor box (the .crop element
+  // *is* this monitor), so layers that don't overlap fall outside and clip away.
+  const placed = $derived(
+    layers
+      .filter((l) => l.url)
+      .map((l) => ({
+        url: l.url,
+        leftPct: ((l.transform.offsetMmX - monitor.xMm) / monitor.wMm) * 100,
+        topPct: ((l.transform.offsetMmY - monitor.yMm) / monitor.hMm) * 100,
+        widthPct: (l.transform.widthMm / monitor.wMm) * 100,
+        heightPct: (l.transform.heightMm / monitor.hMm) * 100,
+      })),
+  );
 
   function setX(v: number) {
     canvasView.override(monitor.id, { xMm: v });
@@ -103,16 +113,16 @@
   <div class="section">
     <div class="section-label">Crop on this screen</div>
     <div class="crop" style:aspect-ratio="{monitor.pxW} / {monitor.pxH}">
-      {#if imageUrl}
+      {#each placed as p, i (i)}
         <div
           class="crop-img"
-          style:left="{cropInner.leftPct}%"
-          style:top="{cropInner.topPct}%"
-          style:width="{cropInner.widthPct}%"
-          style:height="{cropInner.heightPct}%"
-          style:background-image="url({imageUrl})"
+          style:left="{p.leftPct}%"
+          style:top="{p.topPct}%"
+          style:width="{p.widthPct}%"
+          style:height="{p.heightPct}%"
+          style:background-image="url({p.url})"
         ></div>
-      {/if}
+      {/each}
       <div class="crop-label mono">{monitor.pxW}×{monitor.pxH}</div>
     </div>
   </div>

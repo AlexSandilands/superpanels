@@ -753,11 +753,14 @@
   // The dock swatch tracks the live slideshow image, or — on a Standard canvas,
   // which has no single `imageUrl` — the top (last) layer's resolved image.
   const dockThumbUrl = $derived(standard ? (canvasLayers.list.at(-1)?.url ?? null) : imageUrl);
-  // The monitor inspector's crop preview shows that same top layer on a Standard
-  // canvas; its transform drives the crop rect (exact for a one-layer Standard).
-  const inspectorTransform = $derived(
-    standard ? (canvasLayers.list.at(-1)?.transform ?? imageTransform.value) : imageTransform.value,
-  );
+  // Layers feeding the monitor inspector's crop preview, bottom-to-top: every
+  // Standard layer (so each monitor shows whichever images actually cover it),
+  // or the single live slideshow image.
+  const inspectorLayers = $derived.by(() => {
+    if (standard) return canvasLayers.list.map((l) => ({ url: l.url, transform: l.transform }));
+    if (imageUrl) return [{ url: imageUrl, transform: imageTransform.value }];
+    return [];
+  });
   const backendName = $derived(runtime.last?.backend ?? 'auto-detect');
 
   const someMissingMm = $derived(
@@ -877,8 +880,7 @@
          image-less when neither exists, which is fine. -->
     <MonitorInspector
       monitor={selectedMonitor}
-      imageUrl={dockThumbUrl}
-      imageTransform={inspectorTransform}
+      layers={inspectorLayers}
       onClose={() => canvasView.setSelectId(null)}
     />
   {/if}
