@@ -350,6 +350,30 @@
             </div>
           </div>
 
+          {#if libraryStore.roots.length > 1}
+            <div class="section-label" style:margin-top="18px">Folder</div>
+            <div class="flex" style:gap="4px" style:flex-wrap="wrap">
+              <button
+                class="chip"
+                class:active={libraryStore.activeRoot === null}
+                onclick={() => (libraryStore.activeRoot = null)}
+              >
+                any
+              </button>
+              {#each libraryStore.roots as root (root)}
+                <button
+                  class="chip"
+                  class:active={libraryStore.activeRoot === root}
+                  title={root}
+                  onclick={() =>
+                    (libraryStore.activeRoot = libraryStore.activeRoot === root ? null : root)}
+                >
+                  {root.replace(/\/+$/, '').split('/').pop() || root}
+                </button>
+              {/each}
+            </div>
+          {/if}
+
           <div class="section-label" style:margin-top="18px">Sort by</div>
           <div class="flex" style:gap="4px" style:flex-wrap="wrap">
             {#each sortOptions as o (o.value)}

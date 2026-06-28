@@ -39,6 +39,7 @@ let loading = $state(false);
 let busyRoots = $state(false);
 let search = $state('');
 let activeTag = $state<string | null>(null);
+let activeRoot = $state<string | null>(null);
 let aspect = $state<AspectFilter>('all');
 let minResolution = $state(0);
 let sort = $state<SortKey>('date_added');
@@ -67,6 +68,16 @@ function matchesSearch(entry: LibraryEntry, q: string): boolean {
   const needle = q.toLowerCase();
   if (fileName(entry.path).toLowerCase().includes(needle)) return true;
   return entry.tags.some((t) => t.toLowerCase().includes(needle));
+}
+
+// Roots are stored in their config form (often `~/…`) while entry paths are
+// absolute, so match on the tilde-stripped tail at a directory boundary. A
+// nested folder sharing a root's leaf name elsewhere could in theory match, but
+// that's an acceptable edge for a folder filter.
+function inRoot(path: string, root: string): boolean {
+  const tail = root.replace(/^~/, '').replace(/\/+$/, '');
+  if (!tail) return true;
+  return (path + '/').includes(tail + '/');
 }
 
 function matchesAspect(ratio: number, mode: AspectFilter): boolean {
@@ -100,6 +111,7 @@ function visible(): LibraryEntry[] {
     if (favouritesOnly && !e.favourite) return false;
     if (activeTag && !e.tags.some((t) => t.toLowerCase() === activeTag?.toLowerCase()))
       return false;
+    if (activeRoot && roots.includes(activeRoot) && !inRoot(e.path, activeRoot)) return false;
     if (!matchesAspect(e.aspect_ratio, aspect)) return false;
     if (minResolution > 0 && Math.min(e.resolution[0], e.resolution[1]) < minResolution)
       return false;
@@ -181,6 +193,12 @@ export const libraryStore = {
   },
   set activeTag(v: string | null) {
     activeTag = v;
+  },
+  get activeRoot() {
+    return activeRoot;
+  },
+  set activeRoot(v: string | null) {
+    activeRoot = v;
   },
   get aspect() {
     return aspect;
