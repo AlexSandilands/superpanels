@@ -177,7 +177,7 @@ pub(super) async fn cmd_apply_profile(
     .await;
     let report = match report {
         Ok(Ok(r)) => r,
-        Ok(Err(e)) => return IpcResponse::failure(e.to_string()),
+        Ok(Err(e)) => return IpcResponse::failure(format!("{e:#}")),
         Err(e) => return IpcResponse::failure(format!("task panic: {e}")),
     };
 
@@ -278,7 +278,7 @@ pub(super) async fn cmd_apply_canvas(
     .await;
     let report = match report {
         Ok(Ok(r)) => r,
-        Ok(Err(e)) => return IpcResponse::failure(e.to_string()),
+        Ok(Err(e)) => return IpcResponse::failure(format!("{e:#}")),
         Err(e) => return IpcResponse::failure(format!("task panic: {e}")),
     };
 

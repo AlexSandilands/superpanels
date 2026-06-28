@@ -171,10 +171,18 @@ pub(super) async fn cmd_update_profile_image_transform(
     let Some(profile) = guard.config.profiles.iter_mut().find(|p| p.name == name) else {
         return IpcResponse::failure(format!("profile '{name}' not found"));
     };
-    if let superpanels_core::config::ProfileBody::Slideshow(slideshow) = &mut profile.body {
-        if let Some(rect) = image_rect_mm {
+    let applied = match (&mut profile.body, image_rect_mm) {
+        (superpanels_core::config::ProfileBody::Slideshow(slideshow), Some(rect)) => {
             slideshow.image_rect_mm = rect;
+            true
         }
+        // Only a slideshow body carries a profile-level image rect; anything
+        // else (or a missing rect) leaves the profile untouched — no spurious
+        // `updated_at` bump or disk write.
+        _ => false,
+    };
+    if !applied {
+        return IpcResponse::success(json!({}));
     }
     profile.touch();
     if let Err(e) = guard.config.save_to(&path) {
