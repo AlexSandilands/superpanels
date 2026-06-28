@@ -149,6 +149,7 @@ export const api = {
     call<{ paused: boolean }>('slideshow_pause', paused === undefined ? {} : { paused }),
   getConfig: () => call<unknown>('get_config'),
   saveConfig: (config: unknown) => call<void>('save_config', { config }),
+  openConfigFile: () => call<void>('open_config_file'),
   currentState: () => call<RuntimeState>('current_state'),
   setAutostart: (enabled: boolean) => call<{ enabled: boolean }>('set_autostart', { enabled }),
   getAutostart: () => call<{ enabled: boolean }>('get_autostart'),

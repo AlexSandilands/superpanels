@@ -30,6 +30,14 @@
       toast.error('Could not change autostart', errorMessage(err));
     }
   }
+
+  async function openConfigFile() {
+    try {
+      await api.openConfigFile();
+    } catch (err) {
+      toast.error('Could not open config file', errorMessage(err));
+    }
+  }
 </script>
 
 <SectionHeader title="General" sub="App behaviour and notifications." />
@@ -83,12 +91,7 @@
   <button class="btn" onclick={() => toast.info('Open log file', 'not yet wired in this build')}>
     Open log file
   </button>
-  <button
-    class="btn"
-    onclick={() => toast.info('Open config directory', 'not yet wired in this build')}
-  >
-    Open config directory
-  </button>
+  <button class="btn" onclick={openConfigFile}>Open config file</button>
   <button class="btn" onclick={() => toast.info('Open library DB', 'not yet wired in this build')}>
     Open library DB
   </button>

@@ -38,9 +38,6 @@ swap silently breaks hand-tuned slideshow images otherwise.
 - Weird screen rendering artifacts when moving the Superpanels GUI around, it leaves black lines from the bottom of the app on the screen, both on the desktop and on top of other apps if it's in front
 - The slideshow menu in the bottom right bar should have a popup to quickly let you switch to a particular image in the set. Currently you have to click through all of them to get to the one you want
 
-## Add a "open config" button in the settings, maybe monitor config, to open the toml file
-
-
 ## Remove `ProfileBody::PerMonitor`?
 
 The user has never knowingly used the per-monitor mode and flagged it for
