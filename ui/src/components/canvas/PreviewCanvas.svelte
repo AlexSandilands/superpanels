@@ -191,12 +191,36 @@
     });
   }
 
+  // Drop targeting tests monitor rects directly, ignoring layer/image z-order:
+  // a monitor covered by an existing layer must still register as the drop
+  // target so a dropped image can snap onto it (the general `hitAt` returns the
+  // layer on top, which is correct for pointer gestures but wrong for drops).
+  function monitorAtClient(clientX: number, clientY: number): string | null {
+    if (!stageEl) return null;
+    const r = stageEl.getBoundingClientRect();
+    const px = clientX - r.left;
+    const py = clientY - r.top;
+    for (let i = monitorRects.length - 1; i >= 0; i -= 1) {
+      const rect = monitorRects[i];
+      const m = previewMonitors[i];
+      if (
+        rect &&
+        m &&
+        px >= rect.x &&
+        px <= rect.x + rect.w &&
+        py >= rect.y &&
+        py <= rect.y + rect.h
+      )
+        return m.id;
+    }
+    return null;
+  }
+
   /** Monitor id at a viewport-client coordinate, or `null` when not over one.
    *  App's OS file-drop path uses this: Tauri's native drop carries a position
    *  but bypasses this component's own `ondrop` handler. */
   export function monitorIdAtClient(clientX: number, clientY: number): string | null {
-    const hit = hitAt(clientX, clientY);
-    return hit.type === 'monitor' ? hit.id : null;
+    return monitorAtClient(clientX, clientY);
   }
 
   function onPointerDown(ev: PointerEvent) {
@@ -387,15 +411,14 @@
       ev.dataTransfer?.getData('text/plain') ??
       '';
     if (!path) return;
-    const hit = hitAt(ev.clientX, ev.clientY);
-    if (hit.type === 'monitor') onMonitorDrop?.(hit.id, path);
+    const id = monitorAtClient(ev.clientX, ev.clientY);
+    if (id) onMonitorDrop?.(id, path);
   }
 
   function handleDragOver(ev: DragEvent) {
     if (!ev.dataTransfer) return;
     ev.preventDefault();
-    const hit = hitAt(ev.clientX, ev.clientY);
-    dropHover = hit.type === 'monitor' ? hit.id : null;
+    dropHover = monitorAtClient(ev.clientX, ev.clientY);
   }
 </script>
 
