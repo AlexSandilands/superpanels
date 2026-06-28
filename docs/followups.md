@@ -31,9 +31,30 @@ invalidate, with a toast) the per-image `overrides` maps inside
 profile-level `monitor_state` — both are keyed by `stable_id`, so a monitor
 swap silently breaks hand-tuned slideshow images otherwise.
 
-## Misc Bugs
+## Black-line rendering artifact when dragging the window (intermittent)
 
-- Weird screen rendering artifacts when moving the Superpanels GUI around, it leaves black lines from the bottom of the app on the screen, both on the desktop and on top of other apps if it's in front
+Moving the GUI sometimes leaves black lines streaking from the bottom edge of
+the window — they persist on the desktop and over other windows, not just inside
+our app. **Intermittent**: not reproducible on demand (gone on a later session),
+so it reads as a GPU/compositor buffer-presentation / damage-tracking glitch
+rather than app layout.
+
+Almost certainly the WebKitGTK-on-Wayland family of bugs we already mitigate with
+`WEBKIT_DISABLE_DMABUF_RENDERER=1` (see the DMABUF follow-up above for the four
+sites). Stale framebuffer regions leaking outside the surface is a known
+WebKitGTK/Mesa/NVIDIA + KDE Plasma 6 failure mode.
+
+**Candidate mitigations to try if it returns (cheapest first):**
+- Confirm the existing `WEBKIT_DISABLE_DMABUF_RENDERER=1` is actually in effect
+  for the way it's being launched (env vars only apply to `cargo run` / the
+  justfile / the installed desktop entries — a bare `./superpanels-gui` won't
+  have them).
+- `WEBKIT_DISABLE_COMPOSITING_MODE=1` — heavier hammer; disables accelerated
+  compositing for the webview (real smoothness/perf cost), but often clears
+  stale-buffer artifacts. Gate behind testing before keeping.
+- Track upstream WebKitGTK / `webkit2gtk` Arch package for buffer-damage fixes.
+
+**Revisit when:** it reproduces reliably enough to A/B a mitigation.
 
 ## Remove `ProfileBody::PerMonitor`?
 
