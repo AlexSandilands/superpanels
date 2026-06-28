@@ -275,7 +275,10 @@
     if (!dragController.drag) {
       const hit = hitAt(ev.clientX, ev.clientY);
       hoverLayerId =
-        hit.type === 'layer' || hit.type === 'layer-resize' || hit.type === 'layer-remove'
+        hit.type === 'layer' ||
+        hit.type === 'layer-resize' ||
+        hit.type === 'layer-remove' ||
+        hit.type === 'layer-snap'
           ? hit.id
           : null;
       if (hit.type === 'monitor') {

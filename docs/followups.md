@@ -33,7 +33,6 @@ swap silently breaks hand-tuned slideshow images otherwise.
 
 ## Misc Bugs
 
-- Hovering over the snap buttons on the image in the canvas make them disappear
 - Should add a resize handle to the top left of the image as well
 - The library thumbnail on the bottom right library panel is empty when composite canvas
 - Clicking a monitor now no longer shows the monitor details panel that used to pop up
