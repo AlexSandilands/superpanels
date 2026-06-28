@@ -10,8 +10,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde_json::json;
-use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use serde_json::{Value, json};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{App, AppHandle, Emitter, Manager, Wry};
 
@@ -172,10 +172,19 @@ fn refresh_snapshot(state: &Arc<AppState>) {
 fn list_profile_names(state: &Arc<AppState>) -> Vec<String> {
     bridge::call("list_profiles", json!({}), state.config_path().as_deref())
         .ok()
-        .and_then(|v| v.as_array().cloned())
+        .map(|v| profile_names_from_response(&v))
+        .unwrap_or_default()
+}
+
+/// `list_profiles` answers with `{ profiles: [...], validity: [...] }`, not a
+/// bare array — read the names out of the `profiles` field. (Reading the whole
+/// value as an array is why the tray showed no profiles.)
+fn profile_names_from_response(v: &Value) -> Vec<String> {
+    v.get("profiles")
+        .and_then(Value::as_array)
         .map(|arr| {
-            arr.into_iter()
-                .filter_map(|p| p.get("name").and_then(|n| n.as_str()).map(str::to_owned))
+            arr.iter()
+                .filter_map(|p| p.get("name").and_then(Value::as_str).map(str::to_owned))
                 .collect()
         })
         .unwrap_or_default()
@@ -214,6 +223,13 @@ fn tooltip_for(snap: &RuntimeSnapshot) -> String {
     }
 }
 
+fn profile_submenu_label(snap: &RuntimeSnapshot) -> String {
+    match snap.active_profile.as_deref() {
+        Some(p) => format!("Profile: {p}"),
+        None => "Profiles".to_owned(),
+    }
+}
+
 fn build_menu(
     handle: &AppHandle,
     profiles: &[String],
@@ -221,24 +237,36 @@ fn build_menu(
 ) -> tauri::Result<Menu<Wry>> {
     let mut items: Vec<Box<dyn tauri::menu::IsMenuItem<Wry>>> = Vec::new();
 
-    // Profile section ----------------------------------------------------
+    // Profile section: a "Profiles" submenu that expands on hover. The label
+    // carries the active profile so the current mode reads at a glance.
+    let mut profile_items: Vec<Box<dyn tauri::menu::IsMenuItem<Wry>>> = Vec::new();
     if profiles.is_empty() {
-        let placeholder = MenuItem::with_id(
+        profile_items.push(Box::new(MenuItem::with_id(
             handle,
             "tray.profile.empty",
             "(no profiles)",
             false,
             None::<&str>,
-        )?;
-        items.push(Box::new(placeholder));
+        )?));
     } else {
         for name in profiles {
             let id = format!("{PROFILE_PREFIX}{name}");
             let checked = snap.active_profile.as_deref() == Some(name.as_str());
-            let item = CheckMenuItem::with_id(handle, &id, name, true, checked, None::<&str>)?;
-            items.push(Box::new(item));
+            profile_items.push(Box::new(CheckMenuItem::with_id(
+                handle,
+                &id,
+                name,
+                true,
+                checked,
+                None::<&str>,
+            )?));
         }
     }
+    let profile_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> =
+        profile_items.iter().map(AsRef::as_ref).collect();
+    let profile_submenu =
+        Submenu::with_items(handle, profile_submenu_label(snap), true, &profile_refs)?;
+    items.push(Box::new(profile_submenu));
 
     items.push(Box::new(PredefinedMenuItem::separator(handle)?));
 
@@ -413,6 +441,32 @@ mod tests {
 
         let added = vec!["home".to_owned(), "work".to_owned(), "travel".to_owned()];
         assert_ne!(menu_signature(&base, &added), baseline);
+    }
+
+    #[test]
+    fn profile_names_reads_names_from_the_profiles_field() {
+        // `list_profiles` answers with an object, not a bare array — reading
+        // `v.as_array()` here is what hid every profile from the tray.
+        let v = json!({
+            "profiles": [{ "name": "home" }, { "name": "work" }],
+            "validity": [],
+        });
+        assert_eq!(profile_names_from_response(&v), vec!["home", "work"]);
+    }
+
+    #[test]
+    fn profile_names_empty_for_bare_array_or_missing_field() {
+        assert!(profile_names_from_response(&json!([{ "name": "home" }])).is_empty());
+        assert!(profile_names_from_response(&json!({})).is_empty());
+    }
+
+    #[test]
+    fn profile_submenu_label_shows_active_or_falls_back() {
+        assert_eq!(
+            profile_submenu_label(&snap(Some("home"), None, false)),
+            "Profile: home"
+        );
+        assert_eq!(profile_submenu_label(&snap(None, None, false)), "Profiles");
     }
 
     #[test]
