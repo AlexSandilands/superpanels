@@ -27,12 +27,10 @@ pub trait WallpaperBackend: Send + Sync {
     /// Cheap check — env vars and PATH only, no subprocess spawn.
     fn availability(&self) -> Availability;
     fn apply(&self, assignments: &[(MonitorRef, PathBuf)]) -> Result<AppliedReport, BackendError>;
-    /// `false` for backends that composite then set one image.
-    fn supports_per_monitor(&self) -> bool;
 }
 ```
 
-`apply()` returns `AppliedReport` rather than `()` so callers (toast surface, daemon audit log) can surface count and duration without a breaking change. Backends that don't support per-monitor (older GNOME) composite the per-monitor crops into one bezel-correct image; `monitors_set` still reflects the number of monitors covered.
+`apply()` returns `AppliedReport` rather than `()` so callers (toast surface, daemon audit log) can surface count and duration without a breaking change. Backends that can't set each output independently (older GNOME) composite the per-monitor crops into one bezel-correct image; `monitors_set` still reflects the number of monitors covered.
 
 ## Auto-detect order
 

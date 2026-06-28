@@ -197,7 +197,7 @@ impl DaemonState {
 
         let slideshow_cfg = match &profile.body {
             ProfileBody::Slideshow(slideshow) => Some(slideshow.source.config.clone()),
-            ProfileBody::Standard(_) | ProfileBody::PerMonitor(_) => None,
+            ProfileBody::Standard(_) => None,
         };
 
         let Some(cfg) = slideshow_cfg else {
@@ -253,7 +253,7 @@ impl DaemonState {
         let profile = self.config.profiles.iter().find(|p| p.name == name)?;
         match &profile.body {
             ProfileBody::Slideshow(slideshow) => Some(slideshow.source.config.interval),
-            ProfileBody::Standard(_) | ProfileBody::PerMonitor(_) => None,
+            ProfileBody::Standard(_) => None,
         }
     }
 

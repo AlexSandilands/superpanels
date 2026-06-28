@@ -171,7 +171,7 @@ Each is a candidate for its own submodule. The wrong split is "library_part_2.rs
 |---|---|---|
 | Modules / files | `snake_case` | `display`, `layout.rs` |
 | Types (struct, enum, trait, type alias) | `PascalCase` | `Monitor`, `BezelConfig`, `WallpaperBackend` |
-| Enum variants | `PascalCase` | `Rotation::Left`, `FitMode::Fill` |
+| Enum variants | `PascalCase` | `Rotation::Left`, `SlideshowSort::Shuffle` |
 | Functions / methods / variables | `snake_case` | `compute_crop_specs`, `monitor_id` |
 | Constants / statics | `SCREAMING_SNAKE_CASE` | `DEFAULT_BEZEL_MM`, `MAX_DECODE_BYTES` |
 | Lifetime parameters | short, lowercase | `'a`, `'src` |

@@ -26,7 +26,7 @@ pub(super) fn init_picker_if_needed(state: &mut DaemonState, profile_name: &str)
     };
     let slideshow_cfg = match &profile.body {
         ProfileBody::Slideshow(slideshow) => slideshow.source.config.clone(),
-        ProfileBody::Standard(_) | ProfileBody::PerMonitor(_) => return,
+        ProfileBody::Standard(_) => return,
     };
     let picker_cfg = profile_to_picker_config(&slideshow_cfg);
     state.slideshow_picker = Some(SlideshowPicker::new(picker_cfg));

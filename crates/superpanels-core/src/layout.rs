@@ -70,19 +70,6 @@ pub struct ImageRectMm {
     pub h_mm: f32,
 }
 
-/// `FitMode` survives only as a per-monitor scaling hint for `PerMonitor`
-/// profiles. Span profiles describe placement entirely via `ImageRectMm`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../ui/src/lib/types/")]
-#[serde(rename_all = "snake_case")]
-pub enum FitMode {
-    #[default]
-    Fill,
-    Fit,
-    Stretch,
-    Center,
-}
-
 #[derive(Debug, Error)]
 pub enum LayoutError {
     #[error("monitor list cannot be empty")]
@@ -613,15 +600,6 @@ mod tests {
             (1077..=1081).contains(&portrait_crop.src_rect.w),
             "expected ≈1079-px-wide src_rect, got {}",
             portrait_crop.src_rect.w
-        );
-    }
-
-    #[test]
-    fn fit_mode_serialises_as_snake_case() {
-        assert_eq!(serde_json::to_string(&FitMode::Fill).unwrap(), "\"fill\"");
-        assert_eq!(
-            serde_json::to_string(&FitMode::Stretch).unwrap(),
-            "\"stretch\""
         );
     }
 

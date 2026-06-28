@@ -6,7 +6,6 @@ import type { ProfileBody } from './ProfileBody';
 import type { StandardProfile } from './StandardProfile';
 import type { SlideshowProfile } from './SlideshowProfile';
 import type { SlideshowSource } from './SlideshowSource';
-import type { PerMonitorProfile } from './PerMonitorProfile';
 import type { SlideshowConfig } from './SlideshowConfig';
 import type { ImageOverride } from './ImageOverride';
 
@@ -21,8 +20,6 @@ export type { ImageSource } from './ImageSource';
 export type { SlideshowConfig } from './SlideshowConfig';
 export type { SlideshowSort } from './SlideshowSort';
 export type { SlideshowStart } from './SlideshowStart';
-export type { PerMonitorProfile } from './PerMonitorProfile';
-export type { PerMonitorAssignment } from './PerMonitorAssignment';
 export type { MonitorRef } from './MonitorRef';
 export type { MonitorPlacement } from './MonitorPlacement';
 export type { TopologyFingerprint } from './TopologyFingerprint';
@@ -30,7 +27,6 @@ export type { Schedule } from './Schedule';
 export type { Trigger } from './Trigger';
 export type { ProfileValidity } from './ProfileValidity';
 export type { DisableReason } from './DisableReason';
-export type { FitMode } from './FitMode';
 export type { ImageOverride } from './ImageOverride';
 
 /** A standard profile: one or more freely-placed image layers. A single image
@@ -43,12 +39,6 @@ export function isSlideshowBody(
   body: ProfileBody,
 ): body is { type: 'slideshow' } & SlideshowProfile {
   return body.type === 'slideshow';
-}
-
-export function isPerMonitorBody(
-  body: ProfileBody,
-): body is { type: 'per_monitor' } & PerMonitorProfile {
-  return body.type === 'per_monitor';
 }
 
 /** Profile flavour offered by the save-as-new dialog. */

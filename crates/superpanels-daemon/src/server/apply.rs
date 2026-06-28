@@ -13,9 +13,7 @@ use superpanels_core::schedule::MonitorPlacement;
 use tokio::sync::{Mutex, watch};
 use tracing::info;
 
-use crate::apply::{
-    run_composite_apply, run_immediate_span_apply, run_per_monitor_apply, run_span_apply,
-};
+use crate::apply::{run_composite_apply, run_immediate_span_apply, run_span_apply};
 use crate::pool::resolve_pool;
 use crate::state::DaemonState;
 
@@ -121,15 +119,6 @@ pub(super) async fn cmd_apply_profile(
         (profile, monitors, backend_kind, custom_cmd)
     };
 
-    if let ProfileBody::PerMonitor(pm) = &profile.body {
-        let assignments = pm.assignments.clone();
-        let fit = pm.fit;
-        return apply_and_finish(&state, &timer_tx, Some(&name), move || {
-            run_per_monitor_apply(&assignments, &monitors, fit, backend_kind, &custom_cmd)
-        })
-        .await;
-    }
-
     if let ProfileBody::Standard(standard) = &profile.body {
         let layers = standard.layers.clone();
         let placements = profile.monitor_state.clone();
@@ -160,7 +149,7 @@ pub(super) async fn cmd_apply_profile(
                 None => return IpcResponse::failure("slideshow pool is empty"),
             }
         }
-        ProfileBody::Standard(_) | ProfileBody::PerMonitor(_) => unreachable!("handled above"),
+        ProfileBody::Standard(_) => unreachable!("handled above"),
     };
 
     let profile_clone = profile.clone();
@@ -223,15 +212,6 @@ pub(super) async fn cmd_apply_canvas(
         )
     };
 
-    if let ProfileBody::PerMonitor(pm) = &profile.body {
-        let assignments = pm.assignments.clone();
-        let fit = pm.fit;
-        return apply_and_finish(&state, &timer_tx, active_name.as_deref(), move || {
-            run_per_monitor_apply(&assignments, &monitors, fit, backend_kind, &custom_cmd)
-        })
-        .await;
-    }
-
     if let ProfileBody::Standard(standard) = &profile.body {
         // The canvas is the source of truth: composite straight from the
         // payload's layers + placements, like the slideshow branch below.
@@ -257,7 +237,7 @@ pub(super) async fn cmd_apply_canvas(
             };
             (path, slideshow.image_rect_mm)
         }
-        ProfileBody::Standard(_) | ProfileBody::PerMonitor(_) => unreachable!("handled above"),
+        ProfileBody::Standard(_) => unreachable!("handled above"),
     };
 
     // The canvas is the source of truth for this apply: use the payload's

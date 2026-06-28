@@ -4,7 +4,8 @@
 // its own loaded `url` / `naturalDims` (resolved async) and `transform`.
 
 import { errorMessage } from '$lib/api';
-import { coverImageRect, type PreviewMonitor } from '$lib/canvas/preview-layout';
+import { cover } from '$lib/canvas/snap';
+import { coverImageRect, monitorRect, type PreviewMonitor } from '$lib/canvas/preview-layout';
 import { loadSourceImage, peekSourceImage } from '$lib/library/source-image';
 import { toast } from '$lib/stores/toast.svelte';
 import type { ImageTransform } from '$lib/stores/image-transform.svelte';
@@ -53,22 +54,24 @@ export const canvasLayers = {
     return layers;
   },
 
-  /** Append a new image on top of the stack, cover-fit over `monitors` at the
-   *  image's aspect once it resolves. */
-  async add(path: string, monitors: PreviewMonitor[]): Promise<void> {
+  /** Append a new image on top of the stack. With no `targetMonitorId` the
+   *  layer cover-fits over all `monitors`; with one it covers (fills, cropping
+   *  the overflow axis) just that monitor — the drop-onto-a-monitor gesture. */
+  async add(path: string, monitors: PreviewMonitor[], targetMonitorId?: string): Promise<void> {
     const id = genId();
     const stagger = layers.length * STAGGER_MM;
+    const target = targetMonitorId ? monitors.find((m) => m.id === targetMonitorId) : undefined;
+    // A monitor-targeted drop fills that monitor exactly, so it skips the
+    // stagger nudge the all-monitors cover-fit uses to avoid eclipsing siblings.
+    const seed = (aspect: number): ImageTransform =>
+      target ? cover(monitorRect(target), aspect) : coverTransform(monitors, aspect, stagger);
     const cached = peekSourceImage(path);
     const layer: CanvasLayer = {
       id,
       path,
       url: cached?.url ?? null,
       naturalDims: cached ? { w: cached.naturalW, h: cached.naturalH } : null,
-      transform: coverTransform(
-        monitors,
-        cached ? cached.naturalW / cached.naturalH : 16 / 9,
-        stagger,
-      ),
+      transform: seed(cached ? cached.naturalW / cached.naturalH : 16 / 9),
     };
     layers = [...layers, layer];
     if (cached) return;
@@ -82,7 +85,7 @@ export const canvasLayers = {
               ...l,
               url: img.url,
               naturalDims: { w: img.naturalW, h: img.naturalH },
-              transform: coverTransform(monitors, img.naturalW / img.naturalH, stagger),
+              transform: seed(img.naturalW / img.naturalH),
             }
           : l,
       );

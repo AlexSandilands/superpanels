@@ -29,8 +29,7 @@
   }: Props = $props();
 
   function modeLabel(p: Profile): string {
-    if (p.body.type === 'standard') return 'standard';
-    return p.body.type === 'slideshow' ? 'slideshow' : 'per-monitor';
+    return p.body.type;
   }
 
   function sourceLabel(p: Profile): string {
@@ -39,8 +38,7 @@
       if (n === 1) return p.body.layers[0]?.path || '(no image)';
       return `${n} image${n === 1 ? '' : 's'}`;
     }
-    if (p.body.type === 'slideshow') return 'slideshow';
-    return `${p.body.assignments.length} pins`;
+    return 'slideshow';
   }
 
   // Sort: pinned/active first, then by last_applied_at desc.

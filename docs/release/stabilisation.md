@@ -59,7 +59,6 @@ These should be cleared by 1.0:
 - Lag when opening the profile switcher.
 - Monitor-gap not loaded on app start for the active profile.
 - Topology-repair flow for profiles authored against a different connected set.
-- Per-monitor wallpapers polish (the `PerMonitor` profile body).
 - Taskbar icon on KDE Plasma.
 
 Track these as [GitHub issues](https://github.com/AlexSandilands/superpanels/issues); close them as they ship.

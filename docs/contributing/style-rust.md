@@ -214,7 +214,7 @@ Even if you don't use the return today, you might want to surface "applied to N 
 
 ```rust
 ❌ struct Profile { name: String, image_path: Option<PathBuf>, image_paths: Option<Vec<PathBuf>> }
-✅ enum ProfileBody { Standard(StandardProfile), Slideshow(SlideshowProfile), PerMonitor(PerMonitorProfile) }
+✅ enum ProfileBody { Standard(StandardProfile), Slideshow(SlideshowProfile) }
    struct Profile { name: String, body: ProfileBody }
 ```
 

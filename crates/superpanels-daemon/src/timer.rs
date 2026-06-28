@@ -97,7 +97,7 @@ pub(crate) async fn slideshow_tick(state: Arc<Mutex<DaemonState>>) {
         };
         let images = match &profile.body {
             ProfileBody::Slideshow(slideshow) => slideshow.source.images.clone(),
-            ProfileBody::Standard(_) | ProfileBody::PerMonitor(_) => return,
+            ProfileBody::Standard(_) => return,
         };
         let backend_kind = profile
             .backend_override

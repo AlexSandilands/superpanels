@@ -111,10 +111,6 @@ impl WallpaperBackend for KdeBackend {
             backend: NAME,
         })
     }
-
-    fn supports_per_monitor(&self) -> bool {
-        true
-    }
 }
 
 /// Pure helper: tests can call this without mutating the process env

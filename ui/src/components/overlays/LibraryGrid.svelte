@@ -240,7 +240,7 @@
                 <button
                   class="btn sm"
                   style:padding="0 6px"
-                  title="Set for monitor…"
+                  title="Snap onto monitor…"
                   onclick={(ev) => {
                     ev.stopPropagation();
                     pinFor = pinFor === item.entry.path ? null : item.entry.path;

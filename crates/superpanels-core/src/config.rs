@@ -18,9 +18,9 @@ mod validate;
 
 pub use monitor_edit::{MonitorEditError, MonitorIdentifier, diagonal_to_mm, write_monitor_block};
 pub use profile::{
-    ImageOverride, ImageSet, ImageSource, PerMonitorAssignment, PerMonitorProfile, ProfileBody,
-    ProfileTimestamp, SlideshowConfig, SlideshowProfile, SlideshowSort, SlideshowSource,
-    SlideshowStart, StandardLayer, StandardProfile, now_timestamp,
+    ImageOverride, ImageSet, ImageSource, ProfileBody, ProfileTimestamp, SlideshowConfig,
+    SlideshowProfile, SlideshowSort, SlideshowSource, SlideshowStart, StandardLayer,
+    StandardProfile, now_timestamp,
 };
 
 const APP_DIR: &str = "superpanels";

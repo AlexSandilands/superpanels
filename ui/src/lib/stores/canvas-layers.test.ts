@@ -8,10 +8,32 @@ vi.mock('$lib/library/source-image', () => ({
 vi.mock('$lib/stores/toast.svelte', () => ({ toast: { error: () => {} } }));
 
 import { canvasLayers } from './canvas-layers.svelte';
+import type { PreviewMonitor } from '$lib/canvas/preview-layout';
 import type { StandardLayer } from '$lib/types/profile-helpers';
 
 function layer(path: string, x: number): StandardLayer {
   return { path, image_rect_mm: { x_mm: x, y_mm: 0, w_mm: 100, h_mm: 100 } };
+}
+
+function previewMonitor(id: string, xMm: number, wMm: number, hMm: number): PreviewMonitor {
+  return {
+    id,
+    name: id,
+    model: '',
+    refreshHz: null,
+    rotation: 0,
+    nativeWmm: wMm,
+    nativeHmm: hMm,
+    nativePxW: 1,
+    nativePxH: 1,
+    wMm,
+    hMm,
+    pxW: 1,
+    pxH: 1,
+    xMm,
+    yMm: 0,
+    missing: false,
+  };
 }
 
 beforeEach(() => {
@@ -33,6 +55,29 @@ describe('canvasLayers', () => {
     expect(list.map((l) => l.path)).toEqual(['/big.png', '/small.png']);
     // Top (last) layer is the most recently added.
     expect(list[1]?.url).toBe('data:url//small.png');
+  });
+
+  it('add_with_target_monitor_covers_that_monitor_filling_the_short_axis', async () => {
+    // A square (1000×1000) monitor and a 16:9 image: cover fills the monitor's
+    // height exactly and overflows its width, so the layer fully covers it.
+    const monitors = [
+      previewMonitor('mon-a', 0, 1000, 1000),
+      previewMonitor('mon-b', 2000, 1000, 1000),
+    ];
+    await canvasLayers.add('/wide.png', monitors, 'mon-a');
+    const t = canvasLayers.list[0]?.transform;
+    expect(t?.heightMm).toBeCloseTo(1000, 1);
+    expect(t?.widthMm).toBeGreaterThan(1000);
+    // Centred over mon-a (x ∈ [0,1000]), not over mon-b.
+    const cx = (t?.offsetMmX ?? 0) + (t?.widthMm ?? 0) / 2;
+    expect(cx).toBeCloseTo(500, 1);
+  });
+
+  it('add_with_unknown_target_falls_back_to_whole_desktop_cover', async () => {
+    const monitors = [previewMonitor('mon-a', 0, 1000, 1000)];
+    await canvasLayers.add('/wide.png', monitors, 'no-such-monitor');
+    // Falls back to the all-monitors cover-fit (no throw, layer still added).
+    expect(canvasLayers.list).toHaveLength(1);
   });
 
   it('remove_drops_only_the_matching_layer', () => {

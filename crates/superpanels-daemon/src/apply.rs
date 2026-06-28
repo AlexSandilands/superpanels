@@ -7,17 +7,13 @@ use std::collections::HashMap;
 use anyhow::{Context, Result};
 use superpanels_core::backends::{AppliedReport, WallpaperBackend, detect_backend};
 use superpanels_core::config::{
-    BackendKind, PerMonitorAssignment, Profile, ProfileBody,
-    SlideshowConfig as ProfileSlideshowConfig, SlideshowSort as ProfileSlideshowSort,
-    SlideshowStart as ProfileSlideshowStart, StandardLayer,
+    BackendKind, Profile, ProfileBody, SlideshowConfig as ProfileSlideshowConfig,
+    SlideshowSort as ProfileSlideshowSort, SlideshowStart as ProfileSlideshowStart, StandardLayer,
 };
 use superpanels_core::display::{Monitor, MonitorRef};
-use superpanels_core::image::{
-    FitMode as ImageFitMode, clear_temp_dir, load, render_composite, render_slice, save_temp,
-    scale_to_fit,
-};
+use superpanels_core::image::{clear_temp_dir, load, render_composite, render_slice, save_temp};
 use superpanels_core::layout::{
-    FitMode, ImageRectMm, compute_composite_crop_specs, compute_crop_specs, cover_image_rect_for,
+    ImageRectMm, compute_composite_crop_specs, compute_crop_specs, cover_image_rect_for,
     synthesise_placements,
 };
 use superpanels_core::schedule::MonitorPlacement;
@@ -97,7 +93,7 @@ fn span_layout_for<'a>(
                 (&profile.monitor_state, rect)
             }
         }
-        ProfileBody::Standard(_) | ProfileBody::PerMonitor(_) => (&profile.monitor_state, None),
+        ProfileBody::Standard(_) => (&profile.monitor_state, None),
     }
 }
 
@@ -264,52 +260,6 @@ pub(crate) fn run_composite_apply(
     Ok(report)
 }
 
-/// Apply a per-monitor profile. Each monitor gets its configured image,
-/// scaled to the monitor's resolution under `fit`.
-pub(crate) fn run_per_monitor_apply(
-    assignments: &[PerMonitorAssignment],
-    monitors: &[Monitor],
-    fit: FitMode,
-    backend_kind: BackendKind,
-    custom_cmd: &str,
-) -> Result<AppliedReport> {
-    let backend: Box<dyn WallpaperBackend> = detect_backend(backend_kind, custom_cmd);
-
-    clear_temp_dir().context("clearing temp dir")?;
-    let token = apply_token();
-    let mut backend_assignments: Vec<(MonitorRef, PathBuf)> = Vec::with_capacity(assignments.len());
-
-    for assignment in assignments {
-        // Resolve MonitorRef to a live Monitor for sizing.
-        let monitor = monitors.iter().find(|m| {
-            m.stable_id
-                .as_deref()
-                .is_some_and(|id| id == assignment.monitor.stable_id)
-                || m.name == assignment.monitor.name
-        });
-        if let Some(monitor) = monitor {
-            let source = load(&assignment.path)
-                .with_context(|| format!("loading {}", assignment.path.display()))?;
-            let resized = scale_to_fit(&source, monitor.resolution, layout_fit_to_image_fit(fit));
-            let safe = sanitise_filename(&monitor.name);
-            let path = save_temp(&resized, &format!("{safe}-{token}.png"))
-                .context("saving per-monitor temp file")?;
-            backend_assignments.push((to_monitor_ref(monitor), path));
-        } else {
-            // Monitor not found in current layout — emit warning but continue.
-            tracing::warn!(
-                monitor = %assignment.monitor.name,
-                "monitor not found in current layout; skipping"
-            );
-        }
-    }
-
-    let report = backend
-        .apply(&backend_assignments)
-        .context("backend apply")?;
-    Ok(report)
-}
-
 fn to_monitor_ref(m: &Monitor) -> MonitorRef {
     MonitorRef {
         stable_id: m.stable_id.clone().unwrap_or_else(|| m.name.clone()),
@@ -334,15 +284,6 @@ fn apply_token() -> u128 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos())
-}
-
-fn layout_fit_to_image_fit(f: FitMode) -> ImageFitMode {
-    match f {
-        FitMode::Fill => ImageFitMode::Fill,
-        FitMode::Fit => ImageFitMode::Fit,
-        FitMode::Stretch => ImageFitMode::Stretch,
-        FitMode::Center => ImageFitMode::Center,
-    }
 }
 
 #[cfg(test)]

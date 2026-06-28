@@ -135,7 +135,6 @@ impl WallpaperBackend for MockBackend {
         self.applied.lock().unwrap().extend(/* ... */);
         Ok(AppliedReport { monitors_set: assignments.len(), duration: Duration::ZERO, backend: "mock" })
     }
-    fn supports_per_monitor(&self) -> bool { true }
 }
 ```
 
