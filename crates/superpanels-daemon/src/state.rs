@@ -181,7 +181,7 @@ impl DaemonState {
 
     /// Restore the slideshow picker for `profile_name` from persisted state.
     pub(crate) fn restore_slideshow(&mut self, profile_name: &str, state_path: &std::path::Path) {
-        use superpanels_core::config::{ProfileBody, SpanSource};
+        use superpanels_core::config::ProfileBody;
 
         let profile = self
             .config
@@ -196,11 +196,8 @@ impl DaemonState {
         };
 
         let slideshow_cfg = match &profile.body {
-            ProfileBody::Span(span) => match &span.source {
-                SpanSource::Slideshow { config, .. } => Some(config.clone()),
-                SpanSource::Single { .. } => None,
-            },
-            ProfileBody::PerMonitor(_) | ProfileBody::Composite(_) => None,
+            ProfileBody::Slideshow(slideshow) => Some(slideshow.source.config.clone()),
+            ProfileBody::Standard(_) | ProfileBody::PerMonitor(_) => None,
         };
 
         let Some(cfg) = slideshow_cfg else {
@@ -250,16 +247,13 @@ impl DaemonState {
 
     /// Interval for the active profile's slideshow; `None` when there is none.
     pub(crate) fn active_slideshow_interval(&self) -> Option<Duration> {
-        use superpanels_core::config::{ProfileBody, SpanSource};
+        use superpanels_core::config::ProfileBody;
 
         let name = self.active_profile.as_deref()?;
         let profile = self.config.profiles.iter().find(|p| p.name == name)?;
         match &profile.body {
-            ProfileBody::Span(span) => match &span.source {
-                SpanSource::Slideshow { config, .. } => Some(config.interval),
-                SpanSource::Single { .. } => None,
-            },
-            ProfileBody::PerMonitor(_) | ProfileBody::Composite(_) => None,
+            ProfileBody::Slideshow(slideshow) => Some(slideshow.source.config.interval),
+            ProfileBody::Standard(_) | ProfileBody::PerMonitor(_) => None,
         }
     }
 
@@ -399,7 +393,7 @@ mod tests {
     use superpanels_core::TopologyFingerprint;
     use superpanels_core::config::{
         BackendKind, ImageSet, Profile, ProfileBody, SlideshowConfig as SlideshowCfg,
-        SlideshowSort, SlideshowStart, SpanProfile, SpanSource,
+        SlideshowProfile, SlideshowSort, SlideshowSource, SlideshowStart,
     };
     use superpanels_core::layout::ImageRectMm;
     use superpanels_core::slideshow::{
@@ -414,8 +408,8 @@ mod tests {
         let now = superpanels_core::config::now_timestamp();
         Profile {
             name: name.to_owned(),
-            body: ProfileBody::Span(SpanProfile {
-                source: SpanSource::Slideshow {
+            body: ProfileBody::Slideshow(SlideshowProfile {
+                source: SlideshowSource {
                     images: ImageSet::from_folder(PathBuf::from("/walls"), false),
                     config: SlideshowCfg {
                         interval: Duration::from_secs(60),

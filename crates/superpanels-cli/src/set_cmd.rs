@@ -13,7 +13,7 @@ use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 use superpanels_core::backends::{WallpaperBackend, detect_backend};
 use superpanels_core::config::{
-    BackendKind, Config, Profile, ProfileBody, SpanProfile, SpanSource,
+    BackendKind, Config, Profile, ProfileBody, StandardLayer, StandardProfile,
 };
 use superpanels_core::detect;
 use superpanels_core::display::{Monitor, MonitorRef};
@@ -175,11 +175,11 @@ fn save_profile(args: &SetArgs, name: &str, config_path: Option<&Path>) -> Resul
     let now = superpanels_core::config::now_timestamp();
     let profile = Profile {
         name: name.to_owned(),
-        body: ProfileBody::Span(SpanProfile {
-            source: SpanSource::Single {
+        body: ProfileBody::Standard(StandardProfile {
+            layers: vec![StandardLayer {
                 path: args.image.clone(),
-            },
-            image_rect_mm,
+                image_rect_mm,
+            }],
         }),
         monitor_state: placements,
         topology,

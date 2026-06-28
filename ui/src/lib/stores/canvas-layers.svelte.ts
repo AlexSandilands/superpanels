@@ -8,7 +8,7 @@ import { coverImageRect, type PreviewMonitor } from '$lib/canvas/preview-layout'
 import { loadSourceImage, peekSourceImage } from '$lib/library/source-image';
 import { toast } from '$lib/stores/toast.svelte';
 import type { ImageTransform } from '$lib/stores/image-transform.svelte';
-import type { CompositeLayer } from '$lib/types/profile-helpers';
+import type { StandardLayer } from '$lib/types/profile-helpers';
 
 export type CanvasLayer = {
   id: string;
@@ -30,7 +30,7 @@ function genId(): string {
   return `layer-${counter}`;
 }
 
-function rectToTransform(r: CompositeLayer['image_rect_mm']): ImageTransform {
+function rectToTransform(r: StandardLayer['image_rect_mm']): ImageTransform {
   return { offsetMmX: r.x_mm, offsetMmY: r.y_mm, widthMm: r.w_mm, heightMm: r.h_mm };
 }
 
@@ -111,7 +111,7 @@ export const canvasLayers = {
 
   /** Replace the stack from a profile's authored layers (transforms come from
    *  the persisted rects; urls load async). */
-  setFromLayers(input: CompositeLayer[]): void {
+  setFromLayers(input: StandardLayer[]): void {
     layers = input.map((cl) => {
       const cached = peekSourceImage(cl.path);
       return {
@@ -143,8 +143,8 @@ export const canvasLayers = {
   },
 
   /** The persisted form of the current stack — `monitor_state` is added by the
-   *  caller, exactly like the span path. */
-  toCompositeLayers(): CompositeLayer[] {
+   *  caller. */
+  toLayers(): StandardLayer[] {
     return layers.map((l) => ({
       path: l.path,
       image_rect_mm: {

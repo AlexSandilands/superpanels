@@ -10,7 +10,7 @@ import type { Profile } from './types/profile-helpers';
 import type { MonitorPlacement } from './types/MonitorPlacement';
 import type { ProfileValidity } from './types/ProfileValidity';
 import type { Schedule } from './types/Schedule';
-import type { SpanSource } from './types/SpanSource';
+import type { SlideshowSource } from './types/SlideshowSource';
 
 export type { Profile };
 
@@ -120,7 +120,7 @@ export const api = {
     profile: string,
     imageRectMm: { x_mm: number; y_mm: number; w_mm: number; h_mm: number } | null,
   ) => call<void>('update_profile_image_transform', { profile, image_rect_mm: imageRectMm }),
-  updateProfileSource: (profile: string, source: SpanSource) =>
+  updateProfileSource: (profile: string, source: SlideshowSource) =>
     call<void>('update_profile_source', { profile, source }),
   listSchedules: () =>
     call<{

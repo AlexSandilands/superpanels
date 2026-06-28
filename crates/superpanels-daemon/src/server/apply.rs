@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use serde_json::json;
 use superpanels_core::backends::AppliedReport;
-use superpanels_core::config::{ProfileBody, SpanSource};
+use superpanels_core::config::ProfileBody;
 use superpanels_core::ipc::{IpcRequest, IpcResponse};
 use superpanels_core::schedule::MonitorPlacement;
 use tokio::sync::{Mutex, watch};
@@ -130,8 +130,8 @@ pub(super) async fn cmd_apply_profile(
         .await;
     }
 
-    if let ProfileBody::Composite(composite) = &profile.body {
-        let layers = composite.layers.clone();
+    if let ProfileBody::Standard(standard) = &profile.body {
+        let layers = standard.layers.clone();
         let placements = profile.monitor_state.clone();
         return apply_and_finish(&state, &timer_tx, Some(&name), move || {
             run_composite_apply(&layers, &monitors, &placements, backend_kind, &custom_cmd)
@@ -140,30 +140,27 @@ pub(super) async fn cmd_apply_profile(
     }
 
     let image_path = match &profile.body {
-        ProfileBody::Span(span) => match &span.source {
-            SpanSource::Single { path } => path.clone(),
-            SpanSource::Slideshow { images, .. } => {
-                let Some(pool) = resolve_pool(&state, images).await else {
-                    return IpcResponse::failure("slideshow pool is empty");
-                };
-                let mut guard = state.lock().await;
-                // A picker left over from a different profile carries that
-                // profile's config and history — start fresh instead.
-                if guard.active_profile.as_deref() != Some(name.as_str()) {
-                    guard.slideshow_picker = None;
-                }
-                init_picker_if_needed(&mut guard, &name);
-                match guard
-                    .slideshow_picker
-                    .as_mut()
-                    .and_then(|p| p.next(&pool).ok())
-                {
-                    Some(p) => p,
-                    None => return IpcResponse::failure("slideshow pool is empty"),
-                }
+        ProfileBody::Slideshow(slideshow) => {
+            let Some(pool) = resolve_pool(&state, &slideshow.source.images).await else {
+                return IpcResponse::failure("slideshow pool is empty");
+            };
+            let mut guard = state.lock().await;
+            // A picker left over from a different profile carries that
+            // profile's config and history — start fresh instead.
+            if guard.active_profile.as_deref() != Some(name.as_str()) {
+                guard.slideshow_picker = None;
             }
-        },
-        ProfileBody::PerMonitor(_) | ProfileBody::Composite(_) => unreachable!("handled above"),
+            init_picker_if_needed(&mut guard, &name);
+            match guard
+                .slideshow_picker
+                .as_mut()
+                .and_then(|p| p.next(&pool).ok())
+            {
+                Some(p) => p,
+                None => return IpcResponse::failure("slideshow pool is empty"),
+            }
+        }
+        ProfileBody::Standard(_) | ProfileBody::PerMonitor(_) => unreachable!("handled above"),
     };
 
     let profile_clone = profile.clone();
@@ -214,6 +211,14 @@ pub(super) async fn cmd_apply_canvas(
         .and_then(|v| v.as_str())
         .map(str::to_owned);
 
+    // Gate empty Standard canvases here (the persisted-profile path gates via
+    // ProfileValidity): a zero-layer composite would push all-black wallpapers.
+    if let ProfileBody::Standard(standard) = &profile.body
+        && standard.layers.is_empty()
+    {
+        return IpcResponse::failure("standard profile has no images yet");
+    }
+
     let (monitors, backend_kind, custom_cmd) = {
         let guard = state.lock().await;
         let backend_kind = profile
@@ -235,10 +240,10 @@ pub(super) async fn cmd_apply_canvas(
         .await;
     }
 
-    if let ProfileBody::Composite(composite) = &profile.body {
+    if let ProfileBody::Standard(standard) = &profile.body {
         // The canvas is the source of truth: composite straight from the
-        // payload's layers + placements, like the span branch below.
-        let layers = composite.layers.clone();
+        // payload's layers + placements, like the slideshow branch below.
+        let layers = standard.layers.clone();
         let placements = profile.monitor_state.clone();
         return apply_and_finish(&state, &timer_tx, active_name.as_deref(), move || {
             run_composite_apply(&layers, &monitors, &placements, backend_kind, &custom_cmd)
@@ -247,26 +252,20 @@ pub(super) async fn cmd_apply_canvas(
     }
 
     let (image_path, image_rect_mm) = match &profile.body {
-        ProfileBody::Span(span) => {
-            let path = match &span.source {
-                SpanSource::Single { path } => path.clone(),
-                SpanSource::Slideshow { images, .. } => {
-                    let Some(pool) = resolve_pool(&state, images).await else {
-                        return IpcResponse::failure("slideshow pool is empty");
-                    };
-                    let resolved = {
-                        let guard = state.lock().await;
-                        canvas_slideshow_image(&guard, active_name.as_deref(), &pool)
-                    };
-                    let Some(path) = resolved else {
-                        return IpcResponse::failure("slideshow pool is empty");
-                    };
-                    path
-                }
+        ProfileBody::Slideshow(slideshow) => {
+            let Some(pool) = resolve_pool(&state, &slideshow.source.images).await else {
+                return IpcResponse::failure("slideshow pool is empty");
             };
-            (path, span.image_rect_mm)
+            let resolved = {
+                let guard = state.lock().await;
+                canvas_slideshow_image(&guard, active_name.as_deref(), &pool)
+            };
+            let Some(path) = resolved else {
+                return IpcResponse::failure("slideshow pool is empty");
+            };
+            (path, slideshow.image_rect_mm)
         }
-        ProfileBody::PerMonitor(_) | ProfileBody::Composite(_) => unreachable!("handled above"),
+        ProfileBody::Standard(_) | ProfileBody::PerMonitor(_) => unreachable!("handled above"),
     };
 
     // The canvas is the source of truth for this apply: use the payload's

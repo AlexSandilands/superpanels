@@ -11,6 +11,9 @@
     | 'tray'
     | 'move'
     | 'cover'
+    | 'snap-w'
+    | 'snap-h'
+    | 'trash'
     | 'reset'
     | 'layout'
     | 'dim'
@@ -156,6 +159,61 @@
       stroke-width="1.2"
     ></rect>
     <path d="M3 5l8 4M3 9l8-4" stroke="currentColor" stroke-width="1" opacity="0.5"></path>
+  </svg>
+{:else if name === 'snap-w'}
+  <svg width={size} height={size} viewBox="0 0 14 14" aria-hidden="true">
+    <rect
+      x="2.5"
+      y="2.5"
+      width="9"
+      height="9"
+      rx="1"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.2"
+      opacity="0.5"
+    ></rect>
+    <path
+      d="M1 7h12M3 5L1 7l2 2M11 5l2 2-2 2"
+      stroke="currentColor"
+      stroke-width="1.3"
+      fill="none"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    ></path>
+  </svg>
+{:else if name === 'snap-h'}
+  <svg width={size} height={size} viewBox="0 0 14 14" aria-hidden="true">
+    <rect
+      x="2.5"
+      y="2.5"
+      width="9"
+      height="9"
+      rx="1"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.2"
+      opacity="0.5"
+    ></rect>
+    <path
+      d="M7 1v12M5 3l2-2 2 2M5 11l2 2 2-2"
+      stroke="currentColor"
+      stroke-width="1.3"
+      fill="none"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    ></path>
+  </svg>
+{:else if name === 'trash'}
+  <svg width={size} height={size} viewBox="0 0 14 14" aria-hidden="true">
+    <path
+      d="M2.5 3.5h9M5 3.5V2.3a.8.8 0 0 1 .8-.8h2.4a.8.8 0 0 1 .8.8v1.2M3.5 3.5l.6 7.4a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.6-7.4"
+      stroke="currentColor"
+      stroke-width="1.2"
+      fill="none"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    ></path>
   </svg>
 {:else if name === 'reset'}
   <svg width={size} height={size} viewBox="0 0 14 14" aria-hidden="true">

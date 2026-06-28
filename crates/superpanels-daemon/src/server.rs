@@ -141,7 +141,8 @@ mod tests {
     use superpanels_core::TopologyFingerprint;
     use superpanels_core::config::{
         BackendKind, Config, ImageSet, Profile, ProfileBody, SlideshowConfig as SlideshowCfg,
-        SlideshowSort, SlideshowStart, SpanProfile, SpanSource,
+        SlideshowProfile, SlideshowSort, SlideshowSource, SlideshowStart, StandardLayer,
+        StandardProfile,
     };
     use superpanels_core::layout::ImageRectMm;
     use superpanels_core::slideshow::{
@@ -161,8 +162,8 @@ mod tests {
         let now = superpanels_core::config::now_timestamp();
         Profile {
             name: name.to_owned(),
-            body: ProfileBody::Span(SpanProfile {
-                source: SpanSource::Slideshow {
+            body: ProfileBody::Slideshow(SlideshowProfile {
+                source: SlideshowSource {
                     images: ImageSet::from_folder(folder.to_path_buf(), false),
                     config: SlideshowCfg {
                         interval: Duration::from_secs(60),
@@ -552,7 +553,7 @@ mod tests {
 
         // Act — push a new slideshow source with a 5 s interval and a
         // 1-entry history window.
-        let new_source = SpanSource::Slideshow {
+        let new_source = SlideshowSource {
             images: ImageSet::from_folder(dir.path().to_path_buf(), false),
             config: SlideshowCfg {
                 interval: Duration::from_secs(5),
@@ -588,8 +589,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn update_profile_source_creates_picker_when_switching_to_slideshow() {
-        // Arrange — active profile, but no picker (it was a Single source).
+    async fn update_profile_source_creates_picker_on_first_activation() {
+        // Arrange — active slideshow profile, but no picker yet (first run).
         let dir = tempdir().unwrap();
         let config_path = dir.path().join("config.toml");
         let mut config = Config::default();
@@ -602,7 +603,7 @@ mod tests {
         let (timer_tx, timer_rx) = watch::channel::<Option<Duration>>(None);
 
         // Act — push a slideshow source onto the active profile.
-        let new_source = SpanSource::Slideshow {
+        let new_source = SlideshowSource {
             images: ImageSet::from_folder(dir.path().to_path_buf(), false),
             config: SlideshowCfg {
                 interval: Duration::from_secs(60),
@@ -657,7 +658,7 @@ mod tests {
         timer_rx.mark_unchanged();
 
         // Act — same 60 s interval, different sort.
-        let new_source = SpanSource::Slideshow {
+        let new_source = SlideshowSource {
             images: ImageSet::from_folder(dir.path().to_path_buf(), false),
             config: SlideshowCfg {
                 interval: Duration::from_secs(60),
@@ -705,9 +706,11 @@ mod tests {
         let mut config = Config::default();
         let mut profile = Profile {
             name: "p".to_owned(),
-            body: ProfileBody::Span(SpanProfile {
-                source: SpanSource::Single { path: img.clone() },
-                image_rect_mm: ImageRectMm::default(),
+            body: ProfileBody::Standard(StandardProfile {
+                layers: vec![StandardLayer {
+                    path: img.clone(),
+                    image_rect_mm: ImageRectMm::default(),
+                }],
             }),
             monitor_state: HashMap::new(),
             topology: TopologyFingerprint(String::new()),

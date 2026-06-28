@@ -9,12 +9,19 @@ export type MonitorOverride = {
   yMm: number;
 };
 
+/** Which class of object pointer gestures target. Images win by default; the
+ *  user flips to `monitors` to rearrange the layout without the layers
+ *  intercepting drags. */
+export type CanvasMode = 'images' | 'monitors';
+
 let zoom = $state(1);
 let panX = $state(0);
 let panY = $state(0);
 let dim = $state(false);
 let hoverId = $state<string | null>(null);
 let selectId = $state<string | null>(null);
+let selectedLayerId = $state<string | null>(null);
+let mode = $state<CanvasMode>('images');
 let overrides = $state<Record<string, MonitorOverride>>({});
 
 export const canvasView = {
@@ -58,6 +65,21 @@ export const canvasView = {
   },
   setSelectId(id: string | null) {
     selectId = id;
+  },
+  get selectedLayerId() {
+    return selectedLayerId;
+  },
+  setSelectedLayerId(id: string | null) {
+    selectedLayerId = id;
+  },
+  get mode() {
+    return mode;
+  },
+  setMode(m: CanvasMode) {
+    mode = m;
+  },
+  toggleMode() {
+    mode = mode === 'images' ? 'monitors' : 'images';
   },
 
   get overrides() {

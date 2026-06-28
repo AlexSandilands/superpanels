@@ -59,10 +59,12 @@ A portrait monitor contributes its rotated dimensions to the physical canvas. In
 - Monitors with non-zero vertical offset that the desktop reports as the same row.
 - HiDPI: a 2.0-scale 4K reports `1920×1080` logical px but `3840×2160` native; layout uses native.
 
-## Composite (multiple images)
+## Standard (one or more images)
 
-A `Composite` profile places **several** image rectangles in the same mm-space
-instead of one. `compute_composite_crop_specs` reuses the single-image per-monitor
+A `Standard` profile places **one or more** image rectangles in the same
+mm-space. A single image is just a one-layer Standard — there is no separate
+single-image layout path; one opaque layer over a black canvas is identical to a
+black-letterboxed span. `compute_composite_crop_specs` reuses the per-monitor
 crop (`crop_spec_for`) once per `(monitor, layer)` pair: a layer that doesn't
 overlap a monitor yields `slice_dst_size == (0, 0)` and is dropped, leaving each
 monitor an ordered list of the layers that *do* cover it (bottom-to-top).
@@ -72,8 +74,11 @@ rendered with a *transparent* letterbox (`render_layer_slice`) and overlaid in
 order onto a black monitor canvas (`render_composite`). Topmost opaque pixels
 win; gaps fall through to lower layers; regions no layer covers stay black. This
 is pixel-accurate WYSIWYG with the GUI canvas — one image can slice across two
-monitors while another fills a third. Same mm/gap math as span; only the number
-of source rectangles and the compositing step differ.
+monitors while another fills a third. (`render_composite` /
+`compute_composite_crop_specs` name the compositing *technique*, not the retired
+`Composite` profile kind.) The single-image *span* layout
+(`compute_crop_specs` / `render_slice`) is now used only by Slideshow, whose
+live image and untuned frames still map through one profile-level rectangle.
 
 ## What the math deliberately does *not* do
 

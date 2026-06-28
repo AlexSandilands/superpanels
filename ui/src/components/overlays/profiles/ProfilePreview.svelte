@@ -1,16 +1,24 @@
 <script lang="ts">
-  // Profile thumbnail preview that draws the source image cover-fitted over
-  // the monitor union (mm-space) and overlays each monitor rectangle at its
-  // authored physical position. All elements share a single mm→px scale so
-  // the monitors visually sit on the image where they will physically crop
-  // it on apply.
+  // Profile thumbnail preview. For a slideshow it cover-fits the single source
+  // image over the monitor union (mm-space). For a standard profile it stacks
+  // each layer at its own mm-space rect (bottom→top), matching the live canvas.
+  // Monitor rectangles overlay at their authored physical positions; everything
+  // shares one mm→px scale so the monitors sit where they will crop on apply.
 
   import type { TopologyRect } from '$lib/profile-topology';
+
+  /** A standard profile's layer: an image drawn to fill its mm-space rect. */
+  export type PreviewLayer = {
+    url: string | null;
+    rect: { x_mm: number; y_mm: number; w_mm: number; h_mm: number };
+  };
 
   type Props = {
     rects: TopologyRect[];
     imageUrl: string | null;
     naturalDims: { w: number; h: number } | null;
+    /** When set, layers are stacked instead of the single cover-fit image. */
+    layers?: PreviewLayer[] | null;
     width: number;
     height: number;
     padding?: number;
@@ -22,6 +30,7 @@
     rects,
     imageUrl,
     naturalDims,
+    layers = null,
     width,
     height,
     padding = 14,
@@ -41,11 +50,14 @@
     const bbW = Math.max(1, maxX - minX);
     const bbH = Math.max(1, maxY - minY);
 
+    const useLayers = layers !== null && layers.length > 0;
+
+    // Single cover-fit image rect (slideshow path).
     let imgX = minX;
     let imgY = minY;
     let imgW = bbW;
     let imgH = bbH;
-    if (naturalDims && naturalDims.w > 0 && naturalDims.h > 0) {
+    if (!useLayers && naturalDims && naturalDims.w > 0 && naturalDims.h > 0) {
       const aspect = naturalDims.w / naturalDims.h;
       let w = bbW;
       let h = w / aspect;
@@ -59,13 +71,18 @@
       imgY = minY + (bbH - h) / 2;
     }
 
-    // Union covers both the image rect (which already covers the monitor
-    // bbox) and the monitors themselves; in cover-fit cases the image is
-    // the outer bound, but we keep this general for safety.
-    const ux0 = Math.min(minX, imgX);
-    const uy0 = Math.min(minY, imgY);
-    const ux1 = Math.max(maxX, imgX + imgW);
-    const uy1 = Math.max(maxY, imgY + imgH);
+    // Union covers the monitors plus whatever images sit over them — the single
+    // cover-fit rect, or every layer rect.
+    const imgXs = useLayers
+      ? (layers ?? []).flatMap((l) => [l.rect.x_mm, l.rect.x_mm + l.rect.w_mm])
+      : [imgX, imgX + imgW];
+    const imgYs = useLayers
+      ? (layers ?? []).flatMap((l) => [l.rect.y_mm, l.rect.y_mm + l.rect.h_mm])
+      : [imgY, imgY + imgH];
+    const ux0 = Math.min(minX, ...imgXs);
+    const uy0 = Math.min(minY, ...imgYs);
+    const ux1 = Math.max(maxX, ...imgXs);
+    const uy1 = Math.max(maxY, ...imgYs);
     const uW = Math.max(1, ux1 - ux0);
     const uH = Math.max(1, uy1 - uy0);
 
@@ -75,15 +92,22 @@
 
     const offX = padding + (innerW - uW * s) / 2 - ux0 * s;
     const offY = padding + (innerH - uH * s) / 2 - uy0 * s;
+    const project = (x: number, y: number, w: number, h: number) => ({
+      x: x * s + offX,
+      y: y * s + offY,
+      w: w * s,
+      h: h * s,
+    });
 
     return {
-      img: { x: imgX * s + offX, y: imgY * s + offY, w: imgW * s, h: imgH * s },
-      monitors: rects.map((r) => ({
-        x: r.x * s + offX,
-        y: r.y * s + offY,
-        w: r.w * s,
-        h: r.h * s,
-      })),
+      img: project(imgX, imgY, imgW, imgH),
+      layers: useLayers
+        ? (layers ?? []).map((l) => ({
+            url: l.url,
+            ...project(l.rect.x_mm, l.rect.y_mm, l.rect.w_mm, l.rect.h_mm),
+          }))
+        : null,
+      monitors: rects.map((r) => project(r.x, r.y, r.w, r.h)),
     };
   });
 </script>
@@ -97,7 +121,21 @@
   style:filter={disabled ? 'grayscale(0.7)' : 'none'}
 >
   {#if layout}
-    {#if imageUrl}
+    {#if layout.layers}
+      {#each layout.layers as l, i (i)}
+        {#if l.url}
+          <img
+            class="img"
+            src={l.url}
+            alt=""
+            style:left="{l.x}px"
+            style:top="{l.y}px"
+            style:width="{l.w}px"
+            style:height="{l.h}px"
+          />
+        {/if}
+      {/each}
+    {:else if imageUrl}
       <img
         class="img"
         src={imageUrl}

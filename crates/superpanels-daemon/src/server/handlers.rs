@@ -171,9 +171,9 @@ pub(super) async fn cmd_update_profile_image_transform(
     let Some(profile) = guard.config.profiles.iter_mut().find(|p| p.name == name) else {
         return IpcResponse::failure(format!("profile '{name}' not found"));
     };
-    if let superpanels_core::config::ProfileBody::Span(span) = &mut profile.body {
+    if let superpanels_core::config::ProfileBody::Slideshow(slideshow) = &mut profile.body {
         if let Some(rect) = image_rect_mm {
-            span.image_rect_mm = rect;
+            slideshow.image_rect_mm = rect;
         }
     }
     profile.touch();
@@ -188,19 +188,19 @@ pub(super) async fn cmd_update_profile_source(
     state: Arc<Mutex<DaemonState>>,
     timer_tx: tokio::sync::watch::Sender<Option<std::time::Duration>>,
 ) -> IpcResponse {
-    use superpanels_core::config::SpanSource;
+    use superpanels_core::config::SlideshowSource;
     use superpanels_core::slideshow::SlideshowPicker;
 
     let Some(name) = req.params.get("profile").and_then(Value::as_str) else {
         return IpcResponse::failure("params.profile (string) required");
     };
-    let source: SpanSource = match req
+    let source: SlideshowSource = match req
         .params
         .get("source")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
     {
         Some(s) => s,
-        None => return IpcResponse::failure("params.source (SpanSource) required"),
+        None => return IpcResponse::failure("params.source (SlideshowSource) required"),
     };
     let is_active = {
         let mut guard = state.lock().await;
@@ -211,7 +211,7 @@ pub(super) async fn cmd_update_profile_source(
         // Mutate a copy and persist it (save validates) before committing to
         // the live config, so a rejected update leaves memory and disk in step.
         let mut next = guard.config.clone();
-        if let Err(e) = next.set_span_source(name, source.clone()) {
+        if let Err(e) = next.set_slideshow_source(name, source.clone()) {
             return IpcResponse::failure(e.to_string());
         }
         if let Err(e) = next.save_to(&path) {
@@ -222,17 +222,12 @@ pub(super) async fn cmd_update_profile_source(
         if is_active {
             // Keep the live picker in step so sort / history changes take
             // effect immediately instead of on the next profile switch.
-            match &source {
-                SpanSource::Slideshow { config, .. } => {
-                    let picker_cfg = crate::apply::profile_to_picker_config(config);
-                    match guard.slideshow_picker.as_mut() {
-                        Some(picker) => picker.update_config(picker_cfg),
-                        // Single → Slideshow: without a picker the armed
-                        // timer would tick into a no-op forever.
-                        None => guard.slideshow_picker = Some(SlideshowPicker::new(picker_cfg)),
-                    }
-                }
-                SpanSource::Single { .. } => guard.clear_slideshow_runtime(),
+            let picker_cfg = crate::apply::profile_to_picker_config(&source.config);
+            match guard.slideshow_picker.as_mut() {
+                Some(picker) => picker.update_config(picker_cfg),
+                // First activation of this slideshow: without a picker the
+                // armed timer would tick into a no-op forever.
+                None => guard.slideshow_picker = Some(SlideshowPicker::new(picker_cfg)),
             }
         }
         is_active
@@ -793,16 +788,16 @@ mod tests {
         use std::collections::HashMap;
         use std::path::PathBuf;
         use superpanels_core::TopologyFingerprint;
-        use superpanels_core::config::{ProfileBody, SpanProfile, SpanSource};
+        use superpanels_core::config::{ProfileBody, StandardLayer, StandardProfile};
         use superpanels_core::layout::ImageRectMm;
         let now = superpanels_core::config::now_timestamp();
         Profile {
             name: "sample".to_owned(),
-            body: ProfileBody::Span(SpanProfile {
-                source: SpanSource::Single {
+            body: ProfileBody::Standard(StandardProfile {
+                layers: vec![StandardLayer {
                     path: PathBuf::from("/img.png"),
-                },
-                image_rect_mm: ImageRectMm::default(),
+                    image_rect_mm: ImageRectMm::default(),
+                }],
             }),
             monitor_state: HashMap::new(),
             topology: TopologyFingerprint(String::new()),

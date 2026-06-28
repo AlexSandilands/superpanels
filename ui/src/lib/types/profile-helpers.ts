@@ -1,22 +1,21 @@
-// Helper functions and re-exports for the ts-rs-generated Profile types
-//. The bare type definitions are now
-// generated; this file only carries factories + type-narrowing helpers.
+// Helper functions and re-exports for the ts-rs-generated Profile types. The
+// bare type definitions are generated; this file only carries factories +
+// type-narrowing helpers.
 
 import type { ProfileBody } from './ProfileBody';
-import type { SpanProfile } from './SpanProfile';
-import type { CompositeProfile } from './CompositeProfile';
+import type { StandardProfile } from './StandardProfile';
+import type { SlideshowProfile } from './SlideshowProfile';
+import type { SlideshowSource } from './SlideshowSource';
 import type { PerMonitorProfile } from './PerMonitorProfile';
 import type { SlideshowConfig } from './SlideshowConfig';
-import type { SpanSource } from './SpanSource';
-import type { ImageSet } from './ImageSet';
 import type { ImageOverride } from './ImageOverride';
 
 export type { Profile } from './Profile';
 export type { ProfileBody } from './ProfileBody';
-export type { SpanProfile } from './SpanProfile';
-export type { CompositeProfile } from './CompositeProfile';
-export type { CompositeLayer } from './CompositeLayer';
-export type { SpanSource } from './SpanSource';
+export type { StandardProfile } from './StandardProfile';
+export type { StandardLayer } from './StandardLayer';
+export type { SlideshowProfile } from './SlideshowProfile';
+export type { SlideshowSource } from './SlideshowSource';
 export type { ImageSet } from './ImageSet';
 export type { ImageSource } from './ImageSource';
 export type { SlideshowConfig } from './SlideshowConfig';
@@ -34,8 +33,16 @@ export type { DisableReason } from './DisableReason';
 export type { FitMode } from './FitMode';
 export type { ImageOverride } from './ImageOverride';
 
-export function isSpanBody(body: ProfileBody): body is { type: 'span' } & SpanProfile {
-  return body.type === 'span';
+/** A standard profile: one or more freely-placed image layers. A single image
+ *  is just a one-layer Standard. */
+export function isStandardBody(body: ProfileBody): body is { type: 'standard' } & StandardProfile {
+  return body.type === 'standard';
+}
+
+export function isSlideshowBody(
+  body: ProfileBody,
+): body is { type: 'slideshow' } & SlideshowProfile {
+  return body.type === 'slideshow';
 }
 
 export function isPerMonitorBody(
@@ -44,27 +51,8 @@ export function isPerMonitorBody(
   return body.type === 'per_monitor';
 }
 
-export function isCompositeBody(
-  body: ProfileBody,
-): body is { type: 'composite' } & CompositeProfile {
-  return body.type === 'composite';
-}
-
-export type SlideshowSource = {
-  type: 'slideshow';
-  images: ImageSet;
-  config: SlideshowConfig;
-  overrides?: { [key in string]: ImageOverride };
-  /** One layout for every image — see `SpanSource::Slideshow::uniform_layout`. */
-  uniform_layout?: boolean;
-};
-
 /** Profile flavour offered by the save-as-new dialog. */
-export type ProfileKind = 'single' | 'slideshow' | 'composite';
-
-export function isSlideshowSource(source: SpanSource): source is SlideshowSource {
-  return source.type === 'slideshow';
-}
+export type ProfileKind = 'standard' | 'slideshow';
 
 /** The per-image canvas override for `path`, when one was authored. */
 export function overrideFor(source: SlideshowSource, path: string): ImageOverride | null {

@@ -7,9 +7,9 @@ use std::collections::HashMap;
 use anyhow::{Context, Result};
 use superpanels_core::backends::{AppliedReport, WallpaperBackend, detect_backend};
 use superpanels_core::config::{
-    BackendKind, CompositeLayer, PerMonitorAssignment, Profile, ProfileBody,
+    BackendKind, PerMonitorAssignment, Profile, ProfileBody,
     SlideshowConfig as ProfileSlideshowConfig, SlideshowSort as ProfileSlideshowSort,
-    SlideshowStart as ProfileSlideshowStart, SpanSource,
+    SlideshowStart as ProfileSlideshowStart, StandardLayer,
 };
 use superpanels_core::display::{Monitor, MonitorRef};
 use superpanels_core::image::{
@@ -75,32 +75,29 @@ pub(crate) fn run_span_apply(
     )
 }
 
-/// Effective placements + image rect for one apply: the image's canvas
-/// override when the slideshow carries one, else the profile-level state.
-/// Untuned slideshow images get `None` unless the slideshow opted into
+/// Effective placements + image rect for one slideshow apply: the image's
+/// canvas override when the slideshow carries one, else the profile-level
+/// state. Untuned slideshow images get `None` unless the slideshow opted into
 /// `uniform_layout` — the profile rect was authored for one specific aspect,
 /// so forcing it would squeeze other pictures; the cover-fit fallback in
 /// [`run_immediate_span_apply`] slices at the image's own aspect instead,
-/// matching the GUI canvas.
+/// matching the GUI canvas. Only slideshows reach this path (Standard goes
+/// through [`run_composite_apply`]); other bodies fall through to no rect.
 fn span_layout_for<'a>(
     profile: &'a Profile,
     image_path: &Path,
 ) -> (&'a HashMap<String, MonitorPlacement>, Option<ImageRectMm>) {
     match &profile.body {
-        ProfileBody::Span(s) => match s.source.override_for(image_path) {
-            Some(o) => {
+        ProfileBody::Slideshow(s) => {
+            if let Some(o) = s.source.override_for(image_path) {
                 debug!(image = %image_path.display(), "using per-image canvas override");
                 (&o.monitor_state, Some(o.image_rect_mm))
+            } else {
+                let rect = s.source.uniform_layout.then_some(s.image_rect_mm);
+                (&profile.monitor_state, rect)
             }
-            None => match &s.source {
-                SpanSource::Slideshow { uniform_layout, .. } => {
-                    let rect = uniform_layout.then_some(s.image_rect_mm);
-                    (&profile.monitor_state, rect)
-                }
-                SpanSource::Single { .. } => (&profile.monitor_state, Some(s.image_rect_mm)),
-            },
-        },
-        ProfileBody::PerMonitor(_) | ProfileBody::Composite(_) => (&profile.monitor_state, None),
+        }
+        ProfileBody::Standard(_) | ProfileBody::PerMonitor(_) => (&profile.monitor_state, None),
     }
 }
 
@@ -185,7 +182,7 @@ pub(crate) fn run_immediate_span_apply(
 /// uncovered regions render black. Empty `placements` synthesise from detected
 /// positions, matching the span path.
 pub(crate) fn run_composite_apply(
-    layers: &[CompositeLayer],
+    layers: &[StandardLayer],
     monitors: &[Monitor],
     placements: &HashMap<String, MonitorPlacement>,
     backend_kind: BackendKind,
@@ -429,8 +426,8 @@ mod tests {
         use std::path::PathBuf;
         use superpanels_core::TopologyFingerprint;
         use superpanels_core::config::{
-            ImageOverride, ImageSet, Profile, ProfileBody, SlideshowSort as Sort,
-            SlideshowStart as Start, SpanProfile, SpanSource,
+            ImageOverride, ImageSet, Profile, ProfileBody, SlideshowProfile, SlideshowSort as Sort,
+            SlideshowSource, SlideshowStart as Start,
         };
 
         let mut override_state = HashMap::new();
@@ -456,8 +453,8 @@ mod tests {
         let now = superpanels_core::config::now_timestamp();
         Profile {
             name: "show".to_owned(),
-            body: ProfileBody::Span(SpanProfile {
-                source: SpanSource::Slideshow {
+            body: ProfileBody::Slideshow(SlideshowProfile {
+                source: SlideshowSource {
                     images: ImageSet::from_folder(PathBuf::from("/walls"), false),
                     config: ProfileSlideshowConfig {
                         interval: Duration::from_secs(600),
@@ -524,10 +521,8 @@ mod tests {
     fn span_layout_uniform_slideshow_uses_profile_rect_for_untuned_image() {
         let image = Path::new("/walls/tuned.png");
         let mut profile = slideshow_profile_with_override(image);
-        if let ProfileBody::Span(s) = &mut profile.body
-            && let SpanSource::Slideshow { uniform_layout, .. } = &mut s.source
-        {
-            *uniform_layout = true;
+        if let ProfileBody::Slideshow(s) = &mut profile.body {
+            s.source.uniform_layout = true;
         }
 
         let (_, rect) = span_layout_for(&profile, Path::new("/walls/other.png"));
@@ -541,24 +536,16 @@ mod tests {
     }
 
     #[test]
-    fn span_layout_single_source_keeps_profile_rect() {
+    fn span_layout_standard_body_carries_no_rect() {
         use superpanels_core::TopologyFingerprint;
-        use superpanels_core::config::{Profile, ProfileBody, SpanProfile, SpanSource};
+        use superpanels_core::config::{Profile, ProfileBody, StandardProfile};
 
         let now = superpanels_core::config::now_timestamp();
         let profile = Profile {
-            name: "single".to_owned(),
-            body: ProfileBody::Span(SpanProfile {
-                source: SpanSource::Single {
-                    path: std::path::PathBuf::from("/walls/a.png"),
-                },
-                image_rect_mm: ImageRectMm {
-                    x_mm: 0.0,
-                    y_mm: 0.0,
-                    w_mm: 1800.0,
-                    h_mm: 600.0,
-                },
-            }),
+            name: "standard".to_owned(),
+            // A Standard body is applied via run_composite_apply, never the span
+            // layout path — span_layout_for falls through to no rect for it.
+            body: ProfileBody::Standard(StandardProfile { layers: Vec::new() }),
             monitor_state: HashMap::new(),
             topology: TopologyFingerprint(String::new()),
             description: None,
@@ -569,8 +556,6 @@ mod tests {
         };
 
         let (_, rect) = span_layout_for(&profile, Path::new("/walls/a.png"));
-
-        let rect = rect.expect("single sources carry their authored rect");
-        assert!((rect.w_mm - 1800.0).abs() < f32::EPSILON);
+        assert!(rect.is_none());
     }
 }

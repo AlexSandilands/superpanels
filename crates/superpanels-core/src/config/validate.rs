@@ -99,49 +99,47 @@ fn validate_profile_body(
     i: usize,
     body: &super::ProfileBody,
 ) -> Result<(), ConfigError> {
-    if let super::ProfileBody::Span(span) = body {
-        if let super::SpanSource::Slideshow {
+    if let super::ProfileBody::Slideshow(slideshow) = body {
+        let super::SlideshowSource {
             images, overrides, ..
-        } = &span.source
-        {
-            if images.sources.len() > v::MAX_SLIDESHOW_IMAGES {
+        } = &slideshow.source;
+        if images.sources.len() > v::MAX_SLIDESHOW_IMAGES {
+            return Err(invalid(
+                path,
+                format!("profile[{i}].body.source.images.sources"),
+                format!(
+                    "{} entries exceeds {} cap",
+                    images.sources.len(),
+                    v::MAX_SLIDESHOW_IMAGES
+                ),
+            ));
+        }
+        if overrides.len() > v::MAX_IMAGE_OVERRIDES {
+            return Err(invalid(
+                path,
+                format!("profile[{i}].body.source.overrides"),
+                format!(
+                    "{} entries exceeds {} cap",
+                    overrides.len(),
+                    v::MAX_IMAGE_OVERRIDES
+                ),
+            ));
+        }
+        for (image, o) in overrides {
+            let finite_placements = o
+                .monitor_state
+                .values()
+                .all(|p| p.x_mm.is_finite() && p.y_mm.is_finite());
+            let r = o.image_rect_mm;
+            let finite_rect = [r.x_mm, r.y_mm, r.w_mm, r.h_mm]
+                .iter()
+                .all(|v| v.is_finite());
+            if !finite_placements || !finite_rect {
                 return Err(invalid(
                     path,
-                    format!("profile[{i}].body.source.images.sources"),
-                    format!(
-                        "{} entries exceeds {} cap",
-                        images.sources.len(),
-                        v::MAX_SLIDESHOW_IMAGES
-                    ),
+                    format!("profile[{i}].body.source.overrides.{}", image.display()),
+                    "placements and image_rect_mm must be finite",
                 ));
-            }
-            if overrides.len() > v::MAX_IMAGE_OVERRIDES {
-                return Err(invalid(
-                    path,
-                    format!("profile[{i}].body.source.overrides"),
-                    format!(
-                        "{} entries exceeds {} cap",
-                        overrides.len(),
-                        v::MAX_IMAGE_OVERRIDES
-                    ),
-                ));
-            }
-            for (image, o) in overrides {
-                let finite_placements = o
-                    .monitor_state
-                    .values()
-                    .all(|p| p.x_mm.is_finite() && p.y_mm.is_finite());
-                let r = o.image_rect_mm;
-                let finite_rect = [r.x_mm, r.y_mm, r.w_mm, r.h_mm]
-                    .iter()
-                    .all(|v| v.is_finite());
-                if !finite_placements || !finite_rect {
-                    return Err(invalid(
-                        path,
-                        format!("profile[{i}].body.source.overrides.{}", image.display()),
-                        "placements and image_rect_mm must be finite",
-                    ));
-                }
             }
         }
     }
@@ -179,8 +177,8 @@ mod tests {
     use std::path::PathBuf;
 
     use crate::config::{
-        ImageOverride, ImageSet, Profile, ProfileBody, SlideshowConfig, SlideshowSort,
-        SlideshowStart, SpanProfile, SpanSource,
+        ImageOverride, ImageSet, Profile, ProfileBody, SlideshowConfig, SlideshowProfile,
+        SlideshowSort, SlideshowSource, SlideshowStart,
     };
     use crate::layout::ImageRectMm;
     use crate::schedule::{MonitorPlacement, TopologyFingerprint};
@@ -193,8 +191,8 @@ mod tests {
         let now = crate::config::now_timestamp();
         let profile = Profile {
             name: "show".to_owned(),
-            body: ProfileBody::Span(SpanProfile {
-                source: SpanSource::Slideshow {
+            body: ProfileBody::Slideshow(SlideshowProfile {
+                source: SlideshowSource {
                     images: ImageSet::from_folder(PathBuf::from("/walls"), false),
                     config: SlideshowConfig {
                         interval: std::time::Duration::from_secs(600),

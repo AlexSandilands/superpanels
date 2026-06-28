@@ -9,7 +9,7 @@ import { profileStore } from '$lib/stores/profile.svelte';
 import { toast } from '$lib/stores/toast.svelte';
 import type { ImageRectMm } from '$lib/types/ImageRectMm';
 import type { MonitorPlacement } from '$lib/types/MonitorPlacement';
-import { isSpanBody, type SlideshowSource } from '$lib/types/profile-helpers';
+import { isSlideshowBody, type SlideshowSource } from '$lib/types/profile-helpers';
 
 export type CanvasLayout = {
   monitor_state: Record<string, MonitorPlacement>;
@@ -17,7 +17,7 @@ export type CanvasLayout = {
 };
 
 // Push one image with an explicit layout to the desktop without advancing
-// the slideshow: a transient single-source span rides `apply_canvas`, so
+// the slideshow: a transient one-layer standard rides `apply_canvas`, so
 // nothing is persisted and the picker's position is untouched.
 async function applyTransientImageLayout(
   draft: Profile,
@@ -27,9 +27,8 @@ async function applyTransientImageLayout(
   const transient: Profile = {
     ...draft,
     body: {
-      type: 'span',
-      source: { type: 'single', path },
-      image_rect_mm: layout.image_rect_mm,
+      type: 'standard',
+      layers: [{ path, image_rect_mm: layout.image_rect_mm }],
     },
     monitor_state: layout.monitor_state,
   };
@@ -77,7 +76,7 @@ export async function removeOverrideForImage(
   const active = profileStore.activeProfile;
   if (!active) return;
   applyMonitorStateToCanvas(active);
-  if (isSpanBody(active.body)) {
+  if (isSlideshowBody(active.body)) {
     await applyTransientImageLayout(draft, path, {
       monitor_state: active.monitor_state,
       image_rect_mm: active.body.image_rect_mm,

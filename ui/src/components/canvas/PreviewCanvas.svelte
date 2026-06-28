@@ -43,6 +43,7 @@
     onLayerTransformChange?: (id: string, next: ImageTransform) => void;
     onLayerRemove?: (id: string) => void;
     onLayerSelect?: (id: string) => void;
+    onLayerSnap?: (id: string, axis: 'width' | 'height') => void;
   };
 
   let {
@@ -56,9 +57,19 @@
     onLayerTransformChange,
     onLayerRemove,
     onLayerSelect,
+    onLayerSnap,
   }: Props = $props();
 
   const compositeMode = $derived(layers.length > 0);
+  const imagesInteractive = $derived(canvasView.mode === 'images');
+
+  // The on-image button cluster needs room; hide it (and its hit regions) on
+  // layers rendered below this width. The ToolDock mirrors the actions.
+  const MIN_BUTTONS_PX = 96;
+  function layerShowsButtons(id: string): boolean {
+    const entry = layerRects.find((l) => l.layer.id === id);
+    return entry ? entry.rect.w >= MIN_BUTTONS_PX && entry.rect.h >= 44 : false;
+  }
 
   let stageEl: HTMLDivElement | undefined = $state();
   let stageW = $state(1200);
@@ -141,8 +152,11 @@
       y: rect.y,
       w: rect.w,
       h: rect.h,
-      dimmed: canvasView.dim,
-      hovered: hoverLayerId === layer.id,
+      // Dim layers while editing monitors so they read as a backdrop.
+      dimmed: canvasView.dim || !imagesInteractive,
+      selected: canvasView.selectedLayerId === layer.id,
+      hovered: imagesInteractive && hoverLayerId === layer.id,
+      showButtons: rect.w >= MIN_BUTTONS_PX && rect.h >= 44,
     })),
   );
 
@@ -161,6 +175,8 @@
     const r = stageEl.getBoundingClientRect();
     return hitTest(clientX - r.left, clientY - r.top, {
       compositeMode,
+      imagesInteractive,
+      buttonsForLayer: layerShowsButtons,
       layerRects: layerRects.map(({ layer, rect }) => ({ id: layer.id, rect })),
       monitors: previewMonitors.map((m, i) => ({
         id: m.id,
@@ -177,8 +193,13 @@
     if (hit.type === 'layer-remove') {
       onLayerRemove?.(hit.id);
       return;
+    } else if (hit.type === 'layer-snap') {
+      canvasView.setSelectedLayerId(hit.id);
+      onLayerSnap?.(hit.id, hit.axis);
+      return;
     } else if (hit.type === 'layer') {
       onLayerSelect?.(hit.id);
+      canvasView.setSelectedLayerId(hit.id);
       const l = layers.find((x) => x.id === hit.id);
       if (l)
         dragController.begin({
@@ -191,6 +212,7 @@
         });
     } else if (hit.type === 'layer-resize') {
       onLayerSelect?.(hit.id);
+      canvasView.setSelectedLayerId(hit.id);
       const l = layers.find((x) => x.id === hit.id);
       if (l)
         dragController.begin({
@@ -232,6 +254,7 @@
       });
     } else {
       canvasView.setSelectId(null);
+      canvasView.setSelectedLayerId(null);
       dragController.begin({
         kind: 'pan',
         startX: ev.clientX,

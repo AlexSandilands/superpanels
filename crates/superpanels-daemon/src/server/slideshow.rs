@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::json;
-use superpanels_core::config::{ProfileBody, SpanSource};
+use superpanels_core::config::ProfileBody;
 use superpanels_core::ipc::{IpcRequest, IpcResponse};
 use superpanels_core::slideshow::SlideshowPicker;
 use tokio::sync::{Mutex, watch};
@@ -39,13 +39,8 @@ pub(super) async fn cmd_slideshow_advance(
             return IpcResponse::failure("active profile no longer in config");
         };
         let images = match &profile.body {
-            ProfileBody::Span(span) => match &span.source {
-                SpanSource::Slideshow { images, .. } => images.clone(),
-                SpanSource::Single { .. } => {
-                    return IpcResponse::failure("active profile has no slideshow");
-                }
-            },
-            ProfileBody::PerMonitor(_) | ProfileBody::Composite(_) => {
+            ProfileBody::Slideshow(slideshow) => slideshow.source.images.clone(),
+            ProfileBody::Standard(_) | ProfileBody::PerMonitor(_) => {
                 return IpcResponse::failure("active profile has no slideshow");
             }
         };
@@ -121,13 +116,8 @@ pub(super) async fn cmd_slideshow_prev(state: Arc<Mutex<DaemonState>>) -> IpcRes
             return IpcResponse::failure("active profile no longer in config");
         };
         match &profile.body {
-            ProfileBody::Span(span) => match &span.source {
-                SpanSource::Slideshow { .. } => {}
-                SpanSource::Single { .. } => {
-                    return IpcResponse::failure("active profile has no slideshow");
-                }
-            },
-            ProfileBody::PerMonitor(_) | ProfileBody::Composite(_) => {
+            ProfileBody::Slideshow(_) => {}
+            ProfileBody::Standard(_) | ProfileBody::PerMonitor(_) => {
                 return IpcResponse::failure("active profile has no slideshow");
             }
         }

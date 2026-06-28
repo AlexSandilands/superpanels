@@ -30,24 +30,26 @@
     quitApp,
     revertCanvasToActive,
     saveActiveProfile,
-    setSpanImage,
     switchAndApply,
   } from '$lib/actions';
   import {
     canvasOverridesDirty,
-    compositeLayersDirty,
     coverRectDirty,
     imageTransformDirty,
+    layersDirty,
     placementsDirty,
     rectDirty,
   } from '$lib/canvas/dirty';
   import { buildPreviewMonitors, defaultOverrides } from '$lib/canvas/preview-layout';
   import {
     resetLayout as runResetLayout,
+    resetSelectedLayer,
     resetTransform as runResetTransform,
     setHGap as runSetHGap,
     setVGap as runSetVGap,
     snapCover as runSnapCover,
+    snapLayer,
+    snapSelectedLayer,
   } from '$lib/canvas/transform-actions';
   import {
     bbox,
@@ -68,9 +70,8 @@
   import { dispatchKey } from '$lib/keymap';
   import {
     defaultSlideshowConfig,
-    isCompositeBody,
-    isSlideshowSource,
-    isSpanBody,
+    isSlideshowBody,
+    isStandardBody,
     overrideFor,
     type ImageOverride,
     type ImageSet,
@@ -112,11 +113,14 @@
     return { defaults, previews, bb };
   }
 
-  async function saveAsNew(name: string, description: string | null, kind: ProfileKind = 'single') {
+  async function saveAsNew(
+    name: string,
+    description: string | null,
+    kind: ProfileKind = 'standard',
+  ) {
     saveDialogOpen = false;
     try {
       let monitor_state: Record<string, { x_mm: number; y_mm: number }> = {};
-      let image_rect_mm = { x_mm: 0, y_mm: 0, w_mm: 0, h_mm: 0 };
       let body;
       if (kind === 'slideshow') {
         // A new slideshow starts from a clean slate — empty set, default
@@ -127,39 +131,21 @@
         for (const m of previews) {
           monitor_state[m.id] = { x_mm: m.xMm, y_mm: m.yMm };
         }
-        image_rect_mm = { x_mm: bb.x, y_mm: bb.y, w_mm: bb.w, h_mm: bb.h };
         body = {
-          type: 'span' as const,
+          type: 'slideshow' as const,
           source: {
-            type: 'slideshow' as const,
             images: emptyImageSet(),
             config: defaultSlideshowConfig(),
           },
-          image_rect_mm,
+          image_rect_mm: { x_mm: bb.x, y_mm: bb.y, w_mm: bb.w, h_mm: bb.h },
         };
-      } else if (kind === 'composite') {
-        for (const m of previewMonitors) {
-          monitor_state[m.id] = { x_mm: m.xMm, y_mm: m.yMm };
-        }
-        body = { type: 'composite' as const, layers: canvasLayers.toCompositeLayers() };
       } else {
+        // Standard: persist whatever layers are on the canvas (0..N). Switching
+        // to it immediately applies them.
         for (const m of previewMonitors) {
           monitor_state[m.id] = { x_mm: m.xMm, y_mm: m.yMm };
         }
-        const t = imageTransform.value;
-        image_rect_mm = {
-          x_mm: t.offsetMmX,
-          y_mm: t.offsetMmY,
-          w_mm: t.widthMm,
-          h_mm: t.heightMm,
-        };
-        body = span
-          ? { ...span, image_rect_mm }
-          : {
-              type: 'span' as const,
-              source: { type: 'single' as const, path: sourcePath ?? '' },
-              image_rect_mm,
-            };
+        body = { type: 'standard' as const, layers: canvasLayers.toLayers() };
       }
       const now = new Date().toISOString();
       const profile = {
@@ -199,10 +185,9 @@
   applyDocumentTokens();
 
   const draft = $derived<Profile | null>(profileStore.draft);
-  const span = $derived(draft && isSpanBody(draft.body) ? draft.body : null);
-  const composite = $derived(draft && isCompositeBody(draft.body) ? draft.body : null);
-  const sourcePath = $derived(span && span.source.type === 'single' ? span.source.path : null);
-  const slideshowSource = $derived(span && isSlideshowSource(span.source) ? span.source : null);
+  const standard = $derived(draft && isStandardBody(draft.body) ? draft.body : null);
+  const slideshow = $derived(draft && isSlideshowBody(draft.body) ? draft.body : null);
+  const slideshowSource = $derived(slideshow ? slideshow.source : null);
 
   // Saved slideshow profile whose image set the library can edit. Unsaved
   // drafts are excluded — `update_profile_source` needs an on-disk profile.
@@ -355,7 +340,7 @@
     uniformWarning = null;
     if (!dockSlideshowProfile) return;
     profileStore.patchDraft((d) => {
-      if (isSpanBody(d.body) && isSlideshowSource(d.body.source)) {
+      if (isSlideshowBody(d.body)) {
         d.body.source.uniform_layout = true;
       }
     });
@@ -385,10 +370,7 @@
   // disables it) — switching to one selects it and opens the library to
   // populate the set instead of surfacing an apply failure.
   function pickProfile(p: Profile) {
-    const emptySlideshow =
-      isSpanBody(p.body) &&
-      isSlideshowSource(p.body.source) &&
-      p.body.source.images.sources.length === 0;
+    const emptySlideshow = isSlideshowBody(p.body) && p.body.source.images.sources.length === 0;
     if (emptySlideshow) {
       profileStore.select(p.name);
       applyMonitorStateToCanvas(p);
@@ -425,7 +407,16 @@
       : null,
   );
 
-  const canApply = $derived(Boolean(draft && draft.name.trim() && !profileStore.saving));
+  // An empty standard canvas (no layers) has nothing to render — block Apply
+  // until at least one image is added, mirroring the empty-slideshow gate.
+  const canApply = $derived(
+    Boolean(
+      draft &&
+      draft.name.trim() &&
+      !profileStore.saving &&
+      !(standard && canvasLayers.list.length === 0),
+    ),
+  );
 
   // Dirty detection (§4e.11.3). The store's own `dirty` flag covers
   // explicit `patchDraft` calls (image source, body shape); on top of that we
@@ -437,10 +428,10 @@
     if (profileStore.dirty) return true;
     const active = profileStore.activeProfile;
     if (!active) return false;
-    if (composite) {
-      if (!isCompositeBody(active.body)) return true;
+    if (standard) {
+      if (!isStandardBody(active.body)) return true;
       if (canvasOverridesDirty(canvasView.overrides, active)) return true;
-      return compositeLayersDirty(canvasLayers.toCompositeLayers(), active.body.layers);
+      return layersDirty(canvasLayers.toLayers(), active.body.layers);
     }
     // While a slideshow image is still resolving, the transform (and loaded
     // dims) belong to the previous image — rect comparisons against the
@@ -574,33 +565,22 @@
     heightMm: r.h_mm,
   });
 
+  // The span-image machinery now drives only the slideshow's live image.
   useSourceImage(
-    () => sourcePath ?? liveSlideshowPath,
+    () => liveSlideshowPath,
     () => previewMonitors,
-    // The authored rect for a slideshow image is its per-image override, or
-    // the profile-level rect when the slideshow runs one uniform layout; for
-    // a single source it's the saved profile's rect (so a profile switch or
-    // cold start shows the layout the manager preview shows). Everything
-    // else — untuned slideshow images, a freshly dropped image whose path
-    // isn't persisted yet — falls through to the cover-fit seed.
+    // The authored rect for a slideshow image is its per-image override, or the
+    // profile-level rect when the slideshow runs one uniform layout. Everything
+    // else — untuned slideshow images — falls through to the cover-fit seed.
     (path) => {
-      if (path === liveSlideshowPath) {
-        const active = profileStore.activeProfile;
-        const r =
-          liveOverride?.image_rect_mm ??
-          (uniformLayoutOn && active && isSpanBody(active.body) ? active.body.image_rect_mm : null);
-        return r ? rectToTransform(r) : null;
-      }
-      const saved = profileStore.profiles.find((pr) => pr.name === draft?.name);
-      if (
-        saved &&
-        isSpanBody(saved.body) &&
-        saved.body.source.type === 'single' &&
-        saved.body.source.path === path
-      ) {
-        return rectToTransform(saved.body.image_rect_mm);
-      }
-      return null;
+      if (path !== liveSlideshowPath) return null;
+      const active = profileStore.activeProfile;
+      const r =
+        liveOverride?.image_rect_mm ??
+        (uniformLayoutOn && active && isSlideshowBody(active.body)
+          ? active.body.image_rect_mm
+          : null);
+      return r ? rectToTransform(r) : null;
     },
   );
 
@@ -614,9 +594,25 @@
   const imageUrl = $derived(sourceImageState.value.url);
   const imageNaturalDims = $derived(sourceImageState.value.naturalDims);
 
-  const snapCover = () => runSnapCover(previewMonitors, imageNaturalDims);
-  const resetTransform = () => runResetTransform(previewMonitors, imageNaturalDims);
+  // Snap / reset target the selected layer in a standard profile; for a
+  // slideshow they fall back to the single span image (cover / reset only —
+  // single-axis snaps are layer-only).
+  const snapWidth = () => snapSelectedLayer(previewMonitors, 'width');
+  const snapHeight = () => snapSelectedLayer(previewMonitors, 'height');
+  const snapCover = () =>
+    standard
+      ? snapSelectedLayer(previewMonitors, 'cover')
+      : runSnapCover(previewMonitors, imageNaturalDims);
+  const resetTransform = () =>
+    standard
+      ? resetSelectedLayer(previewMonitors)
+      : runResetTransform(previewMonitors, imageNaturalDims);
   const resetLayout = () => runResetLayout(snapHmm);
+
+  const snapEnabled = $derived(
+    standard ? Boolean(canvasView.selectedLayerId) : Boolean(imageNaturalDims),
+  );
+  const axisSnapEnabled = $derived(Boolean(standard && canvasView.selectedLayerId));
 
   function onKey(e: KeyboardEvent) {
     dispatchKey(e, {
@@ -662,7 +658,7 @@
       onOpenSettings: () => (settingsOpen = true),
       onDragOver: () => (dragOverlay = true),
       onDragLeave: () => (dragOverlay = false),
-      onDrop: (path) => setSpanImage(path),
+      onDrop: (path) => addImageToCanvas(path),
       onMonitorsChanged: () => void monitorStore.refresh(),
     });
 
@@ -725,8 +721,14 @@
 
   // Source dock metadata — lifted from the active draft for display.
   const sourceName = $derived.by(() => {
-    if (composite) return draft?.name ?? 'composite';
-    if (sourcePath) return sourcePath.split('/').pop() ?? sourcePath;
+    if (standard) {
+      const n = canvasLayers.list.length;
+      if (n === 1) {
+        const p = canvasLayers.list[0]?.path;
+        if (p) return p.split('/').pop() ?? p;
+      }
+      return draft?.name ?? 'standard';
+    }
     if (slideshowSource) {
       if (liveSlideshowPath) return liveSlideshowPath.split('/').pop() ?? liveSlideshowPath;
       return draft?.name ?? 'slideshow';
@@ -734,9 +736,10 @@
     return '— no source';
   });
   const sourceMeta = $derived.by(() => {
-    if (composite) {
+    if (standard) {
       const n = canvasLayers.list.length;
-      return `composite · ${n} image${n === 1 ? '' : 's'}`;
+      if (n === 0) return 'standard · empty — add images';
+      return `standard · ${n} image${n === 1 ? '' : 's'}`;
     }
     if (slideshowSource) {
       const n = slideshowSource.images.sources.length;
@@ -744,7 +747,7 @@
       return `slideshow · ${n} source${n === 1 ? '' : 's'}`;
     }
     if (imageNaturalDims) return `${imageNaturalDims.w}×${imageNaturalDims.h}`;
-    return sourcePath ? 'loading…' : 'pick from library';
+    return 'pick from library';
   });
   const backendName = $derived(runtime.last?.backend ?? 'auto-detect');
 
@@ -757,14 +760,15 @@
   <PreviewCanvas
     monitors={monitorStore.monitors}
     bezelHmm={snapHmm}
-    imageUrl={composite ? null : imageUrl}
+    imageUrl={standard ? null : imageUrl}
     imageTransform={imageTransform.value}
     onImageTransformChange={(t) => imageTransform.set(t)}
     onMonitorDrop={pinImageToMonitor}
-    layers={composite ? canvasLayers.list : []}
+    layers={standard ? canvasLayers.list : []}
     onLayerTransformChange={(id, t) => canvasLayers.patch(id, t)}
     onLayerRemove={(id) => canvasLayers.remove(id)}
     onLayerSelect={(id) => canvasLayers.bringToFront(id)}
+    onLayerSnap={(id, axis) => snapLayer(id, previewMonitors, axis)}
   />
 
   <ModeHint slideshowActive={Boolean(dockSlideshowState || dockSlideshowProfile)} />
@@ -795,14 +799,22 @@
       defaultName={profileStore.activeName
         ? `${profileStore.activeName}-copy`
         : `untitled-${profileStore.profiles.length + 1}`}
-      hasSource={Boolean(sourcePath)}
-      hasComposite={Boolean(composite)}
       onCancel={() => (saveDialogOpen = false)}
       onConfirm={(n, d, k) => void saveAsNew(n, d, k)}
     />
   {/if}
 
-  <ToolDock onResetTransform={resetTransform} onSnapCover={snapCover} onResetLayout={resetLayout} />
+  <ToolDock
+    mode={canvasView.mode}
+    onSetMode={(m) => canvasView.setMode(m)}
+    onSnapWidth={snapWidth}
+    onSnapHeight={snapHeight}
+    onSnapCover={snapCover}
+    onResetTransform={resetTransform}
+    onResetLayout={resetLayout}
+    {snapEnabled}
+    {axisSnapEnabled}
+  />
 
   <MonitorGapDock
     hGapMm={currentHGap}
@@ -850,7 +862,9 @@
     />
   {/if}
 
-  {#if selectedMonitor}
+  {#if selectedMonitor && imageUrl}
+    <!-- The crop inspector previews a single spanning image — only the
+         slideshow's live image qualifies; standard layers have no single rect. -->
     <MonitorInspector
       monitor={selectedMonitor}
       {imageUrl}
@@ -900,7 +914,6 @@
   {#if libraryOpen}
     <LibraryModal
       onClose={() => (libraryOpen = false)}
-      onApplyAsSpan={setSpanImage}
       onPinToMonitor={pinImageToMonitor}
       onAddToCanvas={addImageToCanvas}
       {slideshowTarget}

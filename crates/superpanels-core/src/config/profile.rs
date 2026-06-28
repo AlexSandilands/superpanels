@@ -12,48 +12,48 @@ use crate::display::MonitorRef;
 use crate::layout::{FitMode, ImageRectMm};
 use crate::schedule::MonitorPlacement;
 
-/// `body` of a [`super::Profile`]. The `body`/`source` two-enum split makes
-/// "per-monitor + slideshow" unrepresentable.
+/// `body` of a [`super::Profile`]. Each variant is a distinct wallpaper mode;
+/// the flat split keeps "per-monitor + slideshow" unrepresentable.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../ui/src/lib/types/")]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ProfileBody {
-    Span(SpanProfile),
+    /// One or more images placed freely on the canvas at once. A single image
+    /// is just a one-layer Standard — there is no separate single-image mode.
+    Standard(StandardProfile),
+    Slideshow(SlideshowProfile),
     PerMonitor(PerMonitorProfile),
-    Composite(CompositeProfile),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../ui/src/lib/types/")]
-pub struct SpanProfile {
-    pub source: SpanSource,
-    /// The image's rectangle in canvas mm-space — the canvas is the source
-    /// of truth: monitors crop whatever they overlap with this rectangle.
+pub struct SlideshowProfile {
+    pub source: SlideshowSource,
+    /// The image's rectangle in canvas mm-space, applied under `uniform_layout`
+    /// (and as the baseline for the live image): monitors crop whatever they
+    /// overlap with this rectangle.
     pub image_rect_mm: ImageRectMm,
 }
 
+/// The editable half of a slideshow — its image set, timing, per-image
+/// overrides, and layout flag. Carried by `update_profile_source`; the canvas
+/// rect lives on [`SlideshowProfile`] and is owned by Save.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../ui/src/lib/types/")]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum SpanSource {
-    Single {
-        path: PathBuf,
-    },
-    Slideshow {
-        images: ImageSet,
-        config: SlideshowConfig,
-        /// Sparse per-image canvas snapshots — entries exist only for images
-        /// the user hand-tuned. Keyed by the image's absolute path, so a
-        /// rename or move drops the tweak (see `docs/followups.md`).
-        #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-        overrides: HashMap<PathBuf, ImageOverride>,
-        /// Apply the profile-level layout (`SpanProfile::image_rect_mm` +
-        /// `Profile::monitor_state`) to every image instead of cover-fitting
-        /// each untuned image at its own aspect. Per-image `overrides` still
-        /// win. Suits sets authored at one fixed resolution.
-        #[serde(default, skip_serializing_if = "is_false")]
-        uniform_layout: bool,
-    },
+pub struct SlideshowSource {
+    pub images: ImageSet,
+    pub config: SlideshowConfig,
+    /// Sparse per-image canvas snapshots — entries exist only for images
+    /// the user hand-tuned. Keyed by the image's absolute path, so a
+    /// rename or move drops the tweak (see `docs/followups.md`).
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub overrides: HashMap<PathBuf, ImageOverride>,
+    /// Apply the profile-level layout (`SlideshowProfile::image_rect_mm` +
+    /// `Profile::monitor_state`) to every image instead of cover-fitting
+    /// each untuned image at its own aspect. Per-image `overrides` still
+    /// win. Suits sets authored at one fixed resolution.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub uniform_layout: bool,
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)] // reason: serde's skip_serializing_if takes &T
@@ -61,14 +61,11 @@ fn is_false(b: &bool) -> bool {
     !*b
 }
 
-impl SpanSource {
+impl SlideshowSource {
     /// The per-image canvas override for `image`, when one was authored.
     #[must_use]
     pub fn override_for(&self, image: &Path) -> Option<&ImageOverride> {
-        match self {
-            Self::Slideshow { overrides, .. } => overrides.get(image),
-            Self::Single { .. } => None,
-        }
+        self.overrides.get(image)
     }
 }
 
@@ -208,20 +205,20 @@ pub enum SlideshowStart {
     First,
 }
 
-/// Several images placed freely on the canvas at once. Each monitor composites
+/// One or more images placed freely on the canvas. Each monitor composites
 /// every overlapping layer in `layers` order (index 0 = bottom, last = top);
-/// uncovered regions render black. The canvas is the source of truth, exactly
-/// like [`SpanProfile`] — `layers` just generalises its single rect to many.
+/// uncovered regions render black. The canvas is the source of truth. A single
+/// image is just a one-layer Standard.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../ui/src/lib/types/")]
-pub struct CompositeProfile {
+pub struct StandardProfile {
     /// Bottom-to-top stacking order; the last layer wins where images overlap.
-    pub layers: Vec<CompositeLayer>,
+    pub layers: Vec<StandardLayer>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../ui/src/lib/types/")]
-pub struct CompositeLayer {
+pub struct StandardLayer {
     pub path: PathBuf,
     pub image_rect_mm: ImageRectMm,
 }
@@ -319,7 +316,7 @@ mod tests {
         assert_eq!(set, ImageSet::from_folder(PathBuf::from("/walls"), false));
     }
 
-    fn slideshow_source_with_override(image: &str) -> SpanSource {
+    fn slideshow_source_with_override(image: &str) -> SlideshowSource {
         let mut monitor_state = HashMap::new();
         monitor_state.insert(
             "uuid-a".to_owned(),
@@ -341,7 +338,7 @@ mod tests {
                 },
             },
         );
-        SpanSource::Slideshow {
+        SlideshowSource {
             images: ImageSet::from_folder(PathBuf::from("/walls"), true),
             config: SlideshowConfig {
                 interval: Duration::from_secs(600),
@@ -362,7 +359,7 @@ mod tests {
         // JSON, is the one that must hold path-keyed override tables.
         let source = slideshow_source_with_override("/walls/a.png");
         let toml = toml::to_string(&source).unwrap();
-        let back: SpanSource = toml::from_str(&toml).unwrap();
+        let back: SlideshowSource = toml::from_str(&toml).unwrap();
         assert_eq!(back, source);
     }
 
@@ -370,30 +367,26 @@ mod tests {
     fn slideshow_overrides_round_trip_through_json() {
         let source = slideshow_source_with_override("/walls/a.png");
         let json = serde_json::to_string(&source).unwrap();
-        let back: SpanSource = serde_json::from_str(&json).unwrap();
+        let back: SlideshowSource = serde_json::from_str(&json).unwrap();
         assert_eq!(back, source);
     }
 
     #[test]
     fn slideshow_without_overrides_field_deserializes_to_empty_map() {
-        // Pre-overrides configs and wire payloads must keep loading.
+        // A wire payload without the (skipped) overrides table must still load.
         let toml = concat!(
-            "type = \"slideshow\"\n",
             "[images]\n",
             "sources = [{ type = \"folder\", path = \"/walls\" }]\n",
             "[config]\n",
             "interval_secs = 600\n",
         );
-        let source: SpanSource = toml::from_str(toml).unwrap();
-        let SpanSource::Slideshow { overrides, .. } = source else {
-            panic!("expected slideshow source");
-        };
-        assert!(overrides.is_empty());
+        let source: SlideshowSource = toml::from_str(toml).unwrap();
+        assert!(source.overrides.is_empty());
     }
 
     #[test]
     fn empty_overrides_are_not_serialized() {
-        let source = SpanSource::Slideshow {
+        let source = SlideshowSource {
             images: ImageSet::from_folder(PathBuf::from("/walls"), false),
             config: SlideshowConfig {
                 interval: Duration::from_secs(600),
@@ -414,30 +407,21 @@ mod tests {
     #[test]
     fn uniform_layout_round_trips_and_defaults_off() {
         let toml = concat!(
-            "type = \"slideshow\"\n",
             "uniform_layout = true\n",
             "[images]\n",
             "sources = [{ type = \"folder\", path = \"/walls\" }]\n",
             "[config]\n",
             "interval_secs = 600\n",
         );
-        let source: SpanSource = toml::from_str(toml).unwrap();
-        let SpanSource::Slideshow { uniform_layout, .. } = &source else {
-            panic!("expected slideshow source");
-        };
-        assert!(*uniform_layout);
+        let source: SlideshowSource = toml::from_str(toml).unwrap();
+        assert!(source.uniform_layout);
         let back = toml::to_string(&source).unwrap();
         assert!(back.contains("uniform_layout = true"), "got: {back}");
 
-        // Absent field defaults off (pre-uniform-layout configs keep loading).
-        let source: SpanSource = toml::from_str(
-            "type = \"slideshow\"\n[images]\nsources = []\n[config]\ninterval_secs = 600\n",
-        )
-        .unwrap();
-        let SpanSource::Slideshow { uniform_layout, .. } = source else {
-            panic!("expected slideshow source");
-        };
-        assert!(!uniform_layout);
+        // Absent field defaults off.
+        let source: SlideshowSource =
+            toml::from_str("[images]\nsources = []\n[config]\ninterval_secs = 600\n").unwrap();
+        assert!(!source.uniform_layout);
     }
 
     #[test]
@@ -447,18 +431,10 @@ mod tests {
         assert!(source.override_for(Path::new("/walls/b.png")).is_none());
     }
 
-    #[test]
-    fn override_for_on_single_source_is_none() {
-        let source = SpanSource::Single {
-            path: PathBuf::from("/walls/a.png"),
-        };
-        assert!(source.override_for(Path::new("/walls/a.png")).is_none());
-    }
-
-    fn composite_body() -> ProfileBody {
-        ProfileBody::Composite(CompositeProfile {
+    fn standard_body() -> ProfileBody {
+        ProfileBody::Standard(StandardProfile {
             layers: vec![
-                CompositeLayer {
+                StandardLayer {
                     path: PathBuf::from("/walls/big.png"),
                     image_rect_mm: ImageRectMm {
                         x_mm: 0.0,
@@ -467,7 +443,7 @@ mod tests {
                         h_mm: 600.0,
                     },
                 },
-                CompositeLayer {
+                StandardLayer {
                     path: PathBuf::from("/walls/small.png"),
                     image_rect_mm: ImageRectMm {
                         x_mm: 1200.0,
@@ -481,25 +457,25 @@ mod tests {
     }
 
     #[test]
-    fn composite_body_round_trips_through_toml() {
-        let body = composite_body();
+    fn standard_body_round_trips_through_toml() {
+        let body = standard_body();
         let toml = toml::to_string(&body).unwrap();
-        assert!(toml.contains("type = \"composite\""), "got: {toml}");
+        assert!(toml.contains("type = \"standard\""), "got: {toml}");
         let back: ProfileBody = toml::from_str(&toml).unwrap();
         assert_eq!(back, body);
     }
 
     #[test]
-    fn composite_body_round_trips_through_json() {
-        let body = composite_body();
+    fn standard_body_round_trips_through_json() {
+        let body = standard_body();
         let json = serde_json::to_string(&body).unwrap();
         let back: ProfileBody = serde_json::from_str(&json).unwrap();
         assert_eq!(back, body);
     }
 
     #[test]
-    fn composite_body_with_empty_layers_round_trips() {
-        let body = ProfileBody::Composite(CompositeProfile { layers: Vec::new() });
+    fn standard_body_with_empty_layers_round_trips() {
+        let body = ProfileBody::Standard(StandardProfile { layers: Vec::new() });
         let toml = toml::to_string(&body).unwrap();
         let back: ProfileBody = toml::from_str(&toml).unwrap();
         assert_eq!(back, body);

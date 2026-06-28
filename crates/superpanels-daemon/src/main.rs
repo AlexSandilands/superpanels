@@ -416,18 +416,18 @@ mod tests {
     fn config_with_profile(name: &str) -> Config {
         use std::collections::HashMap;
         use superpanels_core::TopologyFingerprint;
-        use superpanels_core::config::{Profile, ProfileBody, SpanProfile, SpanSource};
+        use superpanels_core::config::{Profile, ProfileBody, StandardLayer, StandardProfile};
         use superpanels_core::layout::ImageRectMm;
 
         let now = superpanels_core::config::now_timestamp();
         let mut cfg = Config::default();
         cfg.profiles.push(Profile {
             name: name.to_owned(),
-            body: ProfileBody::Span(SpanProfile {
-                source: SpanSource::Single {
+            body: ProfileBody::Standard(StandardProfile {
+                layers: vec![StandardLayer {
                     path: "/img.png".into(),
-                },
-                image_rect_mm: ImageRectMm::default(),
+                    image_rect_mm: ImageRectMm::default(),
+                }],
             }),
             monitor_state: HashMap::new(),
             topology: TopologyFingerprint(String::new()),

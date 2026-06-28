@@ -4,25 +4,15 @@
   type Props = {
     existingNames: string[];
     defaultName: string;
-    hasSource: boolean;
-    hasComposite?: boolean;
     onCancel: () => void;
     onConfirm: (name: string, description: string | null, kind: ProfileKind) => void;
   };
-  let {
-    existingNames,
-    defaultName,
-    hasSource,
-    hasComposite = false,
-    onCancel,
-    onConfirm,
-  }: Props = $props();
+  let { existingNames, defaultName, onCancel, onConfirm }: Props = $props();
 
   // svelte-ignore state_referenced_locally
   let name = $state(defaultName);
   let description = $state('');
-  // svelte-ignore state_referenced_locally
-  let kind = $state<ProfileKind>(hasComposite ? 'composite' : hasSource ? 'single' : 'slideshow');
+  let kind = $state<ProfileKind>('standard');
 
   function focusOnMount(node: HTMLInputElement) {
     node.focus();
@@ -60,12 +50,11 @@
       <div class="kind-row" role="radiogroup" aria-label="Profile type">
         <button
           type="button"
-          class:kind-active={kind === 'single'}
-          disabled={!hasSource}
-          title={hasSource ? 'One image spanning the desktop' : 'Pick a source image first'}
-          onclick={() => (kind = 'single')}
+          class:kind-active={kind === 'standard'}
+          title="One or more images placed on the canvas"
+          onclick={() => (kind = 'standard')}
         >
-          Single image
+          Standard
         </button>
         <button
           type="button"
@@ -75,23 +64,11 @@
         >
           Slideshow
         </button>
-        {#if hasComposite}
-          <button
-            type="button"
-            class:kind-active={kind === 'composite'}
-            title="Several images placed across the monitors"
-            onclick={() => (kind = 'composite')}
-          >
-            Composite
-          </button>
-        {/if}
       </div>
-      {#if kind === 'slideshow'}
-        <p class="hint">
-          {hasSource
-            ? 'Starts with the current image — add more from the library after saving.'
-            : 'You’ll pick images and folders from the library after saving.'}
-        </p>
+      {#if kind === 'standard'}
+        <p class="hint">Saves the images currently on the canvas (add more from the library).</p>
+      {:else}
+        <p class="hint">You’ll pick images and folders from the library after saving.</p>
       {/if}
       <label
         >Name

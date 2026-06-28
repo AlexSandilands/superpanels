@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use serde_json::json;
 use superpanels_core::backends::AppliedReport;
-use superpanels_core::config::{ProfileBody, SpanSource};
+use superpanels_core::config::ProfileBody;
 use superpanels_core::slideshow::SlideshowPicker;
 use tokio::sync::{Mutex, watch};
 
@@ -25,11 +25,8 @@ pub(super) fn init_picker_if_needed(state: &mut DaemonState, profile_name: &str)
         return;
     };
     let slideshow_cfg = match &profile.body {
-        ProfileBody::Span(span) => match &span.source {
-            SpanSource::Slideshow { config, .. } => config.clone(),
-            SpanSource::Single { .. } => return,
-        },
-        ProfileBody::PerMonitor(_) | ProfileBody::Composite(_) => return,
+        ProfileBody::Slideshow(slideshow) => slideshow.source.config.clone(),
+        ProfileBody::Standard(_) | ProfileBody::PerMonitor(_) => return,
     };
     let picker_cfg = profile_to_picker_config(&slideshow_cfg);
     state.slideshow_picker = Some(SlideshowPicker::new(picker_cfg));
@@ -47,13 +44,11 @@ pub(super) async fn update_active_profile(
     persist_resume(&guard);
     // A leftover picker would keep `current_state` reporting a slideshow
     // (with stale pool/counter data) after switching to a non-slideshow.
-    let is_slideshow = guard.config.profiles.iter().any(|p| {
-        p.name == name
-            && matches!(
-                &p.body,
-                ProfileBody::Span(span) if matches!(span.source, SpanSource::Slideshow { .. })
-            )
-    });
+    let is_slideshow = guard
+        .config
+        .profiles
+        .iter()
+        .any(|p| p.name == name && matches!(&p.body, ProfileBody::Slideshow(_)));
     if !is_slideshow {
         guard.clear_slideshow_runtime();
     }

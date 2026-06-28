@@ -7,9 +7,8 @@ function profile(monitorState: Profile['monitor_state']): Profile {
   return {
     name: 'p',
     body: {
-      type: 'span',
-      source: { type: 'single', path: '/img.png' },
-      image_rect_mm: { x_mm: 0, y_mm: 0, w_mm: 1000, h_mm: 600 },
+      type: 'standard',
+      layers: [{ path: '/img.png', image_rect_mm: { x_mm: 0, y_mm: 0, w_mm: 1000, h_mm: 600 } }],
     },
     monitor_state: monitorState,
     topology: 'topo-1',

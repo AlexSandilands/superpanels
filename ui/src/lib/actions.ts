@@ -19,11 +19,11 @@ import { toast } from '$lib/stores/toast.svelte';
 import type { ImageRectMm } from '$lib/types/ImageRectMm';
 import type { MonitorPlacement } from '$lib/types/MonitorPlacement';
 import {
-  isCompositeBody,
   isPerMonitorBody,
-  isSpanBody,
+  isSlideshowBody,
+  isStandardBody,
   type PerMonitorAssignment,
-  type SpanSource,
+  type SlideshowSource,
 } from '$lib/types/profile-helpers';
 
 function imageRectFromTransform(): ImageRectMm {
@@ -48,10 +48,10 @@ function syncDraftFromCanvas(): void {
   profileStore.patchDraft((d) => {
     d.monitor_state = nextPlacements;
     d.topology = '';
-    if (isSpanBody(d.body)) {
+    if (isStandardBody(d.body)) {
+      d.body.layers = canvasLayers.toLayers();
+    } else if (isSlideshowBody(d.body)) {
       d.body.image_rect_mm = rect;
-    } else if (isCompositeBody(d.body)) {
-      d.body.layers = canvasLayers.toCompositeLayers();
     }
   });
 }
@@ -69,23 +69,17 @@ export function applyMonitorStateToCanvas(p: Profile): void {
     };
   }
   canvasView.setOverrides(next);
-  if (isCompositeBody(p.body)) {
+  if (isStandardBody(p.body)) {
+    // Always reseed the layer stack from the profile — this is what stops a
+    // previous profile's layers bleeding onto a freshly-selected one.
     canvasLayers.setFromLayers(p.body.layers);
     return;
   }
-  if (isSpanBody(p.body)) {
-    // Slideshow rects are owned by the per-image seed (override / uniform /
-    // cover-fit, see `useSourceImage`) — forcing the profile rect here would
-    // crop the live image to a rect authored for a different aspect.
-    if (p.body.source.type === 'slideshow') return;
-    const r = p.body.image_rect_mm;
-    imageTransform.set({
-      offsetMmX: r.x_mm,
-      offsetMmY: r.y_mm,
-      widthMm: r.w_mm,
-      heightMm: r.h_mm,
-    });
-  }
+  // Slideshow rects are owned by the per-image seed (override / uniform /
+  // cover-fit, see `useSourceImage`) — forcing the profile rect here would
+  // crop the live image to a rect authored for a different aspect. Clear any
+  // leftover layers so a switch away from a standard profile doesn't show them.
+  canvasLayers.clear();
 }
 
 function recordAndToast(r: Awaited<ReturnType<typeof api.applyProfile>>, t0: number): number {
@@ -235,34 +229,15 @@ export async function slideshowGoto(path: string): Promise<void> {
   }
 }
 
-export function setSpanImage(path: string): void {
-  if (!profileStore.draft) profileStore.newProfile();
-  profileStore.patchDraft((d) => {
-    if (!isSpanBody(d.body)) {
-      d.body = {
-        type: 'span',
-        source: { type: 'single', path },
-        image_rect_mm: imageRectFromTransform(),
-      };
-      return;
-    }
-    if (d.body.source.type === 'single') {
-      d.body.source.path = path;
-    } else {
-      d.body.source = { type: 'single', path };
-    }
-  });
-  toast.success('Source updated', path.split('/').pop() ?? path);
-}
-
-/** Add an image as a new composite layer on the canvas — the multi-image
- *  counterpart of `setSpanImage`. Converts the draft to a composite body the
- *  first time, then appends the layer (cover-fit, on top). */
+/** Add an image as a new layer on the standard canvas. Converts the draft to a
+ *  standard body the first time, then appends the layer (cover-fit, on top).
+ *  This is the single entry point for putting an image on the canvas — adding
+ *  one image or many works the same way. */
 export function addImageToCanvas(path: string): void {
   if (!profileStore.draft) profileStore.newProfile();
   profileStore.patchDraft((d) => {
-    if (!isCompositeBody(d.body)) {
-      d.body = { type: 'composite', layers: [] };
+    if (!isStandardBody(d.body)) {
+      d.body = { type: 'standard', layers: [] };
     }
   });
   const monitors = buildPreviewMonitors(monitorStore.monitors, canvasView.overrides);
@@ -307,7 +282,7 @@ let pendingSourceWrite: Promise<unknown> = Promise.resolve();
  *  is the active profile. */
 export async function persistSlideshowSource(
   profileName: string,
-  source: SpanSource,
+  source: SlideshowSource,
 ): Promise<boolean> {
   // Commit to the store before the IPC round-trip so a follow-up toggle
   // computes its next set from this one instead of a stale base.

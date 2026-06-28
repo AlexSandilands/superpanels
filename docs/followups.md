@@ -27,33 +27,50 @@ test assertions in `autostart.rs` and `desktop_entry.rs`.
 
 When the topology-repair flow lands, it must remap (or at minimum
 invalidate, with a toast) the per-image `overrides` maps inside
-`SpanSource::Slideshow`, not just the profile-level `monitor_state` — both
-are keyed by `stable_id`, so a monitor swap silently breaks hand-tuned
-slideshow images otherwise.
+`SlideshowSource` (`SlideshowProfile.source.overrides`), not just the
+profile-level `monitor_state` — both are keyed by `stable_id`, so a monitor
+swap silently breaks hand-tuned slideshow images otherwise.
 
-## Composite profile thumbnails are single-image
+## Misc Bugs
 
-The profile-manager / tray preview (`preview_crop` → `PreviewArgs { image,
-image_rect_mm }`, `crates/superpanels-gui/src/commands/preview.rs`) renders one
-image + rect. `Composite` profiles have no single image, so their thumbnails
-fall back to whatever the single-image preview path produces (no layer compositing).
-**Revisit:** add a composite preview path that crops+alpha-stacks the layers into a
-thumbnail (reuse `render_composite`), or render the bottom/most-covering layer.
+- When starting from fresh wiped local data, creating a new profile was disabled. Assume because no image and nothing library?
+- Hovering over the snap buttons on the image in the canvas make them disappear
+- Should add a resize handle to the top left of the image as well
+- The library thumbnail on the bottom right library panel is empty when composite canvas
+- Clicking a monitor now no longer shows the monitor details panel that used to pop up
 
-## Composite apply has no empty/validity gate on the canvas path
+- Should be able to filter the library by added folder
+- After adding more images to an existing slideshow profile, the "x images" above the timer in the bottom right bar doesn't update to the right number of images. Switching profiles will update it
+- Fix up icons
+  - Library icon in top bar is the same as the move monitor toggle in side bar.
+  - Should probably get a better settings icon
+  - Have a look at the arrangement of the icons buttons and see what should be best placement
+- The monitor gap text fields in the bottom bar are very hard to type in as it forces a format while typing
+- In the profile manager, there is a "reveal" text beside the Source label, what is that for? Remove?
+- System Tray Profiles don't show up, should have a hover side menu that opens the list
+- Weird screen rendering artifacts when moving the Superpanels GUI around, it leaves black lines from the bottom of the app on the screen, both on the desktop and on top of other apps if it's in front
+- The slideshow menu in the bottom right bar should have a popup to quickly let you switch to a particular image in the set. Currently you have to click through all of them to get to the one you want
 
-`cmd_apply_canvas` applies the payload directly without a `ProfileValidity`
-check, so Applying a `Composite` draft with **zero layers** pushes all-black
-wallpapers (the daemon `cmd_apply_profile` path *is* gated via `CompositeEmpty`).
-The GUI `canApply` doesn't special-case empty composites either. Also, a composite
-draft's `body.layers` is only synced from the live `canvasLayers` store at
-apply/save (`syncDraftFromCanvas`), so the schedule-preemption undo snapshot can
-capture an empty layer list mid-edit — the same staleness the span path has with
-`image_rect_mm`. **Revisit:** gate empty composites in `canApply`, and consider
-eager draft-sync (or snapshot-on-apply) for the preemption undo.
 
-## Per Monitor Wallpapers
+## Remove `ProfileBody::PerMonitor`?
 
+The user has never knowingly used the per-monitor mode and flagged it for
+possible removal. It's the only body that doesn't share the unified canvas /
+`monitor_state` model (it carries its own `assignments` + `fit`), so it's a
+standing maintenance cost in every `ProfileBody` match across core/daemon/cli/gui.
+**Revisit:** confirm nothing depends on it, then drop the variant + its apply
+path, validity reasons, and frontend branches — or keep it if a real multi-output
+"different image per screen" need surfaces.
+
+## Draft-sync staleness in the preemption undo snapshot
+
+A Standard draft's `body.layers` (and a Slideshow draft's `image_rect_mm`) is
+only synced from the live canvas stores at apply/save (`syncDraftFromCanvas`),
+so the schedule-preemption undo snapshot can capture a stale layer list / rect
+if it fires mid-edit. **Revisit:** consider eager draft-sync (or
+snapshot-on-apply) for the preemption undo. (The empty-canvas apply hole is
+closed — `cmd_apply_canvas` now rejects an empty Standard, mirroring
+`cmd_apply_profile`'s `standard_empty` gate and the GUI's `canApply`.)
 
 ## Daemon dies with its parent session
 

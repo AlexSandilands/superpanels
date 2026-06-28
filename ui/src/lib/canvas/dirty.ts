@@ -8,7 +8,7 @@ import type { ImageTransform } from '$lib/stores/image-transform.svelte';
 import type { Profile } from '$lib/api';
 import type { ImageRectMm } from '$lib/types/ImageRectMm';
 import type { MonitorPlacement } from '$lib/types/MonitorPlacement';
-import type { CompositeLayer } from '$lib/types/profile-helpers';
+import type { StandardLayer } from '$lib/types/profile-helpers';
 import { coverImageRect, type PreviewMonitor } from './preview-layout';
 
 const POSITION_TOLERANCE_MM = 0.5;
@@ -51,16 +51,17 @@ export function canvasOverridesDirty(
   return placementsDirty(overrides, profile.monitor_state);
 }
 
-/** [`rectDirty`] against the active span profile's `image_rect_mm`.
- *  Per-monitor bodies have no image rect — they're always clean here. */
+/** [`rectDirty`] against the active slideshow profile's `image_rect_mm`.
+ *  Standard / per-monitor bodies have no profile-level image rect — they're
+ *  always clean here. */
 export function imageTransformDirty(transform: ImageTransform, profile: Profile): boolean {
-  if (profile.body.type !== 'span') return false;
+  if (profile.body.type !== 'slideshow') return false;
   return rectDirty(transform, profile.body.image_rect_mm);
 }
 
-/** Returns `true` when the live composite layers differ from the persisted
- *  ones — count, order, paths, or any rect beyond the slop tolerance. */
-export function compositeLayersDirty(live: CompositeLayer[], persisted: CompositeLayer[]): boolean {
+/** Returns `true` when the live layers differ from the persisted ones — count,
+ *  order, paths, or any rect beyond the slop tolerance. */
+export function layersDirty(live: StandardLayer[], persisted: StandardLayer[]): boolean {
   if (live.length !== persisted.length) return true;
   return live.some((l, i) => {
     const p = persisted[i];

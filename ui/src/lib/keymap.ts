@@ -69,6 +69,7 @@ export function dispatchKey(e: KeyboardEvent, deps: KeymapDeps): void {
   if (e.key === 'ArrowLeft' && !modal) void slideshowController.prev();
   if (e.key.toLowerCase() === 'r' && !modal) resetTransform();
   if (e.key.toLowerCase() === 'd' && !modal) canvasView.toggleDim();
+  if (e.key.toLowerCase() === 'm' && !modal) canvasView.toggleMode();
   if (e.key === 'F5') {
     e.preventDefault();
     void redetectMonitorsWithToast();

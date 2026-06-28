@@ -11,17 +11,15 @@ use serde_json::json;
 use std::collections::HashMap;
 use superpanels_core::backends::detect_backend;
 use superpanels_core::config::{
-    BackendKind, CompositeLayer, Config, PerMonitorAssignment, Profile, ProfileBody, SpanSource,
+    BackendKind, Config, PerMonitorAssignment, Profile, ProfileBody, StandardLayer,
 };
 use superpanels_core::detect;
 use superpanels_core::display::{Monitor, MonitorRef};
 use superpanels_core::image::{
-    FitMode as ImageFitMode, clear_temp_dir, load, render_composite, render_slice, save_temp,
-    scale_to_fit,
+    FitMode as ImageFitMode, clear_temp_dir, load, render_composite, save_temp, scale_to_fit,
 };
 use superpanels_core::layout::{
-    FitMode as LayoutFitMode, ImageRectMm, compute_composite_crop_specs, compute_crop_specs,
-    cover_image_rect_mm, synthesise_placements,
+    FitMode as LayoutFitMode, ImageRectMm, compute_composite_crop_specs, synthesise_placements,
 };
 use superpanels_core::schedule::MonitorPlacement;
 use tracing::{info, warn};
@@ -92,21 +90,11 @@ pub(crate) fn apply_cmd(
     let backend_kind = profile.backend_override.unwrap_or(cfg.backend.prefer);
     let custom_cmd = cfg.backend.custom_command.clone();
     match &profile.body {
-        ProfileBody::Span(span) => {
-            let image_path = match &span.source {
-                SpanSource::Single { path } => path.clone(),
-                SpanSource::Slideshow { .. } => {
-                    bail!(
-                        "slideshow profiles require a running daemon; \
-                         start one with `superpanels daemon`"
-                    )
-                }
-            };
-            run_span_apply(
-                &image_path,
+        ProfileBody::Standard(standard) => {
+            run_composite_apply(
+                &standard.layers,
                 &monitors,
                 &profile.monitor_state,
-                Some(span.image_rect_mm),
                 backend_kind,
                 &custom_cmd,
             )?;
@@ -120,14 +108,11 @@ pub(crate) fn apply_cmd(
                 &custom_cmd,
             )?;
         }
-        ProfileBody::Composite(composite) => {
-            run_composite_apply(
-                &composite.layers,
-                &monitors,
-                &profile.monitor_state,
-                backend_kind,
-                &custom_cmd,
-            )?;
+        ProfileBody::Slideshow(_) => {
+            bail!(
+                "slideshow profiles require a running daemon; \
+                 start one with `superpanels daemon`"
+            )
         }
     }
     info!(name, "profile applied in-process");
@@ -253,49 +238,8 @@ pub(crate) fn import_cmd(file: &Path, config_path: Option<&Path>) -> Result<()> 
 
 // --- in-process apply helpers ---
 
-fn run_span_apply(
-    image_path: &Path,
-    monitors: &[Monitor],
-    placements: &HashMap<String, MonitorPlacement>,
-    image_rect_mm: Option<ImageRectMm>,
-    backend_kind: BackendKind,
-    custom_cmd: &str,
-) -> Result<()> {
-    let source = load(image_path).with_context(|| format!("loading {}", image_path.display()))?;
-    let image_size = (source.width(), source.height());
-    let synth;
-    let p: &HashMap<String, MonitorPlacement> = if placements.is_empty() {
-        synth = synthesise_placements(monitors);
-        &synth
-    } else {
-        placements
-    };
-    let rect = image_rect_mm.unwrap_or_else(|| cover_image_rect_mm(monitors, image_size));
-    let specs = compute_crop_specs(monitors, p, image_size, rect)?;
-    let backend = detect_backend(backend_kind, custom_cmd);
-    clear_temp_dir()?;
-    let token = apply_token();
-    let mut assignments: Vec<(MonitorRef, PathBuf)> = Vec::with_capacity(specs.len());
-    for spec in &specs {
-        let monitor = monitors
-            .iter()
-            .find(|m| m.id == spec.monitor_id)
-            .ok_or_else(|| {
-                anyhow::anyhow!("crop spec references unknown monitor {:?}", spec.monitor_id)
-            })?;
-        // Save at canvas/post-rotation dims; backends paint into the
-        // rotated framebuffer themselves (memory: KDE wallpaper orientation).
-        let composed = render_slice(&source, spec)?;
-        let safe = sanitise_filename(&monitor.name);
-        let path = save_temp(&composed, &format!("{safe}-{token}.png"))?;
-        assignments.push((monitor_ref(monitor), path));
-    }
-    backend.apply(&assignments).context("backend apply")?;
-    Ok(())
-}
-
 fn run_composite_apply(
-    layers: &[CompositeLayer],
+    layers: &[StandardLayer],
     monitors: &[Monitor],
     placements: &HashMap<String, MonitorPlacement>,
     backend_kind: BackendKind,
@@ -446,18 +390,19 @@ fn resolve_config_path(path: Option<&Path>) -> Result<PathBuf> {
 mod tests {
     use super::*;
     use superpanels_core::TopologyFingerprint;
-    use superpanels_core::config::{SpanProfile, SpanSource};
+    use superpanels_core::config::{StandardLayer, StandardProfile};
+    use superpanels_core::layout::ImageRectMm;
     use tempfile::tempdir;
 
     fn sample_profile(name: &str) -> Profile {
         let now = superpanels_core::config::now_timestamp();
         Profile {
             name: name.to_owned(),
-            body: ProfileBody::Span(SpanProfile {
-                source: SpanSource::Single {
+            body: ProfileBody::Standard(StandardProfile {
+                layers: vec![StandardLayer {
                     path: PathBuf::from("/walls/sample.jpg"),
-                },
-                image_rect_mm: ImageRectMm::default(),
+                    image_rect_mm: ImageRectMm::default(),
+                }],
             }),
             monitor_state: HashMap::new(),
             topology: TopologyFingerprint(String::new()),

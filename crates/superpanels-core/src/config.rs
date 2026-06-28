@@ -18,9 +18,9 @@ mod validate;
 
 pub use monitor_edit::{MonitorEditError, MonitorIdentifier, diagonal_to_mm, write_monitor_block};
 pub use profile::{
-    CompositeLayer, CompositeProfile, ImageOverride, ImageSet, ImageSource, PerMonitorAssignment,
-    PerMonitorProfile, ProfileBody, ProfileTimestamp, SlideshowConfig, SlideshowSort,
-    SlideshowStart, SpanProfile, SpanSource, now_timestamp,
+    ImageOverride, ImageSet, ImageSource, PerMonitorAssignment, PerMonitorProfile, ProfileBody,
+    ProfileTimestamp, SlideshowConfig, SlideshowProfile, SlideshowSort, SlideshowSource,
+    SlideshowStart, StandardLayer, StandardProfile, now_timestamp,
 };
 
 const APP_DIR: &str = "superpanels";
@@ -206,33 +206,35 @@ impl Profile {
 }
 
 impl Config {
-    /// Replace the span source of profile `name`, refreshing its modified
-    /// timestamp. Does not persist — callers follow up with [`Config::save_to`].
-    pub fn set_span_source(
+    /// Replace the editable source of slideshow profile `name`, refreshing its
+    /// modified timestamp. The canvas rect (`image_rect_mm`) is left untouched —
+    /// it is owned by Save. Does not persist — callers follow up with
+    /// [`Config::save_to`].
+    pub fn set_slideshow_source(
         &mut self,
         name: &str,
-        source: SpanSource,
-    ) -> Result<(), SpanSourceError> {
+        source: SlideshowSource,
+    ) -> Result<(), SlideshowSourceError> {
         let profile = self
             .profiles
             .iter_mut()
             .find(|p| p.name == name)
-            .ok_or_else(|| SpanSourceError::ProfileNotFound(name.to_owned()))?;
-        let ProfileBody::Span(span) = &mut profile.body else {
-            return Err(SpanSourceError::NotSpan);
+            .ok_or_else(|| SlideshowSourceError::ProfileNotFound(name.to_owned()))?;
+        let ProfileBody::Slideshow(slideshow) = &mut profile.body else {
+            return Err(SlideshowSourceError::NotSlideshow);
         };
-        span.source = source;
+        slideshow.source = source;
         profile.touch();
         Ok(())
     }
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
-pub enum SpanSourceError {
+pub enum SlideshowSourceError {
     #[error("profile '{0}' not found")]
     ProfileNotFound(String),
-    #[error("source updates require a Span profile")]
-    NotSpan,
+    #[error("source updates require a slideshow profile")]
+    NotSlideshow,
 }
 
 #[derive(Debug, Error)]

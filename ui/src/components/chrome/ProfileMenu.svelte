@@ -29,20 +29,17 @@
   }: Props = $props();
 
   function modeLabel(p: Profile): string {
-    if (p.body.type === 'composite') return 'composite';
-    return p.body.type === 'span' ? 'span' : 'per-monitor';
+    if (p.body.type === 'standard') return 'standard';
+    return p.body.type === 'slideshow' ? 'slideshow' : 'per-monitor';
   }
 
   function sourceLabel(p: Profile): string {
-    if (p.body.type === 'span') {
-      const src = p.body.source;
-      if (src.type === 'single') return src.path || '(no image)';
-      return 'slideshow';
-    }
-    if (p.body.type === 'composite') {
+    if (p.body.type === 'standard') {
       const n = p.body.layers.length;
+      if (n === 1) return p.body.layers[0]?.path || '(no image)';
       return `${n} image${n === 1 ? '' : 's'}`;
     }
+    if (p.body.type === 'slideshow') return 'slideshow';
     return `${p.body.assignments.length} pins`;
   }
 

@@ -139,7 +139,7 @@
       </span>
       {#if activeProfile}
         <span style:color="var(--text-3)" style:font-size="11px">
-          {activeProfile.body.type === 'span' ? 'span' : 'per-monitor'}
+          {activeProfile.body.type === 'per_monitor' ? 'per-monitor' : activeProfile.body.type}
         </span>
       {/if}
       <Icon name="caret" size={10} />

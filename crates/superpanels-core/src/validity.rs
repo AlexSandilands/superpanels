@@ -11,9 +11,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::config::{
-    ImageSet, ImageSource, PerMonitorAssignment, Profile, ProfileBody, SpanSource,
-};
+use crate::config::{ImageSet, ImageSource, PerMonitorAssignment, Profile, ProfileBody};
 use crate::display::{Monitor, MonitorRef};
 use crate::schedule::{TopologyFingerprint, monitor_key};
 
@@ -36,8 +34,8 @@ pub enum DisableReason {
     },
     /// Slideshow image set has no sources at all — nothing was picked yet.
     SlideshowEmpty,
-    /// Composite canvas has no image layers — nothing to render.
-    CompositeEmpty,
+    /// Standard canvas has no image layers — nothing to render.
+    StandardEmpty,
     MonitorNotConnected {
         monitor: MonitorRef,
     },
@@ -79,35 +77,29 @@ impl ProfileValidity {
         }
 
         match &profile.body {
-            ProfileBody::Span(span) => match &span.source {
-                SpanSource::Single { path } => {
-                    if !path.exists() {
-                        reasons.push(DisableReason::ImageMissing { path: path.clone() });
-                    }
+            ProfileBody::Standard(standard) => {
+                if standard.layers.is_empty() {
+                    reasons.push(DisableReason::StandardEmpty);
                 }
-                SpanSource::Slideshow { images, .. } => {
-                    // A mixed set is usable as long as any one source can
-                    // yield an image; a vanished folder next to a healthy one
-                    // is the picker's problem, not a disable reason.
-                    if images.is_empty() {
-                        reasons.push(DisableReason::SlideshowEmpty);
-                    } else if !image_set_has_candidates(images) {
-                        reasons.push(DisableReason::FolderMissingOrEmpty {
-                            path: image_set_representative_path(images),
-                        });
-                    }
-                }
-            },
-            ProfileBody::Composite(composite) => {
-                if composite.layers.is_empty() {
-                    reasons.push(DisableReason::CompositeEmpty);
-                }
-                for layer in &composite.layers {
+                for layer in &standard.layers {
                     if !layer.path.exists() {
                         reasons.push(DisableReason::ImageMissing {
                             path: layer.path.clone(),
                         });
                     }
+                }
+            }
+            ProfileBody::Slideshow(slideshow) => {
+                // A mixed set is usable as long as any one source can yield an
+                // image; a vanished folder next to a healthy one is the
+                // picker's problem, not a disable reason.
+                let images = &slideshow.source.images;
+                if images.is_empty() {
+                    reasons.push(DisableReason::SlideshowEmpty);
+                } else if !image_set_has_candidates(images) {
+                    reasons.push(DisableReason::FolderMissingOrEmpty {
+                        path: image_set_representative_path(images),
+                    });
                 }
             }
             ProfileBody::PerMonitor(pm) => {

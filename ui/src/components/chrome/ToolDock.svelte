@@ -1,13 +1,31 @@
 <script lang="ts">
   import Icon from '../widgets/Icon.svelte';
-  import { canvasView } from '$lib/stores/canvas-view.svelte';
+  import { canvasView, type CanvasMode } from '$lib/stores/canvas-view.svelte';
 
   type Props = {
-    onResetTransform: () => void;
+    mode: CanvasMode;
+    onSetMode: (mode: CanvasMode) => void;
+    onSnapWidth: () => void;
+    onSnapHeight: () => void;
     onSnapCover: () => void;
+    onResetTransform: () => void;
     onResetLayout: () => void;
+    /** Cover / reset apply (a layer is selected, or the slideshow image loaded). */
+    snapEnabled: boolean;
+    /** Single-axis snaps apply (standard mode with a selected layer). */
+    axisSnapEnabled: boolean;
   };
-  let { onResetTransform, onSnapCover, onResetLayout }: Props = $props();
+  let {
+    mode,
+    onSetMode,
+    onSnapWidth,
+    onSnapHeight,
+    onSnapCover,
+    onResetTransform,
+    onResetLayout,
+    snapEnabled,
+    axisSnapEnabled,
+  }: Props = $props();
 </script>
 
 <div
@@ -19,13 +37,48 @@
   style:width="44px"
   style:z-index="5"
 >
-  <button class="tool tool--active" title="Move (auto)">
+  <button
+    class="tool"
+    class:tool--active={mode === 'images'}
+    title="Move images (1)"
+    onclick={() => onSetMode('images')}
+  >
     <Icon name="move" />
   </button>
-  <button class="tool" title="Snap image to cover" onclick={onSnapCover}>
+  <button
+    class="tool"
+    class:tool--active={mode === 'monitors'}
+    title="Move monitors (2)"
+    onclick={() => onSetMode('monitors')}
+  >
+    <Icon name="grid" />
+  </button>
+  <div style:height="1px" style:background="var(--line)" style:margin="4px 0"></div>
+  <button
+    class="tool"
+    title="Snap image to monitor width (letterbox)"
+    disabled={!axisSnapEnabled}
+    onclick={onSnapWidth}
+  >
+    <Icon name="snap-w" />
+  </button>
+  <button
+    class="tool"
+    title="Snap image to monitor height (fill)"
+    disabled={!axisSnapEnabled}
+    onclick={onSnapHeight}
+  >
+    <Icon name="snap-h" />
+  </button>
+  <button class="tool" title="Snap image to cover" disabled={!snapEnabled} onclick={onSnapCover}>
     <Icon name="cover" />
   </button>
-  <button class="tool" title="Reset image transform (R)" onclick={onResetTransform}>
+  <button
+    class="tool"
+    title="Reset image transform (R)"
+    disabled={!snapEnabled}
+    onclick={onResetTransform}
+  >
     <Icon name="reset" />
   </button>
   <button class="tool" title="Reset monitor layout" onclick={onResetLayout}>
@@ -84,8 +137,11 @@
     border-radius: 6px;
     transition: background 80ms;
   }
-  .tool:hover {
+  .tool:hover:not(:disabled) {
     background: var(--panel-2);
+  }
+  .tool:disabled {
+    opacity: 0.3;
   }
   .tool--active {
     background: color-mix(in oklab, var(--accent) 16%, transparent);

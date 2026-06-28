@@ -4,7 +4,11 @@
 // the active profile's persisted state.
 
 import { api, errorMessage, type Profile } from '$lib/api';
-import { defaultSlideshowConfig, isSpanBody, type SpanSource } from '$lib/types/profile-helpers';
+import {
+  defaultSlideshowConfig,
+  isSlideshowBody,
+  type SlideshowSource,
+} from '$lib/types/profile-helpers';
 import { runtime as runtimeStore } from './runtime.svelte';
 import { toast } from './toast.svelte';
 
@@ -122,10 +126,10 @@ export const profileStore = {
   /** Mirror a source change that was already persisted via
    *  `update_profile_source` into the list and draft. Deliberately does not
    *  touch `dirty` — the canvas may carry unrelated unsaved edits. */
-  commitSource(name: string, source: SpanSource): void {
+  commitSource(name: string, source: SlideshowSource): void {
     const stored = profiles.find((p) => p.name === name);
-    if (stored && isSpanBody(stored.body)) stored.body.source = snapshotClone(source);
-    if (draft && draft.name === name && isSpanBody(draft.body)) {
+    if (stored && isSlideshowBody(stored.body)) stored.body.source = snapshotClone(source);
+    if (draft && draft.name === name && isSlideshowBody(draft.body)) {
       draft.body.source = snapshotClone(source);
     }
   },
@@ -134,11 +138,7 @@ export const profileStore = {
     const now = new Date().toISOString();
     const base: Profile = {
       name: uniqueName('untitled', profiles),
-      body: {
-        type: 'span',
-        source: { type: 'single', path: '' },
-        image_rect_mm: { x_mm: 0, y_mm: 0, w_mm: 0, h_mm: 0 },
-      },
+      body: { type: 'standard', layers: [] },
       monitor_state: {},
       topology: '',
       description: null,

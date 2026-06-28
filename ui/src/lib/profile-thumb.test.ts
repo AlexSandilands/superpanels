@@ -21,9 +21,8 @@ const rect = { x_mm: 0, y_mm: 0, w_mm: 1000, h_mm: 600 };
 
 function slideshow(sources: { type: 'image' | 'folder'; path: string }[]): Profile {
   return profile({
-    type: 'span',
+    type: 'slideshow',
     source: {
-      type: 'slideshow',
       images: {
         sources: sources.map((s) =>
           s.type === 'folder'
@@ -45,11 +44,10 @@ function slideshow(sources: { type: 'image' | 'folder'; path: string }[]): Profi
 }
 
 describe('profileThumbPath', () => {
-  it('uses the single source path directly', () => {
+  it('uses a standard profile top layer path directly', () => {
     const p = profile({
-      type: 'span',
-      source: { type: 'single', path: '/walls/a.png' },
-      image_rect_mm: rect,
+      type: 'standard',
+      layers: [{ path: '/walls/a.png', image_rect_mm: rect }],
     });
     expect(profileThumbPath(p, [])).toBe('/walls/a.png');
   });
@@ -75,9 +73,8 @@ describe('profileThumbPath', () => {
 
   it('rejects relative paths', () => {
     const p = profile({
-      type: 'span',
-      source: { type: 'single', path: 'walls/a.png' },
-      image_rect_mm: rect,
+      type: 'standard',
+      layers: [{ path: 'walls/a.png', image_rect_mm: rect }],
     });
     expect(profileThumbPath(p, [])).toBeNull();
   });

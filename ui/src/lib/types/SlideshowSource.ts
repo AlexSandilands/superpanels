@@ -3,7 +3,12 @@ import type { ImageOverride } from "./ImageOverride";
 import type { ImageSet } from "./ImageSet";
 import type { SlideshowConfig } from "./SlideshowConfig";
 
-export type SpanSource = { "type": "single", path: string, } | { "type": "slideshow", images: ImageSet, config: SlideshowConfig, 
+/**
+ * The editable half of a slideshow — its image set, timing, per-image
+ * overrides, and layout flag. Carried by `update_profile_source`; the canvas
+ * rect lives on [`SlideshowProfile`] and is owned by Save.
+ */
+export type SlideshowSource = { images: ImageSet, config: SlideshowConfig, 
 /**
  * Sparse per-image canvas snapshots — entries exist only for images
  * the user hand-tuned. Keyed by the image's absolute path, so a
@@ -11,7 +16,7 @@ export type SpanSource = { "type": "single", path: string, } | { "type": "slides
  */
 overrides?: { [key in string]: ImageOverride }, 
 /**
- * Apply the profile-level layout (`SpanProfile::image_rect_mm` +
+ * Apply the profile-level layout (`SlideshowProfile::image_rect_mm` +
  * `Profile::monitor_state`) to every image instead of cover-fitting
  * each untuned image at its own aspect. Per-image `overrides` still
  * win. Suits sets authored at one fixed resolution.

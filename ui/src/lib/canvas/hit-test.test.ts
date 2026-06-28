@@ -6,6 +6,8 @@ const rect = (x: number, y: number, w: number, h: number) => ({ x, y, w, h });
 function geo(over: Partial<HitGeometry>): HitGeometry {
   return {
     compositeMode: false,
+    imagesInteractive: true,
+    buttonsForLayer: () => true,
     layerRects: [],
     monitors: [],
     imageUrl: null,
@@ -39,6 +41,33 @@ describe('hitTest', () => {
     const g = geo({ compositeMode: true, layerRects: [{ id: 'L', rect: rect(0, 0, 200, 200) }] });
     // ✕ centre is (x+w-12, y+20) = (188, 20).
     expect(hitTest(188, 20, g)).toEqual({ type: 'layer-remove', id: 'L' });
+  });
+
+  it('layer_snap_regions_sit_left_of_remove', () => {
+    const g = geo({ compositeMode: true, layerRects: [{ id: 'L', rect: rect(0, 0, 200, 200) }] });
+    // snap-width centre is (x+w-38, y+20) = (162, 20); height is (136, 20).
+    expect(hitTest(162, 20, g)).toEqual({ type: 'layer-snap', id: 'L', axis: 'width' });
+    expect(hitTest(136, 20, g)).toEqual({ type: 'layer-snap', id: 'L', axis: 'height' });
+  });
+
+  it('monitor_mode_makes_layers_click_through', () => {
+    const g = geo({
+      compositeMode: true,
+      imagesInteractive: false,
+      monitors: [{ id: 'm', rect: rect(0, 0, 200, 200) }],
+      layerRects: [{ id: 'L', rect: rect(0, 0, 200, 200) }],
+    });
+    expect(hitTest(100, 100, g)).toEqual({ type: 'monitor', id: 'm' });
+  });
+
+  it('small_layers_skip_their_buttons', () => {
+    const g = geo({
+      compositeMode: true,
+      buttonsForLayer: () => false,
+      layerRects: [{ id: 'L', rect: rect(0, 0, 200, 200) }],
+    });
+    // The remove centre now falls through to the layer body.
+    expect(hitTest(188, 20, g)).toEqual({ type: 'layer', id: 'L' });
   });
 
   it('falls_through_to_monitor_in_uncovered_area', () => {

@@ -4,7 +4,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use superpanels_core::config::{ProfileBody, SpanSource};
+use superpanels_core::config::ProfileBody;
 use tokio::sync::{Mutex, watch};
 use tokio::time::MissedTickBehavior;
 use tracing::{debug, info, warn};
@@ -96,11 +96,8 @@ pub(crate) async fn slideshow_tick(state: Arc<Mutex<DaemonState>>) {
             return;
         };
         let images = match &profile.body {
-            ProfileBody::Span(span) => match &span.source {
-                SpanSource::Slideshow { images, .. } => images.clone(),
-                SpanSource::Single { .. } => return,
-            },
-            ProfileBody::PerMonitor(_) | ProfileBody::Composite(_) => return,
+            ProfileBody::Slideshow(slideshow) => slideshow.source.images.clone(),
+            ProfileBody::Standard(_) | ProfileBody::PerMonitor(_) => return,
         };
         let backend_kind = profile
             .backend_override
@@ -164,7 +161,7 @@ mod tests {
     use superpanels_core::TopologyFingerprint;
     use superpanels_core::config::{
         BackendKind, Config, ImageSet, Profile, ProfileBody, SlideshowConfig as SlideshowCfg,
-        SlideshowSort, SlideshowStart, SpanProfile, SpanSource,
+        SlideshowProfile, SlideshowSort, SlideshowSource, SlideshowStart,
     };
     use superpanels_core::layout::ImageRectMm;
     use superpanels_core::slideshow::{
@@ -190,8 +187,8 @@ mod tests {
         let now = superpanels_core::config::now_timestamp();
         Profile {
             name: name.to_owned(),
-            body: ProfileBody::Span(SpanProfile {
-                source: SpanSource::Slideshow {
+            body: ProfileBody::Slideshow(SlideshowProfile {
+                source: SlideshowSource {
                     images: ImageSet::from_folder(folder.to_path_buf(), false),
                     config: SlideshowCfg {
                         interval: Duration::from_secs(60),

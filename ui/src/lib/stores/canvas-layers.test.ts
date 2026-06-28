@@ -8,9 +8,9 @@ vi.mock('$lib/library/source-image', () => ({
 vi.mock('$lib/stores/toast.svelte', () => ({ toast: { error: () => {} } }));
 
 import { canvasLayers } from './canvas-layers.svelte';
-import type { CompositeLayer } from '$lib/types/profile-helpers';
+import type { StandardLayer } from '$lib/types/profile-helpers';
 
-function layer(path: string, x: number): CompositeLayer {
+function layer(path: string, x: number): StandardLayer {
   return { path, image_rect_mm: { x_mm: x, y_mm: 0, w_mm: 100, h_mm: 100 } };
 }
 
@@ -19,9 +19,9 @@ beforeEach(() => {
 });
 
 describe('canvasLayers', () => {
-  it('setFromLayers_then_toCompositeLayers_round_trips_paths_and_rects', () => {
+  it('setFromLayers_then_toLayers_round_trips_paths_and_rects', () => {
     canvasLayers.setFromLayers([layer('/a.png', 0), layer('/b.png', 200)]);
-    const out = canvasLayers.toCompositeLayers();
+    const out = canvasLayers.toLayers();
     expect(out.map((l) => l.path)).toEqual(['/a.png', '/b.png']);
     expect(out[1]?.image_rect_mm.x_mm).toBe(200);
   });
@@ -53,7 +53,7 @@ describe('canvasLayers', () => {
     canvasLayers.setFromLayers([layer('/a.png', 0)]);
     const id = canvasLayers.list[0]?.id ?? '';
     canvasLayers.patch(id, { offsetMmX: 50, offsetMmY: 60, widthMm: 300, heightMm: 200 });
-    expect(canvasLayers.toCompositeLayers()[0]?.image_rect_mm).toEqual({
+    expect(canvasLayers.toLayers()[0]?.image_rect_mm).toEqual({
       x_mm: 50,
       y_mm: 60,
       w_mm: 300,

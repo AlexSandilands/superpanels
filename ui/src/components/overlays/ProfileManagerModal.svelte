@@ -8,8 +8,8 @@
   import { toast } from '$lib/stores/toast.svelte';
   import { profileStore } from '$lib/stores/profile.svelte';
   import {
-    isSlideshowSource,
-    isSpanBody,
+    isSlideshowBody,
+    isStandardBody,
     type ProfileKind,
     type SlideshowSort,
     type SlideshowSource,
@@ -21,7 +21,7 @@
   import ConfirmDialog from '../widgets/ConfirmDialog.svelte';
   import SaveProfileDialog from './SaveProfileDialog.svelte';
   import MonitorMini from './profiles/MonitorMini.svelte';
-  import ProfilePreview from './profiles/ProfilePreview.svelte';
+  import ProfilePreview, { type PreviewLayer } from './profiles/ProfilePreview.svelte';
 
   const PROFILE_BG = 'oklch(0.22 0 0)';
 
@@ -50,22 +50,20 @@
   let previewWidth = $state(560);
 
   function profileImagePath(p: Profile): string | null {
-    if (p.body.type !== 'span') return null;
-    const src = p.body.source;
-    if (src.type === 'slideshow') {
-      // Best-effort thumb: the first hand-picked image. Folder sources would
-      // need a scan, which isn't worth it for a list swatch.
-      const img = src.images.sources.find((s) => s.type === 'image');
-      return img && img.path.startsWith('/') ? img.path : null;
+    if (p.body.type === 'standard') {
+      // Best-effort swatch: the top layer's image.
+      const top = p.body.layers.at(-1);
+      return top && top.path.startsWith('/') ? top.path : null;
     }
-    const path = src.path.trim();
-    if (!path) return null;
-    if (!path.startsWith('/')) return null;
-    return path;
+    if (p.body.type !== 'slideshow') return null;
+    // The first hand-picked image. Folder sources would need a scan, which
+    // isn't worth it for a list swatch.
+    const img = p.body.source.images.sources.find((s) => s.type === 'image');
+    return img && img.path.startsWith('/') ? img.path : null;
   }
 
   function slideshowOf(p: Profile): SlideshowSource | null {
-    return isSpanBody(p.body) && isSlideshowSource(p.body.source) ? p.body.source : null;
+    return isSlideshowBody(p.body) ? p.body.source : null;
   }
 
   function intervalLabel(secs: number): string {
@@ -136,9 +134,11 @@
 
   function sourceLabel(p: Profile): string {
     const b = p.body;
-    if (b.type === 'span') {
+    if (b.type === 'standard') {
+      return `Standard (${b.layers.length} image${b.layers.length === 1 ? '' : 's'})`;
+    }
+    if (b.type === 'slideshow') {
       const src = b.source;
-      if (src.type === 'single') return src.path || '— no image —';
       if (src.images.sources.length === 0) return 'Slideshow (empty)';
       const folders = folderCount(src.images);
       const images = imageCount(src.images);
@@ -147,9 +147,6 @@
         images > 0 ? `${images} image${images === 1 ? '' : 's'}` : null,
       ].filter(Boolean);
       return `Slideshow (${parts.join(', ')})`;
-    }
-    if (b.type === 'composite') {
-      return `Composite (${b.layers.length} image${b.layers.length === 1 ? '' : 's'})`;
     }
     return `Per-monitor (${b.assignments.length})`;
   }
@@ -164,8 +161,8 @@
         return `folder missing or empty: ${r.path}`;
       case 'slideshow_empty':
         return 'slideshow has no images yet';
-      case 'composite_empty':
-        return 'composite has no images yet';
+      case 'standard_empty':
+        return 'no images on the canvas yet';
       case 'monitor_not_connected':
         return `monitor not connected (${r.monitor.name})`;
       case 'physical_size_missing':
@@ -205,6 +202,33 @@
   );
   let detail = $derived(profiles.find((p) => p.name === selectedName) ?? null);
   let detailSlideshow = $derived(detail ? slideshowOf(detail) : null);
+
+  // Composite preview for the selected standard profile: each layer at its
+  // mm-space rect. Rects are known immediately; images resolve async.
+  let detailLayers = $state<PreviewLayer[] | null>(null);
+  $effect(() => {
+    const d = detail;
+    if (!d || !isStandardBody(d.body)) {
+      detailLayers = null;
+      return;
+    }
+    const layers = d.body.layers;
+    detailLayers = layers.map((l) => ({ url: null, rect: l.image_rect_mm }));
+    let cancelled = false;
+    void Promise.all(
+      layers.map((l) =>
+        loadSourceImage(l.path)
+          .then((img) => img.url)
+          .catch(() => null),
+      ),
+    ).then((urls) => {
+      if (cancelled) return;
+      detailLayers = layers.map((l, i) => ({ url: urls[i] ?? null, rect: l.image_rect_mm }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  });
   let detailValidity = $derived(detail ? validity[detail.name] : undefined);
   let detailRects = $derived(detail ? topologyRects(detail.monitor_state, detectedMonitors) : []);
   let detailDisabled = $derived(isDisabled(detailValidity));
@@ -312,13 +336,6 @@
     selectedName = name;
     void refresh();
   }
-
-  const canvasHasSource = $derived.by(() => {
-    const d = profileStore.draft;
-    return Boolean(
-      d && isSpanBody(d.body) && d.body.source.type === 'single' && d.body.source.path,
-    );
-  });
 </script>
 
 <Backdrop {onClose}>
@@ -420,6 +437,7 @@
                 naturalDims={detailThumb
                   ? { w: detailThumb.naturalW, h: detailThumb.naturalH }
                   : null}
+                layers={detailLayers}
                 width={previewWidth}
                 height={240}
                 background={PROFILE_BG}
@@ -545,7 +563,6 @@
   <SaveProfileDialog
     existingNames={profiles.map((p) => p.name)}
     defaultName={`untitled-${profiles.length + 1}`}
-    hasSource={canvasHasSource}
     onCancel={() => (showSave = false)}
     onConfirm={(n, d, k) => void handleCreate(n, d, k)}
   />

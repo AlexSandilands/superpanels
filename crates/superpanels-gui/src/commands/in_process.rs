@@ -131,18 +131,21 @@ fn update_profile_source(params: &Value, config_path: Option<&Path>) -> CallResu
         .get("profile")
         .and_then(Value::as_str)
         .ok_or_else(|| IpcError::invalid("params.profile required"))?;
-    let source: superpanels_core::config::SpanSource = params
+    let source: superpanels_core::config::SlideshowSource = params
         .get("source")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .ok_or_else(|| IpcError::invalid("params.source (SpanSource) required"))?;
+        .ok_or_else(|| IpcError::invalid("params.source (SlideshowSource) required"))?;
     let path = config_path_or_default(config_path)?;
     let mut cfg = Config::load_from(&path)?;
-    cfg.set_span_source(name, source).map_err(|e| match e {
-        superpanels_core::config::SpanSourceError::ProfileNotFound(_) => {
-            IpcError::Config(e.to_string())
-        }
-        superpanels_core::config::SpanSourceError::NotSpan => IpcError::invalid(e.to_string()),
-    })?;
+    cfg.set_slideshow_source(name, source)
+        .map_err(|e| match e {
+            superpanels_core::config::SlideshowSourceError::ProfileNotFound(_) => {
+                IpcError::Config(e.to_string())
+            }
+            superpanels_core::config::SlideshowSourceError::NotSlideshow => {
+                IpcError::invalid(e.to_string())
+            }
+        })?;
     cfg.save_to(&path)?;
     Ok(ok_unit())
 }

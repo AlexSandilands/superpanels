@@ -56,14 +56,15 @@ physical_mm = [527.0, 296.0]                          # 24" 16:9
 name     = "home"
 topology = "<opaque hex hash>"     # captured at authoring time
 
+# A Standard profile is a stack of free-positioned image layers (bottom-to-top).
+# A single image is just a one-layer Standard — there is no separate single
+# mode. Each layer carries its own canvas rectangle in mm.
 [profile.body]
-type   = "span"
-fit    = "fill"
-offset = [0, 0]
+type = "standard"
 
-[profile.body.source]
-type = "single"
-path = "~/walls/pano.jpg"
+[[profile.body.layers]]
+path          = "~/walls/pano.jpg"
+image_rect_mm = { x_mm = 0.0, y_mm = 0.0, w_mm = 1202.0, h_mm = 336.0 }
 
 [profile.monitor_state."f7f0f124-..."]
 x_mm = 0.0
@@ -78,11 +79,12 @@ name     = "work"
 topology = "<opaque hex hash>"
 
 [profile.body]
-type = "span"
-fit  = "fill"
+type = "slideshow"
+# The profile-level canvas rectangle: the baseline placement for the live
+# image, and (under `uniform_layout`) the rect applied to every untuned image.
+image_rect_mm = { x_mm = 0.0, y_mm = 0.0, w_mm = 1124.0, h_mm = 336.0 }
 
 [profile.body.source]
-type = "slideshow"
 # Optional: apply the profile-level layout (monitor_state + image_rect_mm)
 # to every image instead of cover-fitting each untuned image at its own
 # aspect. Suits sets authored at one fixed resolution (the GUI's
@@ -113,9 +115,8 @@ on_start            = "resume"
 # image keeps its layout with the GUI closed. Renaming or moving the file
 # drops the tweak (the key no longer matches). Images WITHOUT an override
 # keep the profile's monitor placements but are cover-fit at their own
-# aspect ratio (unless `uniform_layout` is set) — the profile-level
-# image_rect_mm otherwise only applies to single sources, since it was
-# authored against one specific image.
+# aspect ratio (unless `uniform_layout` is set) — then the profile-level
+# image_rect_mm applies to every untuned image.
 [profile.body.source.overrides."/home/me/walls/specials/skyline.png"]
 image_rect_mm = { x_mm = 0.0, y_mm = -40.0, w_mm = 1900.0, h_mm = 720.0 }
 
@@ -146,14 +147,14 @@ A profile is **the mode the user is in**, not a one-shot apply request. It bundl
 
 - `monitor_state: HashMap<String, MonitorPlacement>` — physical mm placements keyed by `stable_id` (or `name` fallback). Gaps between monitors fall out of these placements; there is no separate bezel field.
 - `topology: TopologyFingerprint` — opaque hash over the connected `stable_id`s + rotations the profile was authored against. Compared by equality at apply time; mismatch disables the profile until the user re-authors via the **topology-repair flow**.
-- `body: ProfileBody` — `Span { source, fit, offset, image_rect_mm }`, `PerMonitor { assignments, fit }`, or `Composite { layers }`. A slideshow source may carry sparse per-image `overrides` (placements + image rect keyed by absolute path); the daemon's span-apply choke point swaps them in when that image comes up, and the GUI canvas follows live. Untuned slideshow images use the profile's placements with a per-image cover-fit rect (aspect preserved, sliced across the placed desktop plane), unless the slideshow sets `uniform_layout` — then the profile-level rect applies to every untuned image. `Span.image_rect_mm` is otherwise only authoritative for `Single` sources.
-- `Composite { layers: Vec<CompositeLayer> }` — several free-positioned images on the canvas at once. Each `CompositeLayer` is `{ path, image_rect_mm }` in the same mm-space as `Span`; `layers` is bottom-to-top stacking order. At apply, every monitor alpha-composites the layers that overlap it (top over bottom), uncovered regions render black — so one image can slice across two monitors while another fills a third. Shares the profile-level `monitor_state` (placements/gaps) with the other bodies. No slideshow per layer (a composite layer is a static image). See `docs/reference/layout-math.md` § Composite.
+- `body: ProfileBody` — one of three flat variants: `Standard { layers }`, `Slideshow { source, image_rect_mm }`, or `PerMonitor { assignments, fit }`. The flat split keeps "per-monitor + slideshow" unrepresentable.
+- `Standard { layers: Vec<StandardLayer> }` — one or more free-positioned images on the canvas at once. **A single image is just a one-layer Standard** — there is no separate single-image mode. Each `StandardLayer` is `{ path, image_rect_mm }` in canvas mm-space; `layers` is bottom-to-top stacking order. At apply, every monitor alpha-composites the layers that overlap it (top over bottom), uncovered regions render black — so one image can slice across two monitors while another fills a third. Shares the profile-level `monitor_state` (placements/gaps). See `docs/reference/layout-math.md` § Standard.
+- `Slideshow { source, image_rect_mm }` — `source` holds the image set, timing `config`, sparse per-image `overrides`, and the `uniform_layout` flag; `image_rect_mm` is the profile-level canvas rectangle. A slideshow source may carry sparse per-image `overrides` (placements + image rect keyed by absolute path); the daemon's slideshow-apply choke point swaps them in when that image comes up, and the GUI canvas follows live. Untuned slideshow images use the profile's placements with a per-image cover-fit rect (aspect preserved, sliced across the placed desktop plane), unless the slideshow sets `uniform_layout` — then the profile-level `image_rect_mm` applies to every untuned image.
 
 A profile is **disabled** when any of:
 
 - Topology mismatch (connected set or rotation differs from fingerprint).
-- Referenced single image is missing.
-- A composite layer's image is missing, or the composite has no layers (`CompositeEmpty`).
+- A Standard layer's image is missing, or the Standard profile has no layers (`standard_empty`).
 - Slideshow image set has no sources yet (`slideshow_empty` — the GUI offers the "add images" flow instead of repair).
 - Slideshow image set has no usable source (every folder missing/empty and every picked image missing — one healthy source keeps the profile enabled).
 - Referenced `MonitorRef` in a `PerMonitor` body is not connected.
@@ -181,8 +182,8 @@ Bounded invariants enforced in `superpanels-core::ipc::validate` (so daemon and 
 | `physical_mm` components | finite, `> 0`, `≤ 10_000` mm |
 | `stable_id`, `name` | non-empty, `≤ 256` chars, no control chars |
 | `Profile.name` | non-empty, `≤ 64` chars post-trim |
-| `Profile.body::Span::Slideshow.images.sources` | `≤ 10_000` entries |
-| `Profile.body::Span::Slideshow.overrides` | `≤ 1_000` entries; placements + rect finite |
+| `Profile.body::Slideshow.source.images.sources` | `≤ 10_000` entries |
+| `Profile.body::Slideshow.source.overrides` | `≤ 1_000` entries; placements + rect finite |
 | `Config.profiles` | `≤ 256` entries |
 | `Config.monitors` | `≤ 64` entries |
 | `offset`/`image_size_px` components | finite, `|v| ≤ 1_000_000` |
