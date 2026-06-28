@@ -82,6 +82,10 @@
   // inspector) only on a discrete click-release. Hold-and-drag must not flash
   // the inspector open mid-gesture.
   let pendingSelect: { id: string; sx: number; sy: number } | null = null;
+  // A layer is brought to the front only once a real drag starts: a bare click
+  // selects it (handles + inspector) without reordering the stack, which would
+  // otherwise silently change overlap winners and dirty the profile.
+  let pendingRaise: { id: string; sx: number; sy: number } | null = null;
   const CLICK_SLOP_PX = 4;
 
   const previewMonitors = $derived(buildPreviewMonitors(monitors, canvasView.overrides));
@@ -198,10 +202,10 @@
       onLayerSnap?.(hit.id, hit.axis);
       return;
     } else if (hit.type === 'layer') {
-      onLayerSelect?.(hit.id);
       canvasView.setSelectedLayerId(hit.id);
       const l = layers.find((x) => x.id === hit.id);
-      if (l)
+      if (l) {
+        pendingRaise = { id: hit.id, sx: ev.clientX, sy: ev.clientY };
         dragController.begin({
           kind: 'layer-image',
           id: hit.id,
@@ -210,11 +214,12 @@
           startMmX: l.transform.offsetMmX,
           startMmY: l.transform.offsetMmY,
         });
+      }
     } else if (hit.type === 'layer-resize') {
-      onLayerSelect?.(hit.id);
       canvasView.setSelectedLayerId(hit.id);
       const l = layers.find((x) => x.id === hit.id);
-      if (l)
+      if (l) {
+        pendingRaise = { id: hit.id, sx: ev.clientX, sy: ev.clientY };
         dragController.begin({
           kind: 'layer-resize',
           id: hit.id,
@@ -226,6 +231,7 @@
           startH: l.transform.heightMm,
           aspect: l.transform.widthMm / l.transform.heightMm,
         });
+      }
     } else if (hit.type === 'monitor') {
       const m = previewMonitors.find((x) => x.id === hit.id);
       if (!m) return;
@@ -304,6 +310,13 @@
     ) {
       pendingSelect = null;
     }
+    if (
+      pendingRaise &&
+      Math.hypot(ev.clientX - pendingRaise.sx, ev.clientY - pendingRaise.sy) > CLICK_SLOP_PX
+    ) {
+      onLayerSelect?.(pendingRaise.id);
+      pendingRaise = null;
+    }
     dragController.move(ev);
   }
 
@@ -312,6 +325,8 @@
       canvasView.setSelectId(pendingSelect.id);
       pendingSelect = null;
     }
+    // A bare click on a layer leaves the stack order untouched.
+    pendingRaise = null;
     dragController.end();
     if (stageEl) stageEl.releasePointerCapture(ev.pointerId);
   }

@@ -40,7 +40,8 @@
   <button
     class="tool"
     class:tool--active={mode === 'images'}
-    title="Move images (1)"
+    aria-pressed={mode === 'images'}
+    title="Move images (M toggles)"
     onclick={() => onSetMode('images')}
   >
     <Icon name="move" />
@@ -48,7 +49,8 @@
   <button
     class="tool"
     class:tool--active={mode === 'monitors'}
-    title="Move monitors (2)"
+    aria-pressed={mode === 'monitors'}
+    title="Move monitors (M toggles)"
     onclick={() => onSetMode('monitors')}
   >
     <Icon name="monitors" />

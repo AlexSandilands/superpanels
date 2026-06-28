@@ -3,9 +3,9 @@
 // Aspect ratio is always preserved; the layer recenters on the target.
 
 import type { ImageTransform } from '$lib/stores/image-transform.svelte';
-import type { PreviewMonitor } from './preview-layout';
+import { monitorRect, type PreviewMonitor, type Rect } from './preview-layout';
 
-export type Rect = { x: number; y: number; w: number; h: number };
+export type { Rect };
 
 /** A monitor counts as a snap target once the layer covers at least this much
  *  of its area — so "drag roughly over the two monitors I want, then snap"
@@ -20,10 +20,6 @@ function overlapArea(a: Rect, b: Rect): number {
 
 function transformToRect(t: ImageTransform): Rect {
   return { x: t.offsetMmX, y: t.offsetMmY, w: t.widthMm, h: t.heightMm };
-}
-
-function monitorRect(m: PreviewMonitor): Rect {
-  return { x: m.xMm, y: m.yMm, w: m.wMm, h: m.hMm };
 }
 
 /** The rectangle the layer should snap to: the bounding box of every monitor it

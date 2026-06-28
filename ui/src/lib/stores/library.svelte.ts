@@ -71,13 +71,16 @@ function matchesSearch(entry: LibraryEntry, q: string): boolean {
 }
 
 // Roots are stored in their config form (often `~/…`) while entry paths are
-// absolute, so match on the tilde-stripped tail at a directory boundary. A
-// nested folder sharing a root's leaf name elsewhere could in theory match, but
-// that's an acceptable edge for a folder filter.
+// absolute, so match on the tilde-stripped tail at a directory boundary.
+// Anchoring a `/` on both ends of the needle keeps `Pics` from matching
+// `…/MyPics/…`. A nested folder sharing a root's leaf name *elsewhere* still
+// matches, which is an acceptable edge for a folder filter.
 function inRoot(path: string, root: string): boolean {
   const tail = root.replace(/^~/, '').replace(/\/+$/, '');
   if (!tail) return true;
-  return (path + '/').includes(tail + '/');
+  const needle = (tail.startsWith('/') ? '' : '/') + tail + '/';
+  const hay = (path.startsWith('/') ? '' : '/') + path + '/';
+  return hay.includes(needle);
 }
 
 function matchesAspect(ratio: number, mode: AspectFilter): boolean {

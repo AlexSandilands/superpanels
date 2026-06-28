@@ -3,6 +3,8 @@
 // then monitors, then the single span image. Kept out of the component so the
 // layer-vs-monitor z-order priority is unit-testable.
 
+import { LAYER_BTN_TOP as BTN_TOP, REMOVE_CX, SNAP_W_CX, SNAP_H_CX } from './layer-buttons';
+
 export type Rect = { x: number; y: number; w: number; h: number };
 
 export type ResizeCorner = 'br' | 'tl';
@@ -35,13 +37,6 @@ const REMOVE_HIT_R = 13;
 const SNAP_HIT_R = 13;
 const RESIZE_HIT_R = 18;
 const IMAGE_RESIZE_HIT_R = 24;
-
-// On-layer button cluster, top-right, laid out right→left: remove, then the two
-// snap buttons. Centres are measured in from the layer's top-right corner.
-const BTN_TOP = 20;
-const REMOVE_CX = 12;
-const SNAP_W_CX = 38;
-const SNAP_H_CX = 64;
 
 function inRect(px: number, py: number, r: Rect): boolean {
   return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;

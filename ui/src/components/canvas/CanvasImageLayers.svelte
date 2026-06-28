@@ -6,11 +6,19 @@
   // layers that overlap it (mirrors CanvasSpanImage + the apply-time composite,
   // so monitors stay bright while everything off-screen reads dim); (3) the
   // crisp affordances — selection ring, resize handle, and the top-right button
-  // cluster (snap-width, snap-height, remove) — on top. Button centres mirror
-  // hit-test.ts: remove 12 px in from the right edge, snap-width 38 px,
-  // snap-height 64 px, all 20 px down.
+  // cluster (snap-width, snap-height, remove) — on top. Button centres come from
+  // the shared layer-buttons geometry that hit-test.ts also reads.
 
   import Icon from '../widgets/Icon.svelte';
+  import {
+    LAYER_BTN_SIZE,
+    LAYER_BTN_TOP,
+    REMOVE_CX,
+    SNAP_W_CX,
+    SNAP_H_CX,
+  } from '$lib/canvas/layer-buttons';
+
+  const BTN_HALF = LAYER_BTN_SIZE / 2;
 
   type Rect = { x: number; y: number; w: number; h: number };
 
@@ -119,16 +127,35 @@
     ></div>
 
     {#if l.hovered && l.showButtons}
+      {@const btnTop = l.y + LAYER_BTN_TOP - BTN_HALF}
       <!-- snap to monitor height (fit vertically) -->
-      <div class="layer-btn neutral" style:left="{l.x + l.w - 74}px" style:top="{l.y + 10}px">
+      <div
+        class="layer-btn neutral"
+        style:width="{LAYER_BTN_SIZE}px"
+        style:height="{LAYER_BTN_SIZE}px"
+        style:left="{l.x + l.w - SNAP_H_CX - BTN_HALF}px"
+        style:top="{btnTop}px"
+      >
         <Icon name="snap-h" size={12} />
       </div>
       <!-- snap to monitor width (fit horizontally) -->
-      <div class="layer-btn neutral" style:left="{l.x + l.w - 48}px" style:top="{l.y + 10}px">
+      <div
+        class="layer-btn neutral"
+        style:width="{LAYER_BTN_SIZE}px"
+        style:height="{LAYER_BTN_SIZE}px"
+        style:left="{l.x + l.w - SNAP_W_CX - BTN_HALF}px"
+        style:top="{btnTop}px"
+      >
         <Icon name="snap-w" size={12} />
       </div>
       <!-- remove -->
-      <div class="layer-btn accent" style:left="{l.x + l.w - 22}px" style:top="{l.y + 10}px">
+      <div
+        class="layer-btn accent"
+        style:width="{LAYER_BTN_SIZE}px"
+        style:height="{LAYER_BTN_SIZE}px"
+        style:left="{l.x + l.w - REMOVE_CX - BTN_HALF}px"
+        style:top="{btnTop}px"
+      >
         <Icon name="trash" size={12} />
       </div>
     {/if}
@@ -138,8 +165,6 @@
 <style>
   .layer-btn {
     position: absolute;
-    width: 20px;
-    height: 20px;
     display: flex;
     align-items: center;
     justify-content: center;
