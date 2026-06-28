@@ -7,6 +7,7 @@
     | 'check'
     | 'caret'
     | 'grid'
+    | 'monitors'
     | 'gear'
     | 'tray'
     | 'move'
@@ -112,12 +113,43 @@
   </svg>
 {:else if name === 'gear'}
   <svg width={size} height={size} viewBox="0 0 14 14" aria-hidden="true">
-    <circle cx="7" cy="7" r="2.2" fill="none" stroke="currentColor" stroke-width="1.3"></circle>
+    <circle cx="7" cy="7" r="2.5" fill="none" stroke="currentColor" stroke-width="1.4"></circle>
     <path
-      d="M7 1.5v1.8M7 10.7v1.8M1.5 7h1.8M10.7 7h1.8M3.1 3.1l1.3 1.3M9.6 9.6l1.3 1.3M3.1 10.9l1.3-1.3M9.6 4.4l1.3-1.3"
+      d="M7 1.4v1.9M7 10.7v1.9M1.4 7h1.9M10.7 7h1.9M2.9 2.9l1.35 1.35M9.75 9.75l1.35 1.35M2.9 11.1l1.35-1.35M9.75 4.25l1.35-1.35"
       stroke="currentColor"
-      stroke-width="1.3"
+      stroke-width="1.8"
       stroke-linecap="round"
+    ></path>
+  </svg>
+{:else if name === 'monitors'}
+  <svg width={size} height={size} viewBox="0 0 14 14" aria-hidden="true">
+    <rect
+      x="1"
+      y="3.4"
+      width="5.4"
+      height="4.4"
+      rx="0.8"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.2"
+    ></rect>
+    <rect
+      x="7.6"
+      y="3.4"
+      width="5.4"
+      height="4.4"
+      rx="0.8"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.2"
+    ></rect>
+    <path
+      d="M3.7 7.8v1.6M2.4 9.8h2.6M10.3 7.8v1.6M9 9.8h2.6"
+      stroke="currentColor"
+      stroke-width="1.2"
+      fill="none"
+      stroke-linecap="round"
+      stroke-linejoin="round"
     ></path>
   </svg>
 {:else if name === 'tray'}

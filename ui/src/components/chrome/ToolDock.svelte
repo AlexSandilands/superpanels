@@ -51,7 +51,7 @@
     title="Move monitors (2)"
     onclick={() => onSetMode('monitors')}
   >
-    <Icon name="grid" />
+    <Icon name="monitors" />
   </button>
   <div style:height="1px" style:background="var(--line)" style:margin="4px 0"></div>
   <button

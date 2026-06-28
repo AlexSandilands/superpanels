@@ -141,7 +141,7 @@
   <div class="divider"></div>
   {#if onOpenManager}
     <button class="btn ghost full" onclick={onOpenManager}>
-      <Icon name="grid" /> Open profile manager…
+      <Icon name="stack" /> Open profile manager…
     </button>
   {/if}
   {#if onTogglePauseSchedules}

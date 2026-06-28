@@ -170,16 +170,25 @@
       <span style:color="var(--text-3)">·</span>
       <span class="mono" style:color="var(--text-3)">{lastApplyText}</span>
     </span>
+    <!-- Content: library + profiles -->
     <button class="btn ghost icon" title="Library (Ctrl+L)" onclick={onOpenLibrary}>
       <Icon name="grid" />
     </button>
-    <button class="btn ghost icon" title="Settings (Ctrl+,)" onclick={onOpenSettings}>
-      <Icon name="gear" />
-    </button>
-    <button class="btn ghost icon" title="Tray menu" onclick={onTrayClick}>
-      <Icon name="tray" />
+    <button class="btn ghost icon" title="Profile manager" onclick={onOpenProfileManager}>
+      <Icon name="stack" />
     </button>
     <div style:width="1px" style:height="18px" style:background="var(--line)"></div>
+    <!-- Canvas actions: revert, save, save-as-new -->
+    <button
+      class="btn ghost icon"
+      disabled={!canRevert}
+      onclick={onRevert}
+      title={canRevert
+        ? `Revert canvas to '${activeName}' (drops unsaved edits)`
+        : 'Nothing to revert'}
+    >
+      <Icon name="reset" />
+    </button>
     <button
       class="btn ghost icon"
       class:save-dirty={saveDirty}
@@ -201,19 +210,15 @@
     >
       <Icon name="save-new" />
     </button>
-    <button
-      class="btn ghost icon"
-      disabled={!canRevert}
-      onclick={onRevert}
-      title={canRevert
-        ? `Revert canvas to '${activeName}' (drops unsaved edits)`
-        : 'Nothing to revert'}
-    >
-      <Icon name="reset" />
+    <div style:width="1px" style:height="18px" style:background="var(--line)"></div>
+    <!-- Utilities: settings, tray -->
+    <button class="btn ghost icon" title="Settings (Ctrl+,)" onclick={onOpenSettings}>
+      <Icon name="gear" />
     </button>
-    <button class="btn ghost icon" title="Profile manager" onclick={onOpenProfileManager}>
-      <Icon name="stack" />
+    <button class="btn ghost icon" title="Tray menu" onclick={onTrayClick}>
+      <Icon name="tray" />
     </button>
+    <div style:width="1px" style:height="18px" style:background="var(--line)"></div>
     <button class="btn primary" disabled={!canApply} onclick={onApply} title="Apply (Enter)">
       <Icon name="check" size={13} /> Apply
       <span
