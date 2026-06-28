@@ -392,7 +392,12 @@
   <CanvasGrid scale={layout.scale} ox={layout.ox} oy={layout.oy} />
 
   {#if compositeMode}
-    <CanvasImageLayers layers={renderedLayers} dragging={Boolean(dragController.drag)} />
+    <CanvasImageLayers
+      layers={renderedLayers}
+      dragging={Boolean(dragController.drag)}
+      dim={canvasView.dim}
+      {monitorRects}
+    />
   {:else if imageUrl}
     <CanvasSpanImage
       {imageUrl}

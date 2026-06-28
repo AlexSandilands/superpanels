@@ -1,12 +1,18 @@
 <script lang="ts">
   // Presentational composite-layer rendering. PreviewCanvas owns hit-testing and
-  // pointer routing (everything here is pointer-events:none); this just paints
-  // each layer's image plus, on the hovered layer, the resize handle and the
-  // top-right button cluster (snap-width, snap-height, remove) whose hit regions
-  // PreviewCanvas detects. Button centres mirror hit-test.ts: remove 12 px in
-  // from the right edge, snap-width 38 px, snap-height 64 px, all 20 px down.
+  // pointer routing (everything here is pointer-events:none); this paints, in
+  // three passes: (1) the layer images, dimmed in dim/backdrop mode; (2) when
+  // the off-monitor dim is on, a bright per-monitor window compositing the
+  // layers that overlap it (mirrors CanvasSpanImage + the apply-time composite,
+  // so monitors stay bright while everything off-screen reads dim); (3) the
+  // crisp affordances — selection ring, resize handle, and the top-right button
+  // cluster (snap-width, snap-height, remove) — on top. Button centres mirror
+  // hit-test.ts: remove 12 px in from the right edge, snap-width 38 px,
+  // snap-height 64 px, all 20 px down.
 
   import Icon from '../widgets/Icon.svelte';
+
+  type Rect = { x: number; y: number; w: number; h: number };
 
   export type RenderedLayer = {
     id: string;
@@ -21,10 +27,16 @@
     showButtons: boolean;
   };
 
-  type Props = { layers: RenderedLayer[]; dragging: boolean };
-  let { layers, dragging }: Props = $props();
+  type Props = {
+    layers: RenderedLayer[];
+    dragging: boolean;
+    dim: boolean;
+    monitorRects: Rect[];
+  };
+  let { layers, dragging, dim, monitorRects }: Props = $props();
 </script>
 
+<!-- Pass 1: layer images (dimmed in dim / monitor-edit mode) -->
 {#each layers as l (l.id)}
   {#if l.url}
     <div
@@ -37,6 +49,48 @@
       style:background-size="100% 100%"
       style:opacity={l.dimmed ? '0.18' : '1'}
       style:transition={dragging ? 'none' : 'opacity 200ms ease'}
+    ></div>
+  {/if}
+{/each}
+
+<!-- Pass 2: bright per-monitor composite windows (off-monitor dim) -->
+{#if dim}
+  {#each monitorRects as m, mi (mi)}
+    <div
+      class="pointer-events-none absolute"
+      style:left="{m.x}px"
+      style:top="{m.y}px"
+      style:width="{m.w}px"
+      style:height="{m.h}px"
+      style:overflow="hidden"
+    >
+      {#each layers as l (l.id)}
+        {#if l.url}
+          <div
+            class="absolute"
+            style:left="{l.x - m.x}px"
+            style:top="{l.y - m.y}px"
+            style:width="{l.w}px"
+            style:height="{l.h}px"
+            style:background-image="url({l.url})"
+            style:background-size="100% 100%"
+            style:background-repeat="no-repeat"
+          ></div>
+        {/if}
+      {/each}
+    </div>
+  {/each}
+{/if}
+
+<!-- Pass 3: affordances (ring, resize handle, buttons) -->
+{#each layers as l (l.id)}
+  {#if l.url}
+    <div
+      class="pointer-events-none absolute"
+      style:left="{l.x}px"
+      style:top="{l.y}px"
+      style:width="{l.w}px"
+      style:height="{l.h}px"
       style:box-shadow={l.hovered || l.selected
         ? '0 0 0 1.5px var(--accent), 0 0 18px color-mix(in oklab, var(--accent) 25%, transparent)'
         : '0 0 0 1px oklch(1 0 0 / 0.06)'}

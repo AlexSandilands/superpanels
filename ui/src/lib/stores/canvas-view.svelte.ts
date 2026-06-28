@@ -17,7 +17,8 @@ export type CanvasMode = 'images' | 'monitors';
 let zoom = $state(1);
 let panX = $state(0);
 let panY = $state(0);
-let dim = $state(false);
+// On by default: the off-monitor dim makes the live crop read at a glance.
+let dim = $state(true);
 let hoverId = $state<string | null>(null);
 let selectId = $state<string | null>(null);
 let selectedLayerId = $state<string | null>(null);

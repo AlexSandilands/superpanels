@@ -33,7 +33,6 @@ swap silently breaks hand-tuned slideshow images otherwise.
 
 ## Misc Bugs
 
-- Off monitor dim button now dims the monitors as well on a standard profile, not just the stuff outside of the monitors. Slideshow works fine. We should also have this setting on by default
 - Should add a resize handle to the top left of the image as well
 - Lets add letting press the delete button to remove an image from the canvas
 - Should be able to filter the library by added folder
