@@ -4,6 +4,7 @@
 // for its modal flags.
 
 import { canvasView } from '$lib/stores/canvas-view.svelte';
+import { canvasLayers } from '$lib/stores/canvas-layers.svelte';
 import { profileStore } from '$lib/stores/profile.svelte';
 import { nudgeSelected } from '$lib/canvas/select';
 import { applyDraftProfile, redetectMonitorsWithToast, switchAndApply } from '$lib/actions';
@@ -40,6 +41,12 @@ export function dispatchKey(e: KeyboardEvent, deps: KeymapDeps): void {
     return;
   }
   if (isInputTarget(e)) return;
+  if ((e.key === 'Delete' || e.key === 'Backspace') && !modal && canvasView.selectedLayerId) {
+    e.preventDefault();
+    canvasLayers.remove(canvasView.selectedLayerId);
+    canvasView.setSelectedLayerId(null);
+    return;
+  }
   if (e.key === 'Enter' && !modal) {
     if (canApply) void applyDraftProfile();
     return;
