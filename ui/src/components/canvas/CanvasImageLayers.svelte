@@ -96,11 +96,21 @@
         : '0 0 0 1px oklch(1 0 0 / 0.06)'}
     ></div>
 
-    <!-- resize handle (bottom-right) -->
+    <!-- resize handles (bottom-right + top-left) -->
     <div
       class="pointer-events-none absolute rounded-sm"
       style:left="{l.x + l.w - 6}px"
       style:top="{l.y + l.h - 6}px"
+      style:width="12px"
+      style:height="12px"
+      style:background="var(--accent)"
+      style:border="2px solid var(--bg)"
+      style:opacity={l.hovered || l.selected ? '0.95' : '0.55'}
+    ></div>
+    <div
+      class="pointer-events-none absolute rounded-sm"
+      style:left="{l.x - 6}px"
+      style:top="{l.y - 6}px"
       style:width="12px"
       style:height="12px"
       style:background="var(--accent)"

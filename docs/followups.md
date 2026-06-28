@@ -33,7 +33,6 @@ swap silently breaks hand-tuned slideshow images otherwise.
 
 ## Misc Bugs
 
-- Should add a resize handle to the top left of the image as well
 - Lets add letting press the delete button to remove an image from the canvas
 - Should be able to filter the library by added folder
 - Fix up icons

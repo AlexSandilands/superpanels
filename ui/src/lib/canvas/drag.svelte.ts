@@ -8,7 +8,16 @@ import type { ImageTransform } from '$lib/stores/image-transform.svelte';
 
 export type Drag =
   | { kind: 'image'; startX: number; startY: number; startMmX: number; startMmY: number }
-  | { kind: 'image-resize'; startX: number; startW: number; startH: number; aspect: number }
+  | {
+      kind: 'image-resize';
+      corner: 'br' | 'tl';
+      startX: number;
+      startMmX: number;
+      startMmY: number;
+      startW: number;
+      startH: number;
+      aspect: number;
+    }
   | {
       kind: 'layer-image';
       id: string;
@@ -20,7 +29,10 @@ export type Drag =
   | {
       kind: 'layer-resize';
       id: string;
+      corner: 'br' | 'tl';
       startX: number;
+      startMmX: number;
+      startMmY: number;
       startW: number;
       startH: number;
       aspect: number;
@@ -36,6 +48,35 @@ export type Drag =
   | { kind: 'pan'; startX: number; startY: number; startOx: number; startOy: number };
 
 export type Guide = { kind: 'h'; y: number } | { kind: 'v'; x: number };
+
+type ResizeDrag = {
+  corner: 'br' | 'tl';
+  startMmX: number;
+  startMmY: number;
+  startW: number;
+  startH: number;
+  aspect: number;
+};
+
+// Aspect-locked resize driven by horizontal drag. The bottom-right handle keeps
+// the top-left anchored (offset unchanged); the top-left handle keeps the
+// bottom-right anchored, so the opposite corner stays put as the rect grows.
+function resizeRect(
+  d: ResizeDrag,
+  dxMm: number,
+): { offsetMmX: number; offsetMmY: number; widthMm: number; heightMm: number } {
+  const widthMm = Math.max(50, d.corner === 'tl' ? d.startW - dxMm : d.startW + dxMm);
+  const heightMm = widthMm / d.aspect;
+  if (d.corner === 'tl') {
+    return {
+      offsetMmX: d.startMmX + d.startW - widthMm,
+      offsetMmY: d.startMmY + d.startH - heightMm,
+      widthMm,
+      heightMm,
+    };
+  }
+  return { offsetMmX: d.startMmX, offsetMmY: d.startMmY, widthMm, heightMm };
+}
 
 export type DragHandlers = {
   monitors: () => PreviewMonitor[];
@@ -157,9 +198,8 @@ export function createDragController(handlers: DragHandlers) {
           offsetMmY: drag.startMmY + dyMm,
         });
       } else if (drag.kind === 'image-resize') {
-        const newW = Math.max(50, drag.startW + dxMm);
-        const newH = newW / drag.aspect;
-        handlers.setImageTransform({ ...handlers.imageTransform(), widthMm: newW, heightMm: newH });
+        const r = resizeRect(drag, dxMm);
+        handlers.setImageTransform({ ...handlers.imageTransform(), ...r });
       } else if (drag.kind === 'layer-image') {
         const t = handlers.getLayer?.(drag.id);
         if (!t) return;
@@ -177,9 +217,7 @@ export function createDragController(handlers: DragHandlers) {
       } else if (drag.kind === 'layer-resize') {
         const t = handlers.getLayer?.(drag.id);
         if (!t) return;
-        const newW = Math.max(50, drag.startW + dxMm);
-        const newH = newW / drag.aspect;
-        handlers.setLayerTransform?.(drag.id, { ...t, widthMm: newW, heightMm: newH });
+        handlers.setLayerTransform?.(drag.id, { ...t, ...resizeRect(drag, dxMm) });
       } else if (drag.kind === 'monitor') {
         let newX = drag.startMmX + dxMm;
         let newY = drag.startMmY + dyMm;

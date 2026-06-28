@@ -5,12 +5,14 @@
 
 export type Rect = { x: number; y: number; w: number; h: number };
 
+export type ResizeCorner = 'br' | 'tl';
+
 export type Hit =
   | { type: 'monitor'; id: string }
   | { type: 'image' }
-  | { type: 'image-resize' }
+  | { type: 'image-resize'; corner: ResizeCorner }
   | { type: 'layer'; id: string }
-  | { type: 'layer-resize'; id: string }
+  | { type: 'layer-resize'; id: string; corner: ResizeCorner }
   | { type: 'layer-remove'; id: string }
   | { type: 'layer-snap'; id: string; axis: 'width' | 'height' }
   | { type: 'stage' };
@@ -63,7 +65,9 @@ export function hitTest(px: number, py: number, geo: HitGeometry): Hit {
           return { type: 'layer-snap', id, axis: 'height' };
       }
       if (Math.hypot(rect.x + rect.w - px, rect.y + rect.h - py) < RESIZE_HIT_R)
-        return { type: 'layer-resize', id };
+        return { type: 'layer-resize', id, corner: 'br' };
+      if (Math.hypot(rect.x - px, rect.y - py) < RESIZE_HIT_R)
+        return { type: 'layer-resize', id, corner: 'tl' };
       if (inRect(px, py, rect)) return { type: 'layer', id };
     }
   }
@@ -77,7 +81,9 @@ export function hitTest(px: number, py: number, geo: HitGeometry): Hit {
   if (!geo.compositeMode && geo.imagesInteractive && geo.imageUrl) {
     const r = geo.imgRect;
     if (Math.hypot(r.x + r.w - px, r.y + r.h - py) < IMAGE_RESIZE_HIT_R)
-      return { type: 'image-resize' };
+      return { type: 'image-resize', corner: 'br' };
+    if (Math.hypot(r.x - px, r.y - py) < IMAGE_RESIZE_HIT_R)
+      return { type: 'image-resize', corner: 'tl' };
     if (inRect(px, py, r)) return { type: 'image' };
   }
   return { type: 'stage' };

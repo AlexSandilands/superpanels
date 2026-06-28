@@ -218,7 +218,10 @@
         dragController.begin({
           kind: 'layer-resize',
           id: hit.id,
+          corner: hit.corner,
           startX: ev.clientX,
+          startMmX: l.transform.offsetMmX,
+          startMmY: l.transform.offsetMmY,
           startW: l.transform.widthMm,
           startH: l.transform.heightMm,
           aspect: l.transform.widthMm / l.transform.heightMm,
@@ -247,7 +250,10 @@
     } else if (hit.type === 'image-resize') {
       dragController.begin({
         kind: 'image-resize',
+        corner: hit.corner,
         startX: ev.clientX,
+        startMmX: imageTransform.offsetMmX,
+        startMmY: imageTransform.offsetMmY,
         startW: imageTransform.widthMm,
         startH: imageTransform.heightMm,
         aspect: imageTransform.widthMm / imageTransform.heightMm,

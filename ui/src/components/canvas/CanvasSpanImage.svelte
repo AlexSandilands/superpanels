@@ -54,3 +54,13 @@
   style:border="2px solid var(--bg)"
   style:opacity="0.85"
 ></div>
+<div
+  class="pointer-events-none absolute rounded-sm"
+  style:left="{rect.x - 6}px"
+  style:top="{rect.y - 6}px"
+  style:width="12px"
+  style:height="12px"
+  style:background="var(--accent)"
+  style:border="2px solid var(--bg)"
+  style:opacity="0.85"
+></div>
