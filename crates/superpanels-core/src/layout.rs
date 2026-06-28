@@ -16,7 +16,7 @@ use crate::schedule::{MonitorPlacement, monitor_key};
 
 mod algorithm;
 
-use algorithm::{EffectiveMonitor, validate_inputs};
+use algorithm::{EffectiveMonitor, validate_inputs, validate_monitors_physical};
 
 /// Source-image pixel rectangle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
@@ -216,14 +216,29 @@ pub fn compute_composite_crop_specs<S: BuildHasher>(
     if monitors.is_empty() {
         return Err(LayoutError::EmptyMonitorList);
     }
-    for (size, rect) in layers {
-        validate_inputs(monitors, *size)?;
-        if !rect.w_mm.is_finite() || !rect.h_mm.is_finite() || rect.w_mm <= 0.0 || rect.h_mm <= 0.0
-        {
-            return Err(LayoutError::ImageRectDegenerate {
-                w_mm: rect.w_mm,
-                h_mm: rect.h_mm,
-            });
+    // Physical size is only needed to project a layer onto the canvas plane.
+    // An empty composite paints every monitor black and projects nothing, so it
+    // stays valid even on monitors that lack a configured physical size —
+    // applying a blank canvas must not require monitor configuration.
+    if !layers.is_empty() {
+        validate_monitors_physical(monitors)?;
+        for ((img_w, img_h), rect) in layers {
+            if *img_w == 0 || *img_h == 0 {
+                return Err(LayoutError::ImageZeroSize {
+                    image_w: *img_w,
+                    image_h: *img_h,
+                });
+            }
+            if !rect.w_mm.is_finite()
+                || !rect.h_mm.is_finite()
+                || rect.w_mm <= 0.0
+                || rect.h_mm <= 0.0
+            {
+                return Err(LayoutError::ImageRectDegenerate {
+                    w_mm: rect.w_mm,
+                    h_mm: rect.h_mm,
+                });
+            }
         }
     }
 
@@ -686,5 +701,36 @@ mod tests {
         let layers = [((1920, 1080), rect(0.0, 0.0, 480.0, 270.0))];
         let result = compute_composite_crop_specs(&monitors, &placements, &layers);
         assert!(matches!(result, Err(LayoutError::PlacementMissing { .. })));
+    }
+
+    #[test]
+    fn composite_no_layers_on_unconfigured_monitor_still_renders_black() {
+        // An empty canvas projects nothing, so it must apply even when the
+        // monitor has no configured physical size (M2).
+        let mut m = monitor(0, "DP-1", 1920, 1080, 0, 0, 480, 270);
+        m.physical_size_mm = None;
+        let monitors = vec![m];
+        let mut placements = HashMap::new();
+        placements.insert(monitor_key(&monitors[0]), place(0.0, 0.0));
+        let out = compute_composite_crop_specs(&monitors, &placements, &[]).unwrap();
+        assert_eq!(out.len(), 1);
+        assert!(out[0].slices.is_empty());
+        assert_eq!(out[0].dst_size, (1920, 1080));
+    }
+
+    #[test]
+    fn composite_with_layers_on_unconfigured_monitor_errors() {
+        // Projecting an actual layer still requires physical size.
+        let mut m = monitor(0, "DP-1", 1920, 1080, 0, 0, 480, 270);
+        m.physical_size_mm = None;
+        let monitors = vec![m];
+        let mut placements = HashMap::new();
+        placements.insert(monitor_key(&monitors[0]), place(0.0, 0.0));
+        let layers = [((1920, 1080), rect(0.0, 0.0, 480.0, 270.0))];
+        let result = compute_composite_crop_specs(&monitors, &placements, &layers);
+        assert!(matches!(
+            result,
+            Err(LayoutError::PhysicalSizeMissing { .. })
+        ));
     }
 }

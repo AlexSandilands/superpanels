@@ -332,7 +332,7 @@ pub fn render_composite(
         image::RgbaImage::from_pixel(dw.max(1), dh.max(1), image::Rgba([0, 0, 0, 255]));
     for (source, spec) in layers {
         let layer = render_layer_slice(source, spec)?;
-        image::imageops::overlay(&mut canvas, &layer.to_rgba8(), 0, 0);
+        image::imageops::overlay(&mut canvas, &layer, 0, 0);
     }
     Ok(DynamicImage::ImageRgba8(canvas))
 }

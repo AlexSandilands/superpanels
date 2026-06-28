@@ -13,6 +13,23 @@ pub(super) fn validate_inputs(
     monitors: &[Monitor],
     image_size: (u32, u32),
 ) -> Result<(), LayoutError> {
+    validate_monitors_physical(monitors)?;
+
+    let (img_w, img_h) = image_size;
+    if img_w == 0 || img_h == 0 {
+        return Err(LayoutError::ImageZeroSize {
+            image_w: img_w,
+            image_h: img_h,
+        });
+    }
+
+    Ok(())
+}
+
+/// The monitor-only half of [`validate_inputs`]: non-empty set with a usable
+/// physical size on every monitor. Split out so callers that don't project an
+/// image (an empty composite renders black) can skip the physical-size gate.
+pub(super) fn validate_monitors_physical(monitors: &[Monitor]) -> Result<(), LayoutError> {
     if monitors.is_empty() {
         return Err(LayoutError::EmptyMonitorList);
     }
@@ -36,14 +53,6 @@ pub(super) fn validate_inputs(
                 name: m.name.clone(),
             });
         }
-    }
-
-    let (img_w, img_h) = image_size;
-    if img_w == 0 || img_h == 0 {
-        return Err(LayoutError::ImageZeroSize {
-            image_w: img_w,
-            image_h: img_h,
-        });
     }
 
     Ok(())

@@ -66,11 +66,20 @@ impl ProfileValidity {
 
         let connected_keys: HashSet<String> = monitors.iter().map(monitor_key).collect();
 
-        for m in monitors {
-            if m.physical_size_mm.is_none() {
-                reasons.push(DisableReason::PhysicalSizeMissing {
-                    stable_id: monitor_key(m),
-                });
+        // Physical size only matters for profiles that project an image onto the
+        // canvas plane. An empty Standard renders an all-black desktop and needs
+        // no projection, so it stays applicable even on unconfigured monitors.
+        let projects_image = !matches!(
+            &profile.body,
+            ProfileBody::Standard(standard) if standard.layers.is_empty()
+        );
+        if projects_image {
+            for m in monitors {
+                if m.physical_size_mm.is_none() {
+                    reasons.push(DisableReason::PhysicalSizeMissing {
+                        stable_id: monitor_key(m),
+                    });
+                }
             }
         }
 
@@ -144,4 +153,72 @@ fn image_set_representative_path(set: &ImageSet) -> PathBuf {
             ImageSource::Image { path } | ImageSource::Folder { path, .. } => path.clone(),
         })
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use crate::config::{StandardLayer, StandardProfile};
+    use crate::display::{MonitorId, Rotation};
+    use crate::layout::ImageRectMm;
+
+    use super::*;
+
+    fn unconfigured_monitor() -> Monitor {
+        Monitor {
+            id: MonitorId(0),
+            name: "DP-1".to_owned(),
+            stable_id: Some("uuid-0".to_owned()),
+            position: (0, 0),
+            resolution: (1920, 1080),
+            physical_size_mm: None,
+            scale: 1.0,
+            rotation: Rotation::None,
+            refresh_hz: None,
+            ppi: None,
+        }
+    }
+
+    fn standard_profile(monitors: &[Monitor], layers: Vec<StandardLayer>) -> Profile {
+        let now = crate::config::now_timestamp();
+        Profile {
+            name: "canvas".to_owned(),
+            body: ProfileBody::Standard(StandardProfile { layers }),
+            monitor_state: HashMap::new(),
+            topology: TopologyFingerprint::from_monitors(monitors),
+            description: None,
+            created_at: now,
+            updated_at: now,
+            last_applied_at: None,
+            backend_override: None,
+        }
+    }
+
+    #[test]
+    fn empty_standard_is_ok_on_unconfigured_monitor() {
+        let monitors = vec![unconfigured_monitor()];
+        let profile = standard_profile(&monitors, Vec::new());
+        assert!(ProfileValidity::evaluate(&profile, &monitors).is_ok());
+    }
+
+    #[test]
+    fn standard_with_a_layer_flags_missing_physical_size() {
+        let monitors = vec![unconfigured_monitor()];
+        let layer = StandardLayer {
+            path: PathBuf::from("/walls/a.png"),
+            image_rect_mm: ImageRectMm::default(),
+        };
+        let profile = standard_profile(&monitors, vec![layer]);
+        let reasons = match ProfileValidity::evaluate(&profile, &monitors) {
+            ProfileValidity::Disabled { reasons } => reasons,
+            ProfileValidity::Ok => Vec::new(),
+        };
+        assert!(
+            reasons
+                .iter()
+                .any(|r| matches!(r, DisableReason::PhysicalSizeMissing { .. })),
+            "got: {reasons:?}"
+        );
+    }
 }

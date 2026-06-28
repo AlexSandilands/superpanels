@@ -99,6 +99,32 @@ fn validate_profile_body(
     i: usize,
     body: &super::ProfileBody,
 ) -> Result<(), ConfigError> {
+    if let super::ProfileBody::Standard(standard) = body {
+        if standard.layers.len() > v::MAX_STANDARD_LAYERS {
+            return Err(invalid(
+                path,
+                format!("profile[{i}].body.layers"),
+                format!(
+                    "{} entries exceeds {} cap",
+                    standard.layers.len(),
+                    v::MAX_STANDARD_LAYERS
+                ),
+            ));
+        }
+        for (li, layer) in standard.layers.iter().enumerate() {
+            let r = layer.image_rect_mm;
+            let finite = [r.x_mm, r.y_mm, r.w_mm, r.h_mm]
+                .iter()
+                .all(|v| v.is_finite());
+            if !finite {
+                return Err(invalid(
+                    path,
+                    format!("profile[{i}].body.layers[{li}].image_rect_mm"),
+                    "image_rect_mm must be finite",
+                ));
+            }
+        }
+    }
     if let super::ProfileBody::Slideshow(slideshow) = body {
         let super::SlideshowSource {
             images, overrides, ..
@@ -262,6 +288,69 @@ mod tests {
         bad.image_rect_mm.w_mm = f32::NAN;
         let overrides = HashMap::from([(PathBuf::from("/walls/a.png"), bad)]);
         let cfg = slideshow_profile_with_overrides(overrides);
+        let err = validate(&cfg, Path::new("/x/config.toml")).unwrap_err();
+        assert!(err.to_string().contains("finite"), "got: {err}");
+    }
+
+    fn standard_profile_with_layers(
+        layers: Vec<crate::config::StandardLayer>,
+    ) -> super::super::Config {
+        let now = crate::config::now_timestamp();
+        let profile = Profile {
+            name: "canvas".to_owned(),
+            body: ProfileBody::Standard(crate::config::StandardProfile { layers }),
+            monitor_state: HashMap::new(),
+            topology: TopologyFingerprint(String::new()),
+            description: None,
+            created_at: now,
+            updated_at: now,
+            last_applied_at: None,
+            backend_override: None,
+        };
+        Config {
+            profiles: vec![profile],
+            ..Config::default()
+        }
+    }
+
+    fn standard_layer(rect: ImageRectMm) -> crate::config::StandardLayer {
+        crate::config::StandardLayer {
+            path: PathBuf::from("/walls/a.png"),
+            image_rect_mm: rect,
+        }
+    }
+
+    #[test]
+    fn empty_standard_passes_validation() {
+        let cfg = standard_profile_with_layers(Vec::new());
+        assert!(validate(&cfg, Path::new("/x/config.toml")).is_ok());
+    }
+
+    #[test]
+    fn standard_layers_above_cap_are_rejected() {
+        let rect = ImageRectMm {
+            x_mm: 0.0,
+            y_mm: 0.0,
+            w_mm: 100.0,
+            h_mm: 100.0,
+        };
+        let layers = (0..=v::MAX_STANDARD_LAYERS)
+            .map(|_| standard_layer(rect))
+            .collect();
+        let cfg = standard_profile_with_layers(layers);
+        let err = validate(&cfg, Path::new("/x/config.toml")).unwrap_err();
+        assert!(err.to_string().contains("exceeds"), "got: {err}");
+    }
+
+    #[test]
+    fn non_finite_standard_layer_rect_is_rejected() {
+        let rect = ImageRectMm {
+            x_mm: f32::NAN,
+            y_mm: 0.0,
+            w_mm: 100.0,
+            h_mm: 100.0,
+        };
+        let cfg = standard_profile_with_layers(vec![standard_layer(rect)]);
         let err = validate(&cfg, Path::new("/x/config.toml")).unwrap_err();
         assert!(err.to_string().contains("finite"), "got: {err}");
     }

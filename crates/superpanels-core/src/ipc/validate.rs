@@ -20,6 +20,10 @@ pub const MAX_SLIDESHOW_IMAGES: usize = 10_000;
 /// Maximum per-image canvas overrides per slideshow profile. Overrides are
 /// hand-tuned one at a time, so this is far past plausible use.
 pub const MAX_IMAGE_OVERRIDES: usize = 1_000;
+/// Maximum image layers in a Standard profile. Unlike a slideshow pool (one
+/// image shown at a time), every layer is decoded and composited together on
+/// Apply, so the cap bounds decode/memory cost directly.
+pub const MAX_STANDARD_LAYERS: usize = 256;
 /// Maximum monitor `stable_id` / `name` length, in characters.
 pub const MAX_MONITOR_ID_CHARS: usize = 256;
 /// Maximum library tag length, post-trim, in characters.
