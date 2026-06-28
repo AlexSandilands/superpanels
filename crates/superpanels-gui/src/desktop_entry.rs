@@ -16,10 +16,16 @@ use crate::errors::IpcError;
 
 const APP_ID: &str = "superpanels-gui";
 
+// Transparent-background variants: the taskbar/launcher draws the icon over
+// the panel's own surface, where the navy bundle background reads as a hard
+// rectangle. The opaque originals stay for the bundle and tray "Blue" style.
 const ICONS: [(&str, &[u8]); 3] = [
-    ("32x32", include_bytes!("../icons/32x32.png")),
-    ("128x128", include_bytes!("../icons/128x128.png")),
-    ("256x256", include_bytes!("../icons/icon.png")),
+    ("32x32", include_bytes!("../icons/32x32-transparent.png")),
+    (
+        "128x128",
+        include_bytes!("../icons/128x128-transparent.png"),
+    ),
+    ("256x256", include_bytes!("../icons/icon-transparent.png")),
 ];
 
 /// Install (or refresh) the desktop entry and icons for the current binary.
