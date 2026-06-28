@@ -1,7 +1,31 @@
 import { describe, expect, it } from 'vitest';
 import type { Profile } from '$lib/api';
-import { canvasOverridesDirty, coverRectDirty, placementsDirty, rectDirty } from './dirty';
+import {
+  canvasOverridesDirty,
+  coverRectDirty,
+  liveLayersDirty,
+  placementsDirty,
+  rectDirty,
+} from './dirty';
 import type { PreviewMonitor } from './preview-layout';
+import type { CanvasLayer } from '$lib/stores/canvas-layers.svelte';
+import type { StandardLayer } from '$lib/types/profile-helpers';
+
+type RectMm = { x: number; y: number; w: number; h: number };
+
+function liveLayer(path: string, r: RectMm): CanvasLayer {
+  return {
+    id: path,
+    path,
+    url: null,
+    naturalDims: null,
+    transform: { offsetMmX: r.x, offsetMmY: r.y, widthMm: r.w, heightMm: r.h },
+  };
+}
+
+function persistedLayer(path: string, r: RectMm): StandardLayer {
+  return { path, image_rect_mm: { x_mm: r.x, y_mm: r.y, w_mm: r.w, h_mm: r.h } };
+}
 
 function profile(monitorState: Profile['monitor_state']): Profile {
   return {
@@ -88,6 +112,38 @@ describe('rectDirty', () => {
   it('reports dirty when any edge drifts past the tolerance', () => {
     const t = { offsetMmX: 10, offsetMmY: 20, widthMm: 1010, heightMm: 600 };
     expect(rectDirty(t, rect)).toBe(true);
+  });
+});
+
+describe('liveLayersDirty', () => {
+  const r: RectMm = { x: 0, y: 0, w: 1000, h: 600 };
+
+  it('reports clean for identical stacks', () => {
+    const live = [liveLayer('/a.png', r), liveLayer('/b.png', r)];
+    const persisted = [persistedLayer('/a.png', r), persistedLayer('/b.png', r)];
+    expect(liveLayersDirty(live, persisted)).toBe(false);
+  });
+
+  it('reports dirty when the layer count differs', () => {
+    expect(liveLayersDirty([liveLayer('/a.png', r)], [])).toBe(true);
+  });
+
+  it('reports dirty when the stacking order (and thus overlap winner) changes', () => {
+    const live = [liveLayer('/b.png', r), liveLayer('/a.png', r)];
+    const persisted = [persistedLayer('/a.png', r), persistedLayer('/b.png', r)];
+    expect(liveLayersDirty(live, persisted)).toBe(true);
+  });
+
+  it('reports dirty when a layer rect drifts past the slop tolerance', () => {
+    const live = [liveLayer('/a.png', { ...r, x: 5 })];
+    const persisted = [persistedLayer('/a.png', r)];
+    expect(liveLayersDirty(live, persisted)).toBe(true);
+  });
+
+  it('reports clean for sub-millimetre rect drift (within slop)', () => {
+    const live = [liveLayer('/a.png', { ...r, x: 0.2, y: 0.3 })];
+    const persisted = [persistedLayer('/a.png', r)];
+    expect(liveLayersDirty(live, persisted)).toBe(false);
   });
 });
 

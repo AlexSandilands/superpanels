@@ -66,6 +66,11 @@ standing maintenance cost in every `ProfileBody` match across core/daemon/cli/gu
 path, validity reasons, and frontend branches — or keep it if a real multi-output
 "different image per screen" need surfaces.
 
+## Add GUI Scale Option in Settings
+
+Currently all the buttons and icons on the GUI are a set size, it would be nice to
+allow the user to adjust the scale of the GUI, maybe between three options, compact, comfortable, and large.
+
 ## Draft-sync staleness in the preemption undo snapshot
 
 A Standard draft's `body.layers` (and a Slideshow draft's `image_rect_mm`) is
@@ -99,3 +104,41 @@ retry-with-backoff (e.g. 3 attempts over ~5 s) before giving up.
 `TitleBar.svelte` renders `<span class="dot ok">` unconditionally — it reads
 as a health indicator but means nothing. Tie it to `daemonStatus.connected`
 (and consider an amber state while `starting`) or drop it.
+
+## Blocking config IO under the async mutex (daemon handlers)
+
+`crates/superpanels-daemon/src/server/handlers.rs` (and siblings) call the
+synchronous, blocking `Config::save_to` while holding the `tokio::sync::Mutex`
+guard on `DaemonState` (e.g. `cmd_update_profile_image_transform`,
+`cmd_update_profile_source`). It's a pervasive, pre-existing pattern — disk IO
+stalls the async runtime and serialises every other handler behind the lock.
+**Revisit:** move the write off the lock (clone the `Config`, drop the guard,
+then `spawn_blocking` the `save_to`), or hold a dedicated blocking-IO path.
+Needs a careful pass so the in-memory state and on-disk file can't diverge under
+concurrent handlers.
+
+## `PreviewCanvas.svelte` exceeds the component file-size cap
+
+`crates/.../ui/src/components/canvas/PreviewCanvas.svelte` is ~460 lines against
+the 350 soft / 350-ish component cap, carrying a `reason:` header that justifies
+keeping projection + unified hit-testing together. **Revisit:** either ratify the
+exemption explicitly (it is one coherent pointer/projection surface) or split the
+pointer-routing state machine out from the projection/render setup. The Rust
+`layout.rs` / `image.rs` over-cap is in-file `#[cfg(test)]` only (non-test bodies
+are under the soft cap) and needs no action per the file-size-cap intent.
+
+## Slideshow jump grid only shows library-indexed images
+
+`slideshowJumpImages` (`ui/src/App.svelte`) builds the quick-jump grid from
+`libraryStore.entries ∩ membershipLookup(set)` — i.e. only set images that are
+*also* in the library index (the configured `library.roots`). A slideshow folder
+that isn't a library root contributes nothing to the grid, even though the
+daemon resolves it into the live pool (so the counter reads the full 224 while
+the grid shows only the ~21 library-indexed ones).
+
+**Fix:** give the jump grid the daemon's real resolved pool. The daemon already
+has `resolve_pool` (`server/apply.rs`); add a thin `slideshow_pool` IPC command
+that returns the resolved paths for a profile, wire an `api.slideshowPool`
+binding, and have `slideshowJumpImages` use it (falling back to the library
+intersection only when the daemon is unreachable). Avoid re-resolving folders on
+the frontend — it would diverge from the daemon's recursive/sort/filter rules.

@@ -39,15 +39,15 @@ describe('hitTest', () => {
 
   it('layer_remove_region_takes_priority_over_body', () => {
     const g = geo({ compositeMode: true, layerRects: [{ id: 'L', rect: rect(0, 0, 200, 200) }] });
-    // ✕ centre is (x+w-12, y+20) = (188, 20).
-    expect(hitTest(188, 20, g)).toEqual({ type: 'layer-remove', id: 'L' });
+    // ✕ centre is (x+w-20, y+20) = (180, 20).
+    expect(hitTest(180, 20, g)).toEqual({ type: 'layer-remove', id: 'L' });
   });
 
   it('layer_snap_regions_sit_left_of_remove', () => {
     const g = geo({ compositeMode: true, layerRects: [{ id: 'L', rect: rect(0, 0, 200, 200) }] });
-    // snap-width centre is (x+w-38, y+20) = (162, 20); height is (136, 20).
-    expect(hitTest(162, 20, g)).toEqual({ type: 'layer-snap', id: 'L', axis: 'width' });
-    expect(hitTest(136, 20, g)).toEqual({ type: 'layer-snap', id: 'L', axis: 'height' });
+    // snap-width centre is (x+w-46, y+20) = (154, 20); height is (128, 20).
+    expect(hitTest(154, 20, g)).toEqual({ type: 'layer-snap', id: 'L', axis: 'width' });
+    expect(hitTest(128, 20, g)).toEqual({ type: 'layer-snap', id: 'L', axis: 'height' });
   });
 
   it('monitor_mode_makes_layers_click_through', () => {

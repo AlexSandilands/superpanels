@@ -49,7 +49,7 @@ export type Drag =
 
 export type Guide = { kind: 'h'; y: number } | { kind: 'v'; x: number };
 
-type ResizeDrag = {
+export type ResizeDrag = {
   corner: 'br' | 'tl';
   startMmX: number;
   startMmY: number;
@@ -61,7 +61,7 @@ type ResizeDrag = {
 // Aspect-locked resize driven by horizontal drag. The bottom-right handle keeps
 // the top-left anchored (offset unchanged); the top-left handle keeps the
 // bottom-right anchored, so the opposite corner stays put as the rect grows.
-function resizeRect(
+export function resizeRect(
   d: ResizeDrag,
   dxMm: number,
 ): { offsetMmX: number; offsetMmY: number; widthMm: number; heightMm: number } {
@@ -76,6 +76,46 @@ function resizeRect(
     };
   }
   return { offsetMmX: d.startMmX, offsetMmY: d.startMmY, widthMm, heightMm };
+}
+
+// Snap a free-floating layer rect so its edges align to any monitor edge, within
+// `dist` mm. Pure core of the drag controller's `snapRect` — extracted so the
+// edge-matching math is unit-testable without a live pointer gesture.
+export function snapRectToMonitors(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  monitors: PreviewMonitor[],
+  dist: number,
+): { x: number; y: number; guides: Guide[] } {
+  const out: Guide[] = [];
+  let nx = x;
+  let ny = y;
+  for (const m of monitors) {
+    const r = monitorRect(m);
+    for (const edge of [r.x, r.x + r.w]) {
+      if (Math.abs(x - edge) < dist) {
+        nx = edge;
+        out.push({ kind: 'v', x: edge });
+      }
+      if (Math.abs(x + w - edge) < dist) {
+        nx = edge - w;
+        out.push({ kind: 'v', x: edge });
+      }
+    }
+    for (const edge of [r.y, r.y + r.h]) {
+      if (Math.abs(y - edge) < dist) {
+        ny = edge;
+        out.push({ kind: 'h', y: edge });
+      }
+      if (Math.abs(y + h - edge) < dist) {
+        ny = edge - h;
+        out.push({ kind: 'h', y: edge });
+      }
+    }
+  }
+  return { x: nx, y: ny, guides: out };
 }
 
 export type DragHandlers = {
@@ -137,35 +177,7 @@ export function createDragController(handlers: DragHandlers) {
     w: number,
     h: number,
   ): { x: number; y: number; guides: Guide[] } {
-    const monitors = handlers.monitors();
-    const dist = 8 / handlers.scale();
-    const out: Guide[] = [];
-    let nx = x;
-    let ny = y;
-    for (const m of monitors) {
-      const r = monitorRect(m);
-      for (const edge of [r.x, r.x + r.w]) {
-        if (Math.abs(x - edge) < dist) {
-          nx = edge;
-          out.push({ kind: 'v', x: edge });
-        }
-        if (Math.abs(x + w - edge) < dist) {
-          nx = edge - w;
-          out.push({ kind: 'v', x: edge });
-        }
-      }
-      for (const edge of [r.y, r.y + r.h]) {
-        if (Math.abs(y - edge) < dist) {
-          ny = edge;
-          out.push({ kind: 'h', y: edge });
-        }
-        if (Math.abs(y + h - edge) < dist) {
-          ny = edge - h;
-          out.push({ kind: 'h', y: edge });
-        }
-      }
-    }
-    return { x: nx, y: ny, guides: out };
+    return snapRectToMonitors(x, y, w, h, handlers.monitors(), 8 / handlers.scale());
   }
 
   return {
