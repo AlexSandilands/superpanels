@@ -1,15 +1,26 @@
 <script lang="ts">
   // Quick-jump grid for the slideshow: a thumbnail of every set image, click to
-  // jump straight to it instead of stepping through with prev/next.
+  // jump straight to it instead of stepping through with prev/next. Portaled to
+  // body (the `.panel` dock clips fixed descendants) so the backdrop covers the
+  // viewport and an outside click closes it — mirrors SlideshowSettingsPopover.
+  import { portal } from '$lib/portal';
   import LibraryThumb from '../overlays/LibraryThumb.svelte';
 
   type Props = {
+    /** Element the popover hangs above; also fixes its right edge. */
+    anchor: HTMLElement;
     images: string[];
     current: string | null;
     onJump: (path: string) => void;
     onClose: () => void;
   };
-  let { images, current, onJump, onClose }: Props = $props();
+  let { anchor, images, current, onJump, onClose }: Props = $props();
+
+  // Position is computed once at open — the popover remounts per open.
+  // svelte-ignore state_referenced_locally
+  const rect = anchor.getBoundingClientRect();
+  const right = window.innerWidth - rect.right;
+  const bottom = window.innerHeight - rect.top + 10;
 
   function fileName(path: string): string {
     const i = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
@@ -22,8 +33,19 @@
   }
 </script>
 
-<div class="jump-backdrop" role="presentation" onclick={onClose}></div>
-<div class="jump-pop panel" role="dialog" aria-label="Jump to slideshow image">
+<svelte:window onkeydown={(e) => e.key === 'Escape' && onClose()} />
+
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div use:portal class="fixed inset-0" style:z-index="40" onclick={onClose}></div>
+<div
+  use:portal
+  class="panel jump-pop"
+  role="dialog"
+  aria-label="Jump to slideshow image"
+  style:right="{right}px"
+  style:bottom="{bottom}px"
+>
   <div class="jump-head">
     <span class="jump-title">Jump to image</span>
     <span class="mono jump-count">{images.length}</span>
@@ -43,16 +65,9 @@
 </div>
 
 <style>
-  .jump-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 18;
-  }
   .jump-pop {
-    position: absolute;
-    right: 0;
-    bottom: calc(100% + 8px);
-    z-index: 19;
+    position: fixed;
+    z-index: 41;
     width: 320px;
     max-height: 320px;
     display: flex;

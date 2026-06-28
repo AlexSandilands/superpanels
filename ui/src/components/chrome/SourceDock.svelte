@@ -62,6 +62,7 @@
   let settingsOpen = $state(false);
   let jumpOpen = $state(false);
   let gearEl: HTMLButtonElement | undefined = $state();
+  let jumpBtnEl: HTMLButtonElement | undefined = $state();
 
   // Stack above MonitorGapDock when the window is narrow enough that the two
   // would otherwise overlap. Mirrors the ModeHint pattern so the bottom row
@@ -227,36 +228,33 @@
           {/if}
         </div>
       {/if}
-      <div class="jump-anchor">
-        <button
-          class="mono counter counter-btn"
-          class:tappable={jumpImages.length > 0}
-          style:font-size="10px"
-          disabled={jumpImages.length === 0}
-          title={jumpImages.length ? 'Jump to an image in the set' : undefined}
-          onclick={() => (jumpOpen = !jumpOpen)}
-        >
-          <span class="counter-line">
-            {#if jumpImages.length > 0}<Icon name="grid" size={9} />{/if}
-            {counterText}
-          </span>
-          {#if slideshow.paused}
-            <span class="mono" style:color="var(--warn)">paused</span>
-          {:else if countdownSecs !== null}
-            <span class="mono countdown" title="Time until next wallpaper">
-              {fmtCountdown(countdownSecs)}
-            </span>
-          {/if}
-        </button>
-        {#if jumpOpen}
-          <SlideshowJumpPopover
-            images={jumpImages}
-            current={currentImagePath}
-            {onJump}
-            onClose={() => (jumpOpen = false)}
-          />
-        {/if}
-      </div>
+      <button
+        bind:this={jumpBtnEl}
+        class="btn sm"
+        class:counter-active={jumpOpen}
+        disabled={jumpImages.length === 0}
+        title={jumpImages.length ? 'Jump to an image in the set' : undefined}
+        onclick={() => (jumpOpen = !jumpOpen)}
+      >
+        <Icon name="grid" size={12} />
+        {counterText}
+      </button>
+      {#if slideshow.paused}
+        <span class="mono pacing" style:color="var(--warn)">paused</span>
+      {:else if countdownSecs !== null}
+        <span class="mono pacing countdown" title="Time until next wallpaper">
+          {fmtCountdown(countdownSecs)}
+        </span>
+      {/if}
+      {#if jumpOpen && jumpBtnEl}
+        <SlideshowJumpPopover
+          anchor={jumpBtnEl}
+          images={jumpImages}
+          current={currentImagePath}
+          {onJump}
+          onClose={() => (jumpOpen = false)}
+        />
+      {/if}
     {/if}
     {#if slideshowConfig}
       <div style:width="1px" style:height="28px" style:background="var(--line)"></div>
@@ -297,48 +295,16 @@
 {/if}
 
 <style>
-  .counter {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1px;
-    min-width: 38px;
+  .counter-active {
+    border-color: var(--accent);
+    color: var(--text);
   }
-  .jump-anchor {
-    position: relative;
-  }
-  .counter-btn {
-    appearance: none;
-    border: 1px solid transparent;
-    background: none;
-    padding: 2px 5px;
-    border-radius: 5px;
+  .pacing {
+    font-size: 10px;
     color: var(--text-3);
-    cursor: pointer;
-    transition:
-      background 80ms,
-      border-color 80ms;
-  }
-  /* Persistent chip affordance so it reads as clickable, not plain text. */
-  .counter-btn.tappable {
-    border-color: var(--line);
-    background: var(--bg-2);
-    color: var(--text-2);
-  }
-  .counter-btn.tappable:hover {
-    border-color: var(--line-2);
-    background: var(--panel-2);
-  }
-  .counter-btn:disabled {
-    cursor: default;
-  }
-  .counter-line {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
+    min-width: 30px;
   }
   .countdown {
-    font-size: 10px;
     color: var(--accent);
   }
   .shuffle-on {
