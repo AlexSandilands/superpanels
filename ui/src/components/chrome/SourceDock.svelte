@@ -230,12 +230,16 @@
       <div class="jump-anchor">
         <button
           class="mono counter counter-btn"
+          class:tappable={jumpImages.length > 0}
           style:font-size="10px"
           disabled={jumpImages.length === 0}
           title={jumpImages.length ? 'Jump to an image in the set' : undefined}
           onclick={() => (jumpOpen = !jumpOpen)}
         >
-          {counterText}
+          <span class="counter-line">
+            {#if jumpImages.length > 0}<Icon name="grid" size={9} />{/if}
+            {counterText}
+          </span>
           {#if slideshow.paused}
             <span class="mono" style:color="var(--warn)">paused</span>
           {:else if countdownSecs !== null}
@@ -305,20 +309,33 @@
   }
   .counter-btn {
     appearance: none;
-    border: none;
+    border: 1px solid transparent;
     background: none;
-    padding: 2px 4px;
-    border-radius: 4px;
+    padding: 2px 5px;
+    border-radius: 5px;
     color: var(--text-3);
     cursor: pointer;
-    transition: background 80ms;
+    transition:
+      background 80ms,
+      border-color 80ms;
   }
-  .counter-btn:hover:not(:disabled) {
+  /* Persistent chip affordance so it reads as clickable, not plain text. */
+  .counter-btn.tappable {
+    border-color: var(--line);
     background: var(--bg-2);
     color: var(--text-2);
   }
+  .counter-btn.tappable:hover {
+    border-color: var(--line-2);
+    background: var(--panel-2);
+  }
   .counter-btn:disabled {
     cursor: default;
+  }
+  .counter-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
   }
   .countdown {
     font-size: 10px;
