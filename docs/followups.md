@@ -34,7 +34,6 @@ swap silently breaks hand-tuned slideshow images otherwise.
 ## Misc Bugs
 
 - Should add a resize handle to the top left of the image as well
-- Clicking a monitor now no longer shows the monitor details panel that used to pop up
 
 - Should be able to filter the library by added folder
 - After adding more images to an existing slideshow profile, the "x images" above the timer in the bottom right bar doesn't update to the right number of images. Switching profiles will update it
