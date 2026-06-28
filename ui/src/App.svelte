@@ -759,6 +759,9 @@
     if (imageNaturalDims) return `${imageNaturalDims.w}×${imageNaturalDims.h}`;
     return 'pick from library';
   });
+  // The dock swatch tracks the live slideshow image, or — on a Standard canvas,
+  // which has no single `imageUrl` — the top (last) layer's resolved image.
+  const dockThumbUrl = $derived(standard ? (canvasLayers.list.at(-1)?.url ?? null) : imageUrl);
   const backendName = $derived(runtime.last?.backend ?? 'auto-detect');
 
   const someMissingMm = $derived(
@@ -843,7 +846,7 @@
   <SourceDock
     {sourceName}
     {sourceMeta}
-    sourceThumbUrl={imageUrl}
+    sourceThumbUrl={dockThumbUrl}
     slideshow={dockSlideshowState}
     slideshowConfig={dockSlideshowProfile?.source.config ?? null}
     canSaveForImage={Boolean(dockSlideshowProfile && liveSlideshowPath)}

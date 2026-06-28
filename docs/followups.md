@@ -34,7 +34,6 @@ swap silently breaks hand-tuned slideshow images otherwise.
 ## Misc Bugs
 
 - Should add a resize handle to the top left of the image as well
-- The library thumbnail on the bottom right library panel is empty when composite canvas
 - Clicking a monitor now no longer shows the monitor details panel that used to pop up
 
 - Should be able to filter the library by added folder
