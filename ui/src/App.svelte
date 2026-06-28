@@ -22,6 +22,7 @@
   } from '$lib/stores/image-transform.svelte';
   import {
     addImageToCanvas,
+    addImageToSlideshowSet,
     applyDraftProfile,
     applyMonitorStateToCanvas,
     openMainWindow,
@@ -36,7 +37,7 @@
     canvasOverridesDirty,
     coverRectDirty,
     imageTransformDirty,
-    layersDirty,
+    liveLayersDirty,
     placementsDirty,
     rectDirty,
   } from '$lib/canvas/dirty';
@@ -89,6 +90,7 @@
   import Toast from './components/widgets/Toast.svelte';
   import ToolDock from './components/chrome/ToolDock.svelte';
   import ConfirmDiscardModal from './components/overlays/ConfirmDiscardModal.svelte';
+  import SlideshowDropModal from './components/overlays/SlideshowDropModal.svelte';
   import ConfirmDialog from './components/widgets/ConfirmDialog.svelte';
   import LibraryModal from './components/overlays/LibraryModal.svelte';
   import ProfileManagerModal from './components/overlays/ProfileManagerModal.svelte';
@@ -236,9 +238,13 @@
   );
 
   // Playback state belongs to the active slideshow; hide it while the dock
-  // shows a different (merely selected) profile.
+  // shows a different (merely selected) profile, or once the draft has been
+  // converted away from a slideshow (the live runtime keeps rotating until the
+  // standard canvas is applied, but its controls shouldn't linger on the dock).
   const dockSlideshowState = $derived(
-    draft && draft.name === profileStore.activeName ? slideshowController.state : null,
+    draft && isSlideshowBody(draft.body) && draft.name === profileStore.activeName
+      ? slideshowController.state
+      : null,
   );
 
   async function updateSlideshowConfig(config: SlideshowConfig) {
@@ -433,7 +439,7 @@
     if (standard) {
       if (!isStandardBody(active.body)) return true;
       if (canvasOverridesDirty(canvasView.overrides, active)) return true;
-      return layersDirty(canvasLayers.toLayers(), active.body.layers);
+      return liveLayersDirty(canvasLayers.list, active.body.layers);
     }
     // While a slideshow image is still resolving, the transform (and loaded
     // dims) belong to the previous image — rect comparisons against the
@@ -476,6 +482,18 @@
       return;
     }
     void perform();
+  }
+
+  // Adding an image while editing a slideshow would silently discard its
+  // source/timer/overrides; offer Add-to-set vs Convert-to-standard instead.
+  let pendingCanvasDrop = $state<{ path: string } | null>(null);
+
+  function requestAddImageToCanvas(path: string): void {
+    if (draft && isSlideshowBody(draft.body)) {
+      pendingCanvasDrop = { path };
+      return;
+    }
+    addImageToCanvas(path);
   }
 
   // Schedule-preemption tracking (§4e.11.6). The sentinel + dirty-canvas
@@ -660,7 +678,7 @@
       onOpenSettings: () => (settingsOpen = true),
       onDragOver: () => (dragOverlay = true),
       onDragLeave: () => (dragOverlay = false),
-      onDrop: (path) => addImageToCanvas(path),
+      onDrop: (path) => requestAddImageToCanvas(path),
       onMonitorsChanged: () => void monitorStore.refresh(),
     });
 
@@ -942,7 +960,7 @@
     <LibraryModal
       onClose={() => (libraryOpen = false)}
       onPinToMonitor={pinImageToMonitor}
-      onAddToCanvas={addImageToCanvas}
+      onAddToCanvas={requestAddImageToCanvas}
       {slideshowTarget}
       onUpdateSlideshow={(images) => void updateSlideshowImages(images)}
       onResetOverride={(path) => void removeImageOverride(path)}
@@ -1009,6 +1027,23 @@
         const next = pendingDiscard;
         pendingDiscard = null;
         if (next) void next.perform();
+      }}
+    />
+  {/if}
+
+  {#if pendingCanvasDrop}
+    <SlideshowDropModal
+      fileName={pendingCanvasDrop.path.split('/').pop() ?? pendingCanvasDrop.path}
+      onCancel={() => (pendingCanvasDrop = null)}
+      onConvert={() => {
+        const next = pendingCanvasDrop;
+        pendingCanvasDrop = null;
+        if (next) addImageToCanvas(next.path);
+      }}
+      onAddToSet={() => {
+        const next = pendingCanvasDrop;
+        pendingCanvasDrop = null;
+        if (next) void addImageToSlideshowSet(next.path);
       }}
     />
   {/if}

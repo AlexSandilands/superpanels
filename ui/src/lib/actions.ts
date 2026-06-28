@@ -14,6 +14,7 @@ import { profileStore } from '$lib/stores/profile.svelte';
 // Cyclic with slideshow-controller (it imports next/prev/refreshRuntime from
 // here) — safe: both modules only touch the other inside functions.
 import { slideshowController } from '$lib/slideshow-controller.svelte';
+import { addImage } from '$lib/slideshow-set';
 import { runtime } from '$lib/stores/runtime.svelte';
 import { toast } from '$lib/stores/toast.svelte';
 import type { ImageRectMm } from '$lib/types/ImageRectMm';
@@ -243,6 +244,29 @@ export function addImageToCanvas(path: string): void {
   const monitors = buildPreviewMonitors(monitorStore.monitors, canvasView.overrides);
   void canvasLayers.add(path, monitors);
   toast.success('Added to canvas', path.split('/').pop() ?? path);
+}
+
+/** Append `path` to the active slideshow's image set, keeping it a slideshow
+ *  (the alternative to `addImageToCanvas`'s convert-to-standard). Persists via
+ *  `update_profile_source` when there's an active profile, else patches the
+ *  unsaved draft in place. */
+export async function addImageToSlideshowSet(path: string): Promise<void> {
+  const draft = profileStore.draft;
+  if (!draft || !isSlideshowBody(draft.body)) return;
+  const nextSource: SlideshowSource = {
+    ...draft.body.source,
+    images: addImage(draft.body.source.images, path),
+  };
+  const name = profileStore.activeName;
+  if (name) {
+    const ok = await persistSlideshowSource(name, nextSource);
+    if (!ok) return;
+  } else {
+    profileStore.patchDraft((d) => {
+      if (isSlideshowBody(d.body)) d.body.source = nextSource;
+    });
+  }
+  toast.success('Added to slideshow', path.split('/').pop() ?? path);
 }
 
 export function pinImageToMonitor(monitorId: string, path: string): void {

@@ -4,6 +4,7 @@
 // override instead — callers pick via `placementsDirty` / `rectDirty`.
 
 import type { MonitorOverride } from '$lib/stores/canvas-view.svelte';
+import type { CanvasLayer } from '$lib/stores/canvas-layers.svelte';
 import type { ImageTransform } from '$lib/stores/image-transform.svelte';
 import type { Profile } from '$lib/api';
 import type { ImageRectMm } from '$lib/types/ImageRectMm';
@@ -59,20 +60,16 @@ export function imageTransformDirty(transform: ImageTransform, profile: Profile)
   return rectDirty(transform, profile.body.image_rect_mm);
 }
 
-/** Returns `true` when the live layers differ from the persisted ones — count,
- *  order, paths, or any rect beyond the slop tolerance. */
-export function layersDirty(live: StandardLayer[], persisted: StandardLayer[]): boolean {
+/** Returns `true` when the live canvas layers differ from the persisted ones —
+ *  count, order, paths, or any rect beyond the slop tolerance. Diffs the live
+ *  `CanvasLayer[]` directly so the hot path (re-evaluated every drag frame)
+ *  doesn't materialise an intermediate `StandardLayer[]` per frame. */
+export function liveLayersDirty(live: CanvasLayer[], persisted: StandardLayer[]): boolean {
   if (live.length !== persisted.length) return true;
   return live.some((l, i) => {
     const p = persisted[i];
     if (!p || p.path !== l.path) return true;
-    const r = l.image_rect_mm;
-    return (
-      Math.abs(r.x_mm - p.image_rect_mm.x_mm) > POSITION_TOLERANCE_MM ||
-      Math.abs(r.y_mm - p.image_rect_mm.y_mm) > POSITION_TOLERANCE_MM ||
-      Math.abs(r.w_mm - p.image_rect_mm.w_mm) > POSITION_TOLERANCE_MM ||
-      Math.abs(r.h_mm - p.image_rect_mm.h_mm) > POSITION_TOLERANCE_MM
-    );
+    return rectDirty(l.transform, p.image_rect_mm);
   });
 }
 
