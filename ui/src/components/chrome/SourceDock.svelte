@@ -6,11 +6,17 @@
   import CollapseChevron from './CollapseChevron.svelte';
   import CollapseTab from './CollapseTab.svelte';
   import SlideshowSettingsPopover from './SlideshowSettingsPopover.svelte';
+  import SlideshowJumpPopover from './SlideshowJumpPopover.svelte';
 
   type Props = {
     sourceName: string;
     sourceMeta: string;
     sourceThumbUrl: string | null;
+    /** Set images, for the quick-jump grid. */
+    jumpImages: string[];
+    /** The live image path, highlighted in the jump grid. */
+    currentImagePath: string | null;
+    onJump: (path: string) => void;
     slideshow: SlideshowState;
     slideshowConfig: SlideshowConfig | null;
     /** A live slideshow image is up — the canvas can be saved for it. */
@@ -33,6 +39,9 @@
     sourceName,
     sourceMeta,
     sourceThumbUrl,
+    jumpImages,
+    currentImagePath,
+    onJump,
     slideshow,
     slideshowConfig,
     canSaveForImage,
@@ -51,6 +60,7 @@
 
   let collapsed = $state(false);
   let settingsOpen = $state(false);
+  let jumpOpen = $state(false);
   let gearEl: HTMLButtonElement | undefined = $state();
 
   // Stack above MonitorGapDock when the window is narrow enough that the two
@@ -217,14 +227,30 @@
           {/if}
         </div>
       {/if}
-      <div class="mono counter" style:font-size="10px" style:color="var(--text-3)">
-        {counterText}
-        {#if slideshow.paused}
-          <span class="mono" style:color="var(--warn)">paused</span>
-        {:else if countdownSecs !== null}
-          <span class="mono countdown" title="Time until next wallpaper">
-            {fmtCountdown(countdownSecs)}
-          </span>
+      <div class="jump-anchor">
+        <button
+          class="mono counter counter-btn"
+          style:font-size="10px"
+          disabled={jumpImages.length === 0}
+          title={jumpImages.length ? 'Jump to an image in the set' : undefined}
+          onclick={() => (jumpOpen = !jumpOpen)}
+        >
+          {counterText}
+          {#if slideshow.paused}
+            <span class="mono" style:color="var(--warn)">paused</span>
+          {:else if countdownSecs !== null}
+            <span class="mono countdown" title="Time until next wallpaper">
+              {fmtCountdown(countdownSecs)}
+            </span>
+          {/if}
+        </button>
+        {#if jumpOpen}
+          <SlideshowJumpPopover
+            images={jumpImages}
+            current={currentImagePath}
+            {onJump}
+            onClose={() => (jumpOpen = false)}
+          />
         {/if}
       </div>
     {/if}
@@ -273,6 +299,26 @@
     align-items: center;
     gap: 1px;
     min-width: 38px;
+  }
+  .jump-anchor {
+    position: relative;
+  }
+  .counter-btn {
+    appearance: none;
+    border: none;
+    background: none;
+    padding: 2px 4px;
+    border-radius: 4px;
+    color: var(--text-3);
+    cursor: pointer;
+    transition: background 80ms;
+  }
+  .counter-btn:hover:not(:disabled) {
+    background: var(--bg-2);
+    color: var(--text-2);
+  }
+  .counter-btn:disabled {
+    cursor: default;
   }
   .countdown {
     font-size: 10px;

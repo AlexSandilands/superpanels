@@ -63,6 +63,7 @@
     countAspectMismatches,
     emptyImageSet,
     gcOverrides,
+    membershipLookup,
     type AspectMismatch,
   } from '$lib/slideshow-set';
   import { slideshowController } from '$lib/slideshow-controller.svelte';
@@ -761,6 +762,17 @@
     if (imageUrl) return [{ url: imageUrl, transform: imageTransform.value }];
     return [];
   });
+  // Library images belonging to the active slideshow set — the quick-jump grid.
+  // (Pool images not indexed in the library aren't shown; slideshow sources are
+  // library folders, so coverage is near-complete in practice.)
+  const slideshowJumpImages = $derived.by(() => {
+    if (!slideshowSource) return [];
+    const member = membershipLookup(slideshowSource.images);
+    return libraryStore.entries
+      .filter((e) => member(e.path) !== null)
+      .map((e) => e.path)
+      .sort((a, b) => a.localeCompare(b));
+  });
   const backendName = $derived(runtime.last?.backend ?? 'auto-detect');
 
   const someMissingMm = $derived(
@@ -846,6 +858,9 @@
     {sourceName}
     {sourceMeta}
     sourceThumbUrl={dockThumbUrl}
+    jumpImages={slideshowJumpImages}
+    currentImagePath={liveSlideshowPath}
+    onJump={(p) => void slideshowController.goto(p)}
     slideshow={dockSlideshowState}
     slideshowConfig={dockSlideshowProfile?.source.config ?? null}
     canSaveForImage={Boolean(dockSlideshowProfile && liveSlideshowPath)}
