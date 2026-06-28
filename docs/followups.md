@@ -33,7 +33,6 @@ swap silently breaks hand-tuned slideshow images otherwise.
 
 ## Misc Bugs
 
-- When starting from fresh wiped local data, creating a new profile was disabled. Assume because no image and nothing library?
 - Hovering over the snap buttons on the image in the canvas make them disappear
 - Should add a resize handle to the top left of the image as well
 - The library thumbnail on the bottom right library panel is empty when composite canvas
@@ -50,6 +49,8 @@ swap silently breaks hand-tuned slideshow images otherwise.
 - System Tray Profiles don't show up, should have a hover side menu that opens the list
 - Weird screen rendering artifacts when moving the Superpanels GUI around, it leaves black lines from the bottom of the app on the screen, both on the desktop and on top of other apps if it's in front
 - The slideshow menu in the bottom right bar should have a popup to quickly let you switch to a particular image in the set. Currently you have to click through all of them to get to the one you want
+
+## Add a "open config" button in the settings, maybe monitor config, to open the toml file
 
 
 ## Remove `ProfileBody::PerMonitor`?

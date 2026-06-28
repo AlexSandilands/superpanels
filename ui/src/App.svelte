@@ -175,7 +175,17 @@
         toast.info('Add images', 'pick images or folders for the slideshow');
         libraryOpen = true;
       } else if (saved) {
-        await switchAndApply(saved);
+        // An empty Standard can't be applied (the daemon rejects `standard_empty`).
+        // Select it and prompt to add images instead of surfacing an apply error.
+        if (isStandardBody(saved.body) && saved.body.layers.length === 0) {
+          profileStore.select(name);
+          applyMonitorStateToCanvas(saved);
+          toast.info('Add images', 'pick images from the library to apply this profile');
+          profileManagerOpen = false;
+          libraryOpen = true;
+        } else {
+          await switchAndApply(saved);
+        }
       }
     } catch (err) {
       toast.error('Save as new failed', errorMessage(err));
