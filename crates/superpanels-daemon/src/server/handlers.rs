@@ -233,6 +233,16 @@ pub(super) async fn cmd_update_profile_source(
         is_active
     };
     if is_active {
+        // Re-resolve the pool so the reported image count tracks the new set
+        // immediately, not just after the next apply / profile switch. An empty
+        // set leaves `slideshow_pool_len` untouched by `resolve_pool`, so reset
+        // it explicitly.
+        if crate::pool::resolve_pool(&state, &source.images)
+            .await
+            .is_none()
+        {
+            state.lock().await.slideshow_pool_len = Some(0);
+        }
         super::helpers::update_timer(&state, &timer_tx).await;
     }
     IpcResponse::success(json!({}))
