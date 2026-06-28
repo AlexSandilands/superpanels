@@ -499,8 +499,6 @@
                   <button class="btn sm ghost" onclick={() => onEditSlideshow(editTarget)}>
                     Edit images…
                   </button>
-                {:else}
-                  <button class="btn sm ghost" disabled title="Coming soon">Reveal</button>
                 {/if}
               </span>
               {#if detailSlideshow}
