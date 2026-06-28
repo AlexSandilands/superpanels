@@ -486,6 +486,11 @@
 
   // Adding an image while editing a slideshow would silently discard its
   // source/timer/overrides; offer Add-to-set vs Convert-to-standard instead.
+  // Bound to PreviewCanvas so the OS file-drop path can hit-test the drop point
+  // against the monitors — Tauri's native drop bypasses the canvas's own
+  // `ondrop` handler, so it can't reuse that path's monitor targeting.
+  let canvasRef = $state<{ monitorIdAtClient: (x: number, y: number) => string | null }>();
+
   let pendingCanvasDrop = $state<{ path: string; monitorId?: string } | null>(null);
 
   function requestAddImageToCanvas(path: string, monitorId?: string): void {
@@ -685,7 +690,14 @@
       onOpenSettings: () => (settingsOpen = true),
       onDragOver: () => (dragOverlay = true),
       onDragLeave: () => (dragOverlay = false),
-      onDrop: (path) => requestAddImageToCanvas(path),
+      onDrop: (path, position) => {
+        // Tauri reports the drop in physical pixels; the canvas hit-test works
+        // in CSS pixels relative to the (viewport-filling) stage.
+        const dpr = window.devicePixelRatio || 1;
+        const monitorId =
+          canvasRef?.monitorIdAtClient(position.x / dpr, position.y / dpr) ?? undefined;
+        requestAddImageToCanvas(path, monitorId);
+      },
       onMonitorsChanged: () => void monitorStore.refresh(),
     });
 
@@ -807,6 +819,7 @@
 
 <div class="fixed inset-0 overflow-hidden">
   <PreviewCanvas
+    bind:this={canvasRef}
     monitors={monitorStore.monitors}
     bezelHmm={snapHmm}
     imageUrl={standard ? null : imageUrl}

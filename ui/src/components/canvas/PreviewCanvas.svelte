@@ -191,6 +191,14 @@
     });
   }
 
+  /** Monitor id at a viewport-client coordinate, or `null` when not over one.
+   *  App's OS file-drop path uses this: Tauri's native drop carries a position
+   *  but bypasses this component's own `ondrop` handler. */
+  export function monitorIdAtClient(clientX: number, clientY: number): string | null {
+    const hit = hitAt(clientX, clientY);
+    return hit.type === 'monitor' ? hit.id : null;
+  }
+
   function onPointerDown(ev: PointerEvent) {
     if (ev.button !== 0) return;
     const hit = hitAt(ev.clientX, ev.clientY);

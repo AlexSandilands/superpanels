@@ -8,7 +8,8 @@ export type WindowEventHandlers = {
   onOpenSettings: () => void;
   onDragOver: () => void;
   onDragLeave: () => void;
-  onDrop: (path: string) => void;
+  /** `position` is the drop point in physical pixels relative to the webview. */
+  onDrop: (path: string, position: { x: number; y: number }) => void;
   /** Daemon-driven OS-rotation push (KDE kscreen `configChanged`). */
   onMonitorsChanged: () => void;
 };
@@ -33,7 +34,7 @@ export function attachWindowEvents(handlers: WindowEventHandlers): () => void {
       else if (ev.payload.type === 'drop') {
         handlers.onDragLeave();
         const path = ev.payload.paths[0];
-        if (path) handlers.onDrop(path);
+        if (path) handlers.onDrop(path, ev.payload.position);
       }
     })
     .then((fn) => {
