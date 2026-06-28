@@ -31,15 +31,35 @@
   }: Props = $props();
 
   let hover = $state(false);
+  // While focused, the field holds the user's raw text and commits only on
+  // blur / Enter — so formatting (forced decimals, clamping) never fights what
+  // they're typing. `null` means "not editing; show the formatted prop value".
+  let draft = $state<string | null>(null);
+  const display = $derived(draft ?? value.toFixed(decimals));
 
   function clamp(n: number): number {
     if (Number.isNaN(n)) return min;
     return Math.max(min, Math.min(max, n));
   }
 
+  function commit() {
+    if (draft === null) return;
+    const v = parseFloat(draft);
+    // Skip a no-op commit so just focusing/blurring a field doesn't fire
+    // onChange (which e.g. would normalise "mixed" monitor-gap pairs).
+    if (!Number.isNaN(v) && clamp(v) !== value) onChange(clamp(v));
+    draft = null;
+  }
+
   function bump(delta: number, big: boolean) {
+    const base = draft !== null ? parseFloat(draft) : value;
+    const start = Number.isNaN(base) ? value : base;
     const inc = (big ? bigStep : step) * delta;
-    onChange(clamp(parseFloat((value + inc).toFixed(Math.max(decimals, 4)))));
+    const next = clamp(parseFloat((start + inc).toFixed(Math.max(decimals, 4))));
+    onChange(next);
+    // Keep an in-progress edit in step with the stepper so the field doesn't
+    // snap back to the stale draft on the next keystroke.
+    if (draft !== null) draft = next.toFixed(decimals);
   }
 
   function onWheel(e: WheelEvent) {
@@ -54,12 +74,22 @@
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
       bump(-1, e.shiftKey);
+    } else if (e.key === 'Enter') {
+      commit();
+      (e.currentTarget as HTMLInputElement).blur();
+    } else if (e.key === 'Escape') {
+      draft = null;
+      (e.currentTarget as HTMLInputElement).blur();
     }
   }
 
   function onInput(e: Event) {
-    const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-    if (!Number.isNaN(v)) onChange(clamp(v));
+    draft = (e.currentTarget as HTMLInputElement).value;
+  }
+
+  function onFocus(e: FocusEvent) {
+    draft = value.toFixed(decimals);
+    (e.currentTarget as HTMLInputElement).select();
   }
 </script>
 
@@ -103,9 +133,11 @@
     inputmode="decimal"
     class="num mono"
     style:width="{width}px"
-    value={value.toFixed(decimals)}
+    value={display}
     oninput={onInput}
     onkeydown={onKey}
+    onfocus={onFocus}
+    onblur={commit}
   />
   {#if unit}
     <span class="unit mono">{unit}</span>

@@ -38,7 +38,6 @@ swap silently breaks hand-tuned slideshow images otherwise.
   - Library icon in top bar is the same as the move monitor toggle in side bar.
   - Should probably get a better settings icon
   - Have a look at the arrangement of the icons buttons and see what should be best placement
-- The monitor gap text fields in the bottom bar are very hard to type in as it forces a format while typing
 - System Tray Profiles don't show up, should have a hover side menu that opens the list
 - Weird screen rendering artifacts when moving the Superpanels GUI around, it leaves black lines from the bottom of the app on the screen, both on the desktop and on top of other apps if it's in front
 - The slideshow menu in the bottom right bar should have a popup to quickly let you switch to a particular image in the set. Currently you have to click through all of them to get to the one you want
