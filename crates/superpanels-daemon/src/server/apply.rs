@@ -211,14 +211,6 @@ pub(super) async fn cmd_apply_canvas(
         .and_then(|v| v.as_str())
         .map(str::to_owned);
 
-    // Gate empty Standard canvases here (the persisted-profile path gates via
-    // ProfileValidity): a zero-layer composite would push all-black wallpapers.
-    if let ProfileBody::Standard(standard) = &profile.body
-        && standard.layers.is_empty()
-    {
-        return IpcResponse::failure("standard profile has no images yet");
-    }
-
     let (monitors, backend_kind, custom_cmd) = {
         let guard = state.lock().await;
         let backend_kind = profile

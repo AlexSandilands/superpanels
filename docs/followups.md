@@ -33,8 +33,10 @@ swap silently breaks hand-tuned slideshow images otherwise.
 
 ## Misc Bugs
 
-- Should add a resize handle to the top left of the image as well
+- "Crop on this screen" preview on the monitor info panel only shows the most recently clicked on image on the canvas. For example if I click an image that covers monitor 2, then select the monitor 2, it will show the preview correctly, but if I think click monitor 1 which has a different image covering it that I haven't clicked, it will just be black
 
+- Off monitor dim button now dims the monitors as well on a standard profile, not just the stuff outside of the monitors. Slideshow works fine. We should have this on by default
+- Should add a resize handle to the top left of the image as well
 - Should be able to filter the library by added folder
 - Fix up icons
   - Library icon in top bar is the same as the move monitor toggle in side bar.

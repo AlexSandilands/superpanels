@@ -175,14 +175,12 @@
         toast.info('Add images', 'pick images or folders for the slideshow');
         libraryOpen = true;
       } else if (saved) {
-        // An empty Standard can't be applied (the daemon rejects `standard_empty`).
-        // Select it and prompt to add images instead of surfacing an apply error.
+        // An empty Standard is valid (it applies as black), but don't black out
+        // the desktop just for creating one — select it without applying. With
+        // layers present, switch + apply as usual.
         if (isStandardBody(saved.body) && saved.body.layers.length === 0) {
           profileStore.select(name);
           applyMonitorStateToCanvas(saved);
-          toast.info('Add images', 'pick images from the library to apply this profile');
-          profileManagerOpen = false;
-          libraryOpen = true;
         } else {
           await switchAndApply(saved);
         }
@@ -417,16 +415,9 @@
       : null,
   );
 
-  // An empty standard canvas (no layers) has nothing to render — block Apply
-  // until at least one image is added, mirroring the empty-slideshow gate.
-  const canApply = $derived(
-    Boolean(
-      draft &&
-      draft.name.trim() &&
-      !profileStore.saving &&
-      !(standard && canvasLayers.list.length === 0),
-    ),
-  );
+  // An empty Standard canvas is a valid state — applying it just paints every
+  // monitor black — so Apply stays enabled (unlike the empty-slideshow gate).
+  const canApply = $derived(Boolean(draft && draft.name.trim() && !profileStore.saving));
 
   // Dirty detection (§4e.11.3). The store's own `dirty` flag covers
   // explicit `patchDraft` calls (image source, body shape); on top of that we

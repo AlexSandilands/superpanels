@@ -161,8 +161,6 @@
         return `folder missing or empty: ${r.path}`;
       case 'slideshow_empty':
         return 'slideshow has no images yet';
-      case 'standard_empty':
-        return 'no images on the canvas yet';
       case 'monitor_not_connected':
         return `monitor not connected (${r.monitor.name})`;
       case 'physical_size_missing':

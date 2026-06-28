@@ -34,8 +34,6 @@ pub enum DisableReason {
     },
     /// Slideshow image set has no sources at all — nothing was picked yet.
     SlideshowEmpty,
-    /// Standard canvas has no image layers — nothing to render.
-    StandardEmpty,
     MonitorNotConnected {
         monitor: MonitorRef,
     },
@@ -78,9 +76,8 @@ impl ProfileValidity {
 
         match &profile.body {
             ProfileBody::Standard(standard) => {
-                if standard.layers.is_empty() {
-                    reasons.push(DisableReason::StandardEmpty);
-                }
+                // An empty Standard is valid — it simply renders an all-black
+                // desktop. Only a layer pointing at a missing image disables it.
                 for layer in &standard.layers {
                     if !layer.path.exists() {
                         reasons.push(DisableReason::ImageMissing {
