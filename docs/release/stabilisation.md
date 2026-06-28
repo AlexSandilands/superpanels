@@ -54,7 +54,7 @@ Current state: no localisation. All strings are inline.
 
 ## Outstanding UX work (not blockers, but ship-quality items)
 
-These live in `docs/followups.md` and should be cleared by 1.0:
+These should be cleared by 1.0:
 
 - Lag when opening the profile switcher.
 - Monitor-gap not loaded on app start for the active profile.
@@ -62,4 +62,4 @@ These live in `docs/followups.md` and should be cleared by 1.0:
 - Per-monitor wallpapers polish (the `PerMonitor` profile body).
 - Taskbar icon on KDE Plasma.
 
-Track these in `docs/followups.md`; remove from the file as they ship.
+Track these as [GitHub issues](https://github.com/AlexSandilands/superpanels/issues); close them as they ship.

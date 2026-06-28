@@ -17,7 +17,7 @@ Workspace version is currently `0.0.0` — bump in `Cargo.toml [workspace.packag
 - No release pipeline. No artefacts produced on tag push.
 - No `packaging/` directory. No PKGBUILDs. No Flatpak manifest.
 - `crates.io` metadata (description, keywords, categories, repository, docs URL) is not yet filled in on any crate.
-- The `webkit2gtk` DMABUF workaround (`WEBKIT_DISABLE_DMABUF_RENDERER=1`) is set in three places (`.cargo/config.toml`, the `justfile`, and `autostart::DESKTOP_BODY`); the AUR `superpanels-gui` `PKGBUILD` should set it in the installed `.desktop` file too until WebKitGTK ships a fix. See `docs/followups.md`.
+- The `webkit2gtk` DMABUF workaround (`WEBKIT_DISABLE_DMABUF_RENDERER=1`) is set in three places (`.cargo/config.toml`, the `justfile`, and `autostart::DESKTOP_BODY`); the AUR `superpanels-gui` `PKGBUILD` should set it in the installed `.desktop` file too until WebKitGTK ships a fix. See the [DMABUF workaround issue](https://github.com/AlexSandilands/superpanels/issues/8).
 
 ## AUR PKGBUILDs
 

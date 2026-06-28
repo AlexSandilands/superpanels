@@ -17,8 +17,14 @@ Linux wallpaper manager focused on **physical-bezel-aware multi-monitor spanning
 | Writing or running tests | `docs/contributing/testing.md` |
 | Releasing — packaging, AUR, crates.io | `docs/release/packaging.md` |
 | Roadmap toward 1.0 | `docs/release/stabilisation.md` |
-| Deferred follow-ups / known workarounds | `docs/followups.md` |
+| Deferred follow-ups / known workarounds | GitHub issues (see below) |
 | Local setup, tools, hooks | `CONTRIBUTING.md` |
+
+## Follow-ups live in GitHub issues
+
+Deferred work, known workarounds, and "we'll do this later" items are tracked as **GitHub issues** (`gh issue list`), not in a doc. The old `docs/followups.md` has been retired.
+
+**Confirm before logging.** Never create, edit, or close a GitHub issue without explicit confirmation from the user first — show the proposed title and body and wait for a go-ahead. The user will ask you to log follow-ups there; treat that as the trigger, not a standing licence to file issues unprompted.
 
 ## MCP context tools — required for impact analysis
 

@@ -93,7 +93,7 @@ We accept this in v1 because:
 - File picks are user-initiated; profile bodies are user-saved. No unbounded discovery primitive (no `list_files`, no glob).
 - Anything more restrictive demands a pick-time allowlist persisted across the webview lifecycle — a feature, not hardening.
 
-A future tightening would canonicalise dialog-pick results at pick-time and stash an allowlist in `AppState`, so `source_thumbnail` rejects paths the user hasn't explicitly chosen this session. Tracked in `docs/followups.md`.
+A future tightening would canonicalise dialog-pick results at pick-time and stash an allowlist in `AppState`, so `source_thumbnail` rejects paths the user hasn't explicitly chosen this session.
 
 ## Custom IPC commands
 
