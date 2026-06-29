@@ -52,11 +52,7 @@ curl -fsSL https://raw.githubusercontent.com/AlexSandilands/superpanels/main/ins
 
 **Options** (after `| sh -s --`): `--version <v>` to pin a release, `--prefix <dir>` to install somewhere else (e.g. `~/.local` for no sudo). The GUI needs **WebKitGTK 4.1** at runtime — `webkit2gtk-4.1` on Arch, `webkit2gtk4.1` on Fedora, `libwebkit2gtk-4.1-0` on Debian/Ubuntu.
 
-**Other ways in:**
-
-- **Arch (AUR):** `yay -S superpanels` — one package, all three binaries.
-- **Native packages:** each release also attaches a `.deb`, `.rpm`, and `.AppImage` for the GUI (plus `SHA256SUMS`) on the [releases page](https://github.com/AlexSandilands/superpanels/releases).
-- **From source:** see [Building from source](#building-from-source).
+Prefer to build it yourself? See [Building from source](#building-from-source).
 
 ## Using it
 
