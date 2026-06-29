@@ -79,7 +79,10 @@ Drop in an image and it covers every monitor at once. From there it's direct man
 
 When it looks right, **Apply** (or <kbd>Enter</kbd>) pushes it to your desktop; **Save** stores it on the current profile.
 
-<!-- screenshot slot: monitor physical-size setup / first-run dialog -->
+<p align="center">
+  <img src="docs/assets/monitor-setup.png" alt="The Settings → Monitors panel listing three detected displays with their resolution, refresh rate, and physical size in millimetres, each with an Edit size button" width="88%" /><br />
+  <sub><em>Settings → Monitors: every detected display with its physical size, editable per panel.</em></sub>
+</p>
 
 ### Profiles
 
@@ -90,7 +93,10 @@ A profile is a whole saved setup — every monitor placement, the gaps, and the 
 
 Each profile remembers the monitors it was built for. Plug in a different setup and it greys out rather than applying something wrong, then offers to re-fit itself.
 
-<!-- screenshot slot: profile switcher dropdown open -->
+<p align="center">
+  <img src="docs/assets/profiles.png" alt="A slideshow profile named Triple-Slideshow spanning a Japanese-countryside set across three monitors, the interface tinted with the profile's own blue accent" width="88%" /><br />
+  <sub><em>Each profile carries its own accent colour and remembers its mode — the chip at the top left shows the active one.</em></sub>
+</p>
 
 ### Slideshows and the library
 
@@ -98,7 +104,12 @@ The library is your wallpaper collection — indexed with thumbnails and tags fr
 
 A slideshow rotates through folders and hand-picked images together, and new files dropped into a watched folder join automatically. You choose how often it rotates, whether it shuffles or plays in order, and how many recent images to skip before repeating. Crop any wallpaper by hand and it keeps that crop each time it comes back around. Next / previous / pause controls sit right on the dock.
 
-<!-- screenshot slot: full library grid view -->
+<p align="center">
+  <img src="docs/assets/slideshow-settings.png" alt="The slideshow settings popover: rotation interval with preset buttons, order set to Shuffle, resume-on-start, avoid-repeating-last count, and skip-missing-files toggle" width="88%" /><br />
+  <sub><em>Slideshow timing: how often it rotates, shuffle vs. in order, resume behaviour, and how many recent images to skip.</em></sub>
+</p>
+
+<!-- screenshot slot: full library grid view (optional) -->
 
 ### Scheduling
 
