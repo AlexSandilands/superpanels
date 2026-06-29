@@ -114,6 +114,21 @@ enum Command {
         #[command(subcommand)]
         action: ScheduleAction,
     },
+    /// Start, stop, or check the background daemon. Bare `daemon` starts it.
+    Daemon {
+        #[command(subcommand)]
+        action: Option<DaemonAction>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum DaemonAction {
+    /// Start the daemon if it isn't already running.
+    Start,
+    /// Stop a running daemon.
+    Stop,
+    /// Report whether the daemon is running.
+    Status,
 }
 
 #[derive(Subcommand, Debug)]
@@ -355,6 +370,86 @@ fn run(cli: &Cli) -> Result<()> {
             ),
         },
         Command::Schedule { action } => schedule_action(action, cli),
+        Command::Daemon { action } => daemon_action(action.as_ref()),
+    }
+}
+
+fn daemon_action(action: Option<&DaemonAction>) -> Result<()> {
+    match action {
+        None | Some(DaemonAction::Start) => daemon_start(),
+        Some(DaemonAction::Stop) => daemon_stop(),
+        Some(DaemonAction::Status) => {
+            daemon_status_cmd();
+            Ok(())
+        }
+    }
+}
+
+/// Resolve the `superpanels-daemon` binary: prefer a sibling of this CLI
+/// (dev `target/` and packaged `/usr/bin` both colocate the binaries), else
+/// fall back to a bare name so `$PATH` applies.
+fn locate_daemon_exe() -> PathBuf {
+    if let Ok(self_exe) = std::env::current_exe() {
+        if let Some(neighbour) = self_exe.parent().map(|d| d.join("superpanels-daemon")) {
+            if neighbour.exists() {
+                return neighbour;
+            }
+        }
+    }
+    PathBuf::from("superpanels-daemon")
+}
+
+fn daemon_start() -> Result<()> {
+    if try_ipc().is_some() {
+        println!("daemon is already running");
+        return Ok(());
+    }
+    let exe = locate_daemon_exe();
+    std::process::Command::new(&exe)
+        .spawn()
+        .with_context(|| format!("spawning daemon binary '{}'", exe.display()))?;
+    // The daemon self-daemonises (re-execs into the background), so the socket
+    // appears a beat after spawn — poll briefly so the message reflects reality.
+    for _ in 0..20 {
+        if try_ipc().is_some() {
+            println!("daemon started");
+            return Ok(());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    println!("daemon spawned; socket not yet responding — check `superpanels daemon status`");
+    Ok(())
+}
+
+fn daemon_stop() -> Result<()> {
+    let Some(mut stream) = try_ipc() else {
+        println!("no daemon is running");
+        return Ok(());
+    };
+    // The daemon replies, then tears down — it may drop the connection before
+    // we read the reply, which is still a successful request. Only a *logical*
+    // failure (e.g. an older daemon with no `shutdown` method) is worth raising.
+    if let Ok(resp) = ipc_client::call(&mut stream, "shutdown", serde_json::Value::Null) {
+        if !resp.is_ok() {
+            return ipc_err(resp);
+        }
+    }
+    for _ in 0..20 {
+        if try_ipc().is_none() {
+            println!("daemon stopped");
+            return Ok(());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    println!("sent shutdown; daemon still responding — it may be busy persisting state");
+    Ok(())
+}
+
+fn daemon_status_cmd() {
+    if try_ipc().is_some() {
+        println!("daemon is running");
+    } else {
+        println!("daemon is not running");
     }
 }
 

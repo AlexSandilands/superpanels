@@ -83,6 +83,7 @@ tauri-plugin-dialog       = { version = "2.7", default-features = false, feature
 tauri-plugin-fs           = "2.5"
 tauri-plugin-notification = "2.3"
 tauri-plugin-opener       = "2"
+tauri-plugin-single-instance = "2"
 ts-rs                     = { version = "12.0", features = ["serde-json-impl", "chrono-impl"] }
 
 # Test-only dependencies (used via `dev-dependencies` in individual crates).

@@ -10,6 +10,7 @@ This doc is for *structural* decisions. For Rust *style* (errors, idioms, API de
 
 - [Workspace layout](#workspace-layout)
 - [Crate responsibilities](#crate-responsibilities)
+- [Daemon lifecycle & ownership](#daemon-lifecycle--ownership)
 - [Dependency direction](#dependency-direction)
 - [Module organization](#module-organization)
 - [File and module sizing](#file-and-module-sizing)
@@ -84,6 +85,25 @@ Read this carefully — drift between intent and reality is a code smell.
 - The Svelte frontend in `ui/` is the actual UI; this crate only hosts it.
 
 All four crates above exist today: `superpanels-core`, `superpanels-cli`, `superpanels-daemon`, and `superpanels-gui`. The dependency-direction diagram below describes the steady-state graph (each binary depends on `core` and nothing else in the workspace).
+
+---
+
+## Daemon lifecycle & ownership
+
+The daemon is a headless process with no will of its own: something external starts it and decides when it dies. The guiding invariant is that **the daemon runs only while its existence is visible to the user** — either a tray icon is present, or the user explicitly ran a CLI start. Every start path is an explicit user action with a matching stop:
+
+| Daemon is running because… | …and it stops when |
+|---|---|
+| GUI is open / autostarted (tray visible) | tray → **Exit Superpanels** |
+| user ran `superpanels daemon start` | user runs `superpanels daemon stop` |
+
+Nothing spawns the daemon silently. `bind_exclusive` (daemon `main.rs`) refuses to start a second daemon when a live socket exists, so the GUI's launch-time `ensure_daemon_running` and the CLI's `daemon start` are both safe to call unconditionally — a redundant start is a no-op.
+
+**GUI-owned by default.** The GUI starts the daemon on launch and stops it on tray-Exit via the `shutdown` IPC method, which fires the same graceful teardown as SIGTERM (no PID tracking needed — the handler takes no locks and replies at once). Closing the GUI window **hides to tray**; the process, tray, and daemon stay alive. The login-autostart entry (`autostart.rs`) launches `superpanels-gui --tray`, bringing up tray + daemon with no window.
+
+**systemd-owned is the headless alternative.** The user unit (`unit.rs`) runs the daemon without any GUI session. GUI-owned and systemd-owned are **mutually exclusive per machine**: a unit with `Restart=on-failure` would resurrect a daemon that tray-Exit just killed. A desktop install should not enable the unit; a headless box should not rely on the tray.
+
+Accepted edge: `superpanels daemon stop` while the GUI tray is open kills the daemon under a live tray — a benign last-action-wins outcome surfaced by the GUI's "daemon not running" banner, not a conflict.
 
 ---
 
