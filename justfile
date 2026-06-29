@@ -33,6 +33,13 @@ gui-dev: ui-build
     -pkill -x superpanels-gui
     cargo run -p superpanels-gui --features dev-tools
 
+# Stop any running Superpanels daemon and GUI — e.g. a tray instance you
+# forgot to quit (closing the window only hides it now). Default SIGTERM lets
+# the daemon persist state before exiting; `-` ignores "no process matched".
+stop:
+    -pkill -f superpanels-daemon
+    -pkill -x superpanels-gui
+
 # Pass arguments through to the CLI: `just cli set --bezel-h 20 path/to.jpg`.
 cli *ARGS: build
     ./target/release/superpanels {{ARGS}}
