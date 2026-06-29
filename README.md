@@ -34,7 +34,7 @@ Superpanels thinks in **millimetres**. You tell it how big each monitor is and h
 
 You arrange everything on a live canvas that mirrors your real desk, then apply. It works for a single still image, for free-positioned multi-image layouts, and for folder-driven slideshows on a schedule. There's a GUI for arranging by hand and a CLI for headless or scripted use.
 
-Primary target is Arch / CachyOS on KDE Wayland, but it runs on KDE, GNOME, Sway, Hyprland, and X11.
+Primary target is Arch / CachyOS on KDE Wayland — and **KDE is the only desktop tested so far**. Backends for GNOME, Sway, Hyprland, and X11 are implemented but not yet verified on real setups; treat them as experimental for now.
 
 ## Install
 
