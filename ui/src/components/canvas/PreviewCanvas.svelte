@@ -410,10 +410,14 @@
   function handleDrop(ev: DragEvent) {
     ev.preventDefault();
     dropHover = null;
-    const path =
-      ev.dataTransfer?.getData('application/x-superpanels-image') ??
-      ev.dataTransfer?.getData('text/plain') ??
-      '';
+    // Only handle in-app drags: library thumbnails carry our custom type (and an
+    // absolute path in `text/plain`). OS / file-manager drags also reach here,
+    // but their `text/plain` is a `file://` URI — they're delivered cleanly via
+    // Tauri's native file-drop (App's window `onDrop`), so ignore them here to
+    // avoid a duplicate add and a non-absolute path error.
+    const internal = ev.dataTransfer?.getData('application/x-superpanels-image') ?? '';
+    const text = ev.dataTransfer?.getData('text/plain') ?? '';
+    const path = internal || (text.startsWith('/') ? text : '');
     if (!path) return;
     const id = monitorAtClient(ev.clientX, ev.clientY);
     if (id) onMonitorDrop?.(id, path);
