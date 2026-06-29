@@ -12,7 +12,7 @@ version      = "0.0.0"
 edition      = "2024"
 rust-version = "1.88"
 license      = "MIT OR Apache-2.0"
-repository   = "https://github.com/alex/superpanels"
+repository   = "https://github.com/AlexSandilands/superpanels"
 authors      = ["Alex Sandilands <profile.alex@proton.me>"]
 
 [workspace.lints.rust]
