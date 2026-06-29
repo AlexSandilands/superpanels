@@ -13,7 +13,7 @@ It treats your monitors as what they physically are — panels at real positions
 
 <br />
 
-<img src="docs/assets/span.png" alt="One image spanned across three monitors of mixed orientation, with the per-monitor inspector showing physical size in millimetres and an 18&nbsp;mm bezel gap" width="100%" />
+<img src="docs/assets/span.png" alt="One image spanned across three monitors of mixed orientation, with the per-monitor inspector showing physical size in millimetres and an 18 mm bezel gap" width="100%" />
 
 <br /><br />
 
