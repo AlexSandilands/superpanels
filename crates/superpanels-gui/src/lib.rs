@@ -108,6 +108,11 @@ fn setup_app(
 /// Close hides to tray instead of quitting: the process — and so the tray and
 /// the daemon we own — stays alive. The real quit is tray → "Exit Superpanels".
 fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
+    // Only the main window hides to tray; any future secondary window (dialog,
+    // picker) should close normally rather than become un-closeable.
+    if window.label() != "main" {
+        return;
+    }
     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
         // Persist geometry first so the next show restores it.
         let _ = crate::window_state::persist(window);

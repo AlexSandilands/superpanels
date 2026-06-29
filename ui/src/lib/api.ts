@@ -157,7 +157,7 @@ export const api = {
     call<{ style: TrayIconStyle }>('set_tray_icon_style', { style }),
   getTrayIconStyle: () => call<{ style: TrayIconStyle }>('get_tray_icon_style'),
   daemonStatus: () => call<{ connected: boolean }>('daemon_status'),
-  startDaemon: () => call<{ exe: string }>('start_daemon'),
+  startDaemon: () => call<{ exe: string | null }>('start_daemon'),
 };
 
 export type ApiError = IpcError;
