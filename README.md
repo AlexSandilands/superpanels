@@ -44,11 +44,13 @@ The install script pulls the latest release, drops the CLI, daemon, and GUI into
 curl -fsSL https://raw.githubusercontent.com/AlexSandilands/superpanels/main/install.sh | sh
 ```
 
-Uninstall the same way (your config under `~/.config/superpanels` is left untouched):
+Uninstall the same way. This stops the daemon and tray, then removes the binaries, the app-menu and autostart entries, and the icons. Your config under `~/.config/superpanels` is left untouched:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/AlexSandilands/superpanels/main/install.sh | sh -s -- --uninstall
 ```
+
+To also delete your settings, slideshow state, and data, use `--purge` instead of `--uninstall`. If you installed with a custom `--prefix`, pass the same one when uninstalling.
 
 **Options** (after `| sh -s --`): `--version <v>` to pin a release, `--prefix <dir>` to install somewhere else (e.g. `~/.local` for no sudo). The GUI needs **WebKitGTK 4.1** at runtime — `webkit2gtk-4.1` on Arch, `webkit2gtk4.1` on Fedora, `libwebkit2gtk-4.1-0` on Debian/Ubuntu.
 
