@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { LibraryEntry } from '$lib/api';
+  import { beginImageDrag, endImageDrag } from '$lib/canvas/image-drag';
   import { libraryStore } from '$lib/stores/library.svelte';
   import { toast } from '$lib/stores/toast.svelte';
   import Icon from '../widgets/Icon.svelte';
@@ -90,8 +91,11 @@
 
   function onDragStart(ev: DragEvent, entry: LibraryEntry) {
     if (!ev.dataTransfer) return;
+    // The absolute path travels out-of-band: WebKitGTK clobbers the DataTransfer
+    // for an element drag containing an <img> (see `image-drag.ts`). The setData
+    // below only keeps the native drag alive and gives it a copy cursor.
+    beginImageDrag(entry.path);
     ev.dataTransfer.effectAllowed = 'copy';
-    ev.dataTransfer.setData('application/x-superpanels-image', entry.path);
     ev.dataTransfer.setData('text/plain', entry.path);
     // Give the drag a visible ghost from the thumbnail itself.
     const card = ev.currentTarget as HTMLElement | null;
@@ -143,7 +147,10 @@
           class:selected={m === 'image'}
           draggable="true"
           ondragstart={(ev) => onDragStart(ev, item.entry)}
-          ondragend={() => onDragEnd?.()}
+          ondragend={() => {
+            endImageDrag();
+            onDragEnd?.();
+          }}
           ondblclick={() => {
             // In selection mode the single click already toggled — a second
             // toggle here would make every double-click fire three times.

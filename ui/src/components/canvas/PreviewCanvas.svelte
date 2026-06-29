@@ -21,6 +21,7 @@
     type PreviewMonitor,
   } from '$lib/canvas/preview-layout';
   import { createDragController } from '$lib/canvas/drag.svelte';
+  import { takeDraggedImagePath } from '$lib/canvas/image-drag';
   import { cursorFor, hitTest, type Hit } from '$lib/canvas/hit-test';
   import type { ImageTransform } from '$lib/stores/image-transform.svelte';
   import type { CanvasLayer } from '$lib/stores/canvas-layers.svelte';
@@ -410,14 +411,12 @@
   function handleDrop(ev: DragEvent) {
     ev.preventDefault();
     dropHover = null;
-    // Only handle in-app drags: library thumbnails carry our custom type (and an
-    // absolute path in `text/plain`). OS / file-manager drags also reach here,
-    // but their `text/plain` is a `file://` URI — they're delivered cleanly via
-    // Tauri's native file-drop (App's window `onDrop`), so ignore them here to
-    // avoid a duplicate add and a non-absolute path error.
-    const internal = ev.dataTransfer?.getData('application/x-superpanels-image') ?? '';
-    const text = ev.dataTransfer?.getData('text/plain') ?? '';
-    const path = internal || (text.startsWith('/') ? text : '');
+    // Only handle in-app library drags, whose absolute path arrives out-of-band
+    // (WebKitGTK clobbers the DataTransfer for an <img>-bearing drag — see
+    // `image-drag.ts`). OS / file-manager drags carry no in-app payload and are
+    // delivered cleanly via Tauri's native file-drop (App's window `onDrop`), so
+    // ignoring them here avoids a duplicate add and a non-absolute path error.
+    const path = takeDraggedImagePath();
     if (!path) return;
     const id = monitorAtClient(ev.clientX, ev.clientY);
     if (id) onMonitorDrop?.(id, path);

@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import type { Profile } from '$lib/api';
+  import { takeDraggedImagePath } from '$lib/canvas/image-drag';
   import { canvasView } from '$lib/stores/canvas-view.svelte';
   import { canvasLayers } from '$lib/stores/canvas-layers.svelte';
   import { daemonStatus } from '$lib/stores/daemon-status.svelte';
@@ -691,12 +692,18 @@
       onDragOver: () => (dragOverlay = true),
       onDragLeave: () => (dragOverlay = false),
       onDrop: (path, position) => {
+        // An internal library drag is delivered through this native handler too
+        // on WebKitGTK, but its `path` is the thumbnail's `blob:` URL, not the
+        // file — the real absolute path travels out-of-band (see `image-drag.ts`).
+        // OS file-manager drags have no in-app payload and use the native `path`.
+        const dropPath = takeDraggedImagePath() ?? path;
+        if (!dropPath.startsWith('/')) return;
         // Tauri reports the drop in physical pixels; the canvas hit-test works
         // in CSS pixels relative to the (viewport-filling) stage.
         const dpr = window.devicePixelRatio || 1;
         const monitorId =
           canvasRef?.monitorIdAtClient(position.x / dpr, position.y / dpr) ?? undefined;
-        requestAddImageToCanvas(path, monitorId);
+        requestAddImageToCanvas(dropPath, monitorId);
       },
       onMonitorsChanged: () => void monitorStore.refresh(),
     });
