@@ -19,6 +19,7 @@ REPO="AlexSandilands/superpanels"
 PREFIX="${PREFIX:-/usr/local}"
 VERSION=""
 ACTION="install"
+ICON_SIZES="32x32 128x128 256x256"
 
 say()  { printf '==> %s\n' "$*"; }
 warn() { printf 'warning: %s\n' "$*" >&2; }
@@ -26,7 +27,20 @@ err()  { printf 'error: %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
 usage() {
-  sed -n '2,18p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//'
+  cat <<'EOF'
+Superpanels universal installer.
+
+  curl -fsSL https://raw.githubusercontent.com/AlexSandilands/superpanels/main/install.sh | sh
+
+Installs all three binaries (superpanels, superpanels-gui, superpanels-daemon)
+plus the desktop entry and icons from a GitHub release.
+
+Options (after `| sh -s --`, or when running the file directly):
+  --version <v>    install a specific version (default: latest release)
+  --prefix <dir>   install root (default: /usr/local; use ~/.local for no sudo)
+  --uninstall      remove a previous install
+  -h, --help       show this help
+EOF
   exit "${1:-0}"
 }
 
@@ -87,10 +101,10 @@ do_uninstall() {
     "$PREFIX/bin/superpanels" \
     "$PREFIX/bin/superpanels-gui" \
     "$PREFIX/bin/superpanels-daemon" \
-    "$PREFIX/share/applications/superpanels-gui.desktop" \
-    "$PREFIX/share/icons/hicolor/32x32/apps/superpanels-gui.png" \
-    "$PREFIX/share/icons/hicolor/128x128/apps/superpanels-gui.png" \
-    "$PREFIX/share/icons/hicolor/256x256/apps/superpanels-gui.png"
+    "$PREFIX/share/applications/superpanels-gui.desktop"
+  for s in $ICON_SIZES; do
+    run_priv rm -f "$PREFIX/share/icons/hicolor/$s/apps/superpanels-gui.png"
+  done
   run_priv rm -rf "$PREFIX/share/doc/superpanels"
   refresh_caches
   say "done. (your config under ~/.config/superpanels was left untouched)"
@@ -129,20 +143,41 @@ do_install() {
   say "downloading $name.tar.gz"
   fetch "$base/$name.tar.gz" "$tmp/$name.tar.gz"
 
-  if fetch "$base/SHA256SUMS" "$tmp/SHA256SUMS" 2>/dev/null && have sha256sum; then
-    say "verifying checksum"
+  # Every release ships SHA256SUMS; a missing one means a broken/tampered
+  # download, so refuse rather than install unverified.
+  say "verifying checksum"
+  fetch "$base/SHA256SUMS" "$tmp/SHA256SUMS" \
+    || err "could not download SHA256SUMS — refusing to install unverified"
+  if have sha256sum; then
     ( cd "$tmp" && grep -- "${name}.tar.gz" SHA256SUMS | sha256sum -c - ) \
       || err "checksum verification failed"
+  elif have shasum; then
+    ( cd "$tmp" && grep -- "${name}.tar.gz" SHA256SUMS | shasum -a 256 -c - ) \
+      || err "checksum verification failed"
   else
-    warn "skipping checksum verification (no SHA256SUMS or sha256sum)"
+    warn "no sha256sum/shasum available — cannot verify (proceeding)"
   fi
 
   tar -C "$tmp" -xzf "$tmp/$name.tar.gz"
+  src="$tmp/$name"
 
+  # install(1) (not cp -a) so files land root-owned with explicit modes; cp -a
+  # under sudo would preserve the unprivileged extractor's uid, leaving
+  # root-executed binaries user-writable.
   say "installing to $PREFIX (may prompt for sudo)"
-  run_priv mkdir -p "$PREFIX/bin" "$PREFIX/share"
-  run_priv cp -a "$tmp/$name/bin/." "$PREFIX/bin/"
-  run_priv cp -a "$tmp/$name/share/." "$PREFIX/share/"
+  for b in superpanels superpanels-gui superpanels-daemon; do
+    run_priv install -Dm755 "$src/bin/$b" "$PREFIX/bin/$b"
+  done
+  run_priv install -Dm644 "$src/share/applications/superpanels-gui.desktop" \
+    "$PREFIX/share/applications/superpanels-gui.desktop"
+  for s in $ICON_SIZES; do
+    run_priv install -Dm644 "$src/share/icons/hicolor/$s/apps/superpanels-gui.png" \
+      "$PREFIX/share/icons/hicolor/$s/apps/superpanels-gui.png"
+  done
+  for d in README.md LICENSE-MIT LICENSE-APACHE; do
+    run_priv install -Dm644 "$src/share/doc/superpanels/$d" \
+      "$PREFIX/share/doc/superpanels/$d"
+  done
   refresh_caches
 
   say "installed Superpanels $VERSION — run 'superpanels-gui' or 'superpanels --help'"

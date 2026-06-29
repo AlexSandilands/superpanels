@@ -13,6 +13,9 @@ sha256sums=('SKIP')
 
 prepare() {
   cd "$pkgname-$pkgver"
+  # The tagged tree carries version 0.0.0; stamp $pkgver in so the binaries
+  # report the right --version (it comes from CARGO_PKG_VERSION at build time).
+  ./packaging/set-version.sh "$pkgver"
   npm --prefix ui ci
 }
 
@@ -22,7 +25,9 @@ build() {
   npm --prefix ui run build
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR=target
-  cargo build --release --workspace --locked
+  # Not --locked: set-version.sh rewrites the workspace version, so the
+  # committed Cargo.lock is intentionally refreshed during resolution.
+  cargo build --release --workspace
 }
 
 package() {

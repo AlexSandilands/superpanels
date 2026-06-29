@@ -19,7 +19,17 @@ Workspace version is currently `0.0.0` — bump in `Cargo.toml [workspace.packag
 - **`install.sh`** at the repo root is the distro-agnostic one-liner; it installs all three binaries + desktop entry + icons from the universal tarball.
 - **`packaging/`** holds the AUR `PKGBUILD`, the canonical `superpanels-gui.desktop`, and the release scripts. No Flatpak manifest yet.
 - `crates.io` metadata (description, keywords, categories, repository, docs URL) is not yet filled in on any crate.
-- The `webkit2gtk` DMABUF workaround (`WEBKIT_DISABLE_DMABUF_RENDERER=1`) is set in three places (`.cargo/config.toml`, the `justfile`, and `autostart::DESKTOP_BODY`); the AUR `superpanels-gui` `PKGBUILD` should set it in the installed `.desktop` file too until WebKitGTK ships a fix. See the [DMABUF workaround issue](https://github.com/AlexSandilands/superpanels/issues/8).
+- The `webkit2gtk` DMABUF workaround (`WEBKIT_DISABLE_DMABUF_RENDERER=1`) is now
+  duplicated, in lockstep, across six places — keep them in sync until WebKitGTK
+  ships a fix ([#8](https://github.com/AlexSandilands/superpanels/issues/8)):
+  - dev launches: `.cargo/config.toml`, the `justfile`;
+  - runtime-written entries: `autostart.rs` (`DESKTOP_BODY`), `desktop_entry.rs`;
+  - packaged launchers: `packaging/superpanels-gui.desktop` (tarball + AUR) and
+    `crates/superpanels-gui/desktop-entry.hbs` (the Tauri `.deb`/`.rpm`/`.AppImage`).
+
+  The same hazard applies to the `[Desktop Entry]` body itself and the
+  icon-size → hicolor mapping (`assemble-release.sh`, the `PKGBUILD`, `install.sh`).
+  Collapsing these onto a single generated source is a worthwhile follow-up.
 
 ## AUR package
 
