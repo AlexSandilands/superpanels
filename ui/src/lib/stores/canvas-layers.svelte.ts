@@ -4,7 +4,7 @@
 // its own loaded `url` / `naturalDims` (resolved async) and `transform`.
 
 import { errorMessage } from '$lib/api';
-import { cover } from '$lib/canvas/snap';
+import { contain } from '$lib/canvas/snap';
 import { coverImageRect, monitorRect, type PreviewMonitor } from '$lib/canvas/preview-layout';
 import { loadSourceImage, peekSourceImage } from '$lib/library/source-image';
 import { toast } from '$lib/stores/toast.svelte';
@@ -55,16 +55,17 @@ export const canvasLayers = {
   },
 
   /** Append a new image on top of the stack. With no `targetMonitorId` the
-   *  layer cover-fits over all `monitors`; with one it covers (fills, cropping
-   *  the overflow axis) just that monitor — the drop-onto-a-monitor gesture. */
+   *  layer cover-fits over all `monitors`; with one it contain-fits (the whole
+   *  image inside that monitor, letterboxed, never cropped) just that monitor —
+   *  the drop-onto-a-monitor gesture. The snap buttons fill from there. */
   async add(path: string, monitors: PreviewMonitor[], targetMonitorId?: string): Promise<void> {
     const id = genId();
     const stagger = layers.length * STAGGER_MM;
     const target = targetMonitorId ? monitors.find((m) => m.id === targetMonitorId) : undefined;
-    // A monitor-targeted drop fills that monitor exactly, so it skips the
+    // A monitor-targeted drop is centred on that monitor, so it skips the
     // stagger nudge the all-monitors cover-fit uses to avoid eclipsing siblings.
     const seed = (aspect: number): ImageTransform =>
-      target ? cover(monitorRect(target), aspect) : coverTransform(monitors, aspect, stagger);
+      target ? contain(monitorRect(target), aspect) : coverTransform(monitors, aspect, stagger);
     const cached = peekSourceImage(path);
     const layer: CanvasLayer = {
       id,

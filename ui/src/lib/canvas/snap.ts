@@ -90,3 +90,11 @@ export function cover(target: Rect, aspect: number): ImageTransform {
   // Width-fit covers vertically only when its height already spans the target.
   return byWidth.heightMm >= target.h ? byWidth : fitHeight(target, aspect);
 }
+
+/** Fit the whole image within the target (letterbox/pillarbox, never cropped),
+ *  preserving aspect — the smaller of the two single-axis fits. */
+export function contain(target: Rect, aspect: number): ImageTransform {
+  const byWidth = fitWidth(target, aspect);
+  // Width-fit stays within the target only when its height also fits.
+  return byWidth.heightMm <= target.h ? byWidth : fitHeight(target, aspect);
+}

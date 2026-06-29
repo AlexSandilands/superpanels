@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cover, fitHeight, fitWidth, targetRectForLayer } from './snap';
+import { contain, cover, fitHeight, fitWidth, targetRectForLayer } from './snap';
 import type { ImageTransform } from '$lib/stores/image-transform.svelte';
 import type { PreviewMonitor } from './preview-layout';
 
@@ -98,5 +98,17 @@ describe('fit helpers', () => {
     // Wide image (aspect 4) over the same target: width-fit is 400x100 (does
     // not cover the 200 height), so cover falls to fitHeight.
     expect(cover(target, 4)).toEqual(fitHeight(target, 4));
+  });
+
+  it('contain uses the width fit when the image is wider than the target', () => {
+    // Wide image (aspect 4) over the 400x200 target: width-fit is 400x100,
+    // which fits inside, so contain == fitWidth (letterboxed top/bottom).
+    expect(contain(target, 4)).toEqual(fitWidth(target, 4));
+  });
+
+  it('contain uses the height fit when the image is taller than the target', () => {
+    // Square image over the 400x200 (wide) target: width-fit (400x400) spills
+    // past the height, so contain falls to fitHeight (pillarboxed left/right).
+    expect(contain(target, 1)).toEqual(fitHeight(target, 1));
   });
 });

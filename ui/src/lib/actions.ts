@@ -264,10 +264,10 @@ export async function addImageToSlideshowSet(path: string): Promise<void> {
 }
 
 /** Drop an image directly onto a monitor: add it as a standard-canvas layer
- *  pre-snapped to fill (cover) that monitor at the image's aspect — wider-than-
- *  monitor images fill vertically, taller ones fill horizontally, overflow
- *  cropped either way. Falls back to a whole-desktop cover-fit if the monitor
- *  isn't in the current layout. */
+ *  contain-fitted to that monitor at the image's aspect — the whole image sits
+ *  inside the monitor (letterboxed for wider images, pillarboxed for taller),
+ *  never cropped. The snap buttons fill it from there. Falls back to a
+ *  whole-desktop cover-fit if the monitor isn't in the current layout. */
 export function dropImageOnMonitor(monitorId: string, path: string): void {
   if (!profileStore.draft) profileStore.newProfile();
   profileStore.patchDraft((d) => {

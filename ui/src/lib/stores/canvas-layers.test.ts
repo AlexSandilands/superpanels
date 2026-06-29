@@ -57,17 +57,17 @@ describe('canvasLayers', () => {
     expect(list[1]?.url).toBe('data:url//small.png');
   });
 
-  it('add_with_target_monitor_covers_that_monitor_filling_the_short_axis', async () => {
-    // A square (1000×1000) monitor and a 16:9 image: cover fills the monitor's
-    // height exactly and overflows its width, so the layer fully covers it.
+  it('add_with_target_monitor_contains_the_image_letterboxing_the_short_axis', async () => {
+    // A square (1000×1000) monitor and a 16:9 image: contain fits the monitor's
+    // width exactly and letterboxes its height, so the whole image stays inside.
     const monitors = [
       previewMonitor('mon-a', 0, 1000, 1000),
       previewMonitor('mon-b', 2000, 1000, 1000),
     ];
     await canvasLayers.add('/wide.png', monitors, 'mon-a');
     const t = canvasLayers.list[0]?.transform;
-    expect(t?.heightMm).toBeCloseTo(1000, 1);
-    expect(t?.widthMm).toBeGreaterThan(1000);
+    expect(t?.widthMm).toBeCloseTo(1000, 1);
+    expect(t?.heightMm).toBeLessThan(1000);
     // Centred over mon-a (x ∈ [0,1000]), not over mon-b.
     const cx = (t?.offsetMmX ?? 0) + (t?.widthMm ?? 0) / 2;
     expect(cx).toBeCloseTo(500, 1);
