@@ -982,7 +982,6 @@
       onClose={() => (libraryOpen = false)}
       onPinToMonitor={requestDropOnMonitor}
       onAddToCanvas={requestAddImageToCanvas}
-      onImageDragStart={() => (libraryOpen = false)}
       {slideshowTarget}
       onUpdateSlideshow={(images) => void updateSlideshowImages(images)}
       onResetOverride={(path) => void removeImageOverride(path)}

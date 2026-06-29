@@ -41,9 +41,6 @@
     onPinToMonitor: (monitorId: string, path: string) => void;
     /** Add an image to the canvas as a new layer. */
     onAddToCanvas: (path: string) => void;
-    /** A thumbnail drag started — the host closes the library so the drop lands
-     *  on the canvas. */
-    onImageDragStart?: () => void;
     /** Slideshow profile whose image set can be edited from here, if any. */
     slideshowTarget?: {
       name: string;
@@ -59,12 +56,16 @@
     onClose,
     onPinToMonitor,
     onAddToCanvas,
-    onImageDragStart,
     slideshowTarget = null,
     onUpdateSlideshow,
     onResetOverride,
     onShowImage,
   }: Props = $props();
+
+  // While a thumbnail is being dragged onto the canvas, the modal hides and goes
+  // click-through (it stays mounted so the native drag survives); it closes once
+  // the drag ends.
+  let dragging = $state(false);
 
   let searchEl: HTMLInputElement | undefined = $state();
   // Editing the image set is the primary action while a slideshow profile is
@@ -149,7 +150,7 @@
   }
 </script>
 
-<Backdrop {onClose}>
+<Backdrop {onClose} passthrough={dragging}>
   <div
     class="panel flex flex-col overflow-hidden"
     style:width="min(1100px, 92vw)"
@@ -449,7 +450,8 @@
           entries={visible}
           onApply={applyEntry}
           onPin={onPinToMonitor}
-          onDragOut={onImageDragStart}
+          onDragBegin={() => (dragging = true)}
+          onDragEnd={onClose}
           {selection}
           {customLayouts}
         />

@@ -24,9 +24,11 @@
      *  action). Also fired on double-click. */
     onApply: (entry: LibraryEntry) => void;
     onPin: (monitorId: string, path: string) => void;
-    /** Fired when a thumbnail drag begins, so the host can get out of the way
-     *  (close the library) and let the image be dropped on the canvas. */
-    onDragOut?: (() => void) | undefined;
+    /** A thumbnail drag began — the host gets out of the way (hides the library)
+     *  so the image can be dropped on the canvas. */
+    onDragBegin?: (() => void) | undefined;
+    /** The drag ended (dropped or cancelled) — the host can close. */
+    onDragEnd?: (() => void) | undefined;
     selection?: SlideshowSelection | null;
     customLayouts?: CustomLayouts | null;
   };
@@ -34,7 +36,8 @@
     entries,
     onApply,
     onPin,
-    onDragOut,
+    onDragBegin,
+    onDragEnd,
     selection = null,
     customLayouts = null,
   }: Props = $props();
@@ -90,9 +93,15 @@
     ev.dataTransfer.effectAllowed = 'copy';
     ev.dataTransfer.setData('application/x-superpanels-image', entry.path);
     ev.dataTransfer.setData('text/plain', entry.path);
-    // Close the library so the canvas is the drop target; the browser keeps the
-    // drag alive after the source card unmounts.
-    onDragOut?.();
+    // Give the drag a visible ghost from the thumbnail itself.
+    const card = ev.currentTarget as HTMLElement | null;
+    const img = card?.querySelector('img');
+    if (img) ev.dataTransfer.setDragImage(img, img.clientWidth / 2, img.clientHeight / 2);
+    // Hide the library on the *next* frame, not synchronously: the drag image is
+    // snapshotted when this handler returns, and unmounting/hiding the source
+    // mid-dragstart cancels the drag on webkit. Deferring keeps the drag alive
+    // and the source mounted (the host hides it, it doesn't unmount it).
+    requestAnimationFrame(() => onDragBegin?.());
   }
 
   function aspectLabel(ratio: number): string {
@@ -134,6 +143,7 @@
           class:selected={m === 'image'}
           draggable="true"
           ondragstart={(ev) => onDragStart(ev, item.entry)}
+          ondragend={() => onDragEnd?.()}
           ondblclick={() => {
             // In selection mode the single click already toggled — a second
             // toggle here would make every double-click fire three times.
