@@ -15,7 +15,7 @@ cargo build --release -p superpanels-cli
 # binary at target/release/superpanels
 ```
 
-`cargo install superpanels` and `yay -S superpanels` are the planned install paths — see [`docs/release/packaging.md`](./docs/release/packaging.md).
+`cargo install superpanels` and `yay -S superpanels` are the planned install paths — see [`packaging/README.md`](./packaging/README.md).
 
 ## Quick start
 
@@ -94,7 +94,7 @@ Tauri OS prerequisites are listed in [CONTRIBUTING.md](./CONTRIBUTING.md).
 | You're writing TypeScript / Svelte here | [`docs/contributing/style-frontend.md`](./docs/contributing/style-frontend.md) |
 | You're writing tests | [`docs/contributing/testing.md`](./docs/contributing/testing.md) |
 | You're contributing | [CONTRIBUTING.md](./CONTRIBUTING.md) |
-| You're tagging a release | [`docs/release/packaging.md`](./docs/release/packaging.md) and [`docs/release/release-checklist.md`](./docs/release/release-checklist.md) |
+| You're tagging a release | [`packaging/README.md`](./packaging/README.md) |
 
 ## Licence
 
