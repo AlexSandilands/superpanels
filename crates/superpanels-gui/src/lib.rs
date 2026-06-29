@@ -197,6 +197,17 @@ fn handle_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
         use tauri::Manager;
         tracing::info!(code = ?code, "exit requested");
         if let Some(state) = app.try_state::<Arc<AppState>>() {
+            // We own the daemon's lifecycle, so it must not outlive this
+            // process: stop it on every exit path (tray "Exit", a fatal error,
+            // a relaunch teardown), not just the tray menu. Best-effort and
+            // prompt — the daemon's `shutdown` handler takes no locks and
+            // replies at once. `request_shutdown` then stops the tray poller
+            // before the runtime tears down.
+            let _ = crate::bridge::call(
+                "shutdown",
+                serde_json::json!({}),
+                state.config_path().as_deref(),
+            );
             state.request_shutdown();
         }
     }

@@ -708,10 +708,14 @@
       onMonitorsChanged: () => void monitorStore.refresh(),
     });
 
-    // Window-close interception (§4e.11.5). When the canvas is dirty we
-    // veto the close, surface the modal, and re-issue the close on
-    // confirm. Tauri's `onCloseRequested` handler calls `preventDefault`
-    // on the supplied event to abort the close.
+    // Closing hides to tray — the native `on_window_event` handler in the Rust
+    // shell prevents the close and hides the window so the tray + daemon it
+    // owns outlive it. We must STILL register a JS close handler that always
+    // `preventDefault`s: the `@tauri-apps/api` `onCloseRequested` wrapper calls
+    // `window.destroy()` whenever the handler doesn't prevent the default,
+    // which would tear the window down and defeat the native hide. Hiding is
+    // non-destructive (the webview and any unsaved canvas edits stay in
+    // memory), so there's no unsaved-changes prompt on close.
     let closeUnlistenFn: (() => void) | null = null;
     const winRef = (() => {
       try {
@@ -723,15 +727,7 @@
     if (winRef) {
       void winRef
         .onCloseRequested((event) => {
-          if (canvasDirty) {
-            event.preventDefault();
-            pendingDiscard = {
-              label: 'Closing the window',
-              perform: () => {
-                void winRef.destroy();
-              },
-            };
-          }
+          event.preventDefault();
         })
         .then((fn) => {
           closeUnlistenFn = fn;
