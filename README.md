@@ -100,7 +100,12 @@ Each profile remembers the monitors it was built for. Plug in a different setup 
 
 ### Slideshows and the library
 
-The library is your wallpaper collection — indexed with thumbnails and tags from the folders you point it at, and kept current in the background. It's the dock along the bottom of the canvas: drag a wallpaper straight onto a monitor, or into a slideshow.
+The library is your wallpaper collection — indexed with thumbnails from the folders (*roots*) you point it at, and kept current in the background. The dock along the bottom of the canvas is the quick view; open the full library to search by name or tag, filter by aspect or resolution, sort, and star favourites. Drag any wallpaper straight onto a monitor, or add it to a slideshow.
+
+<p align="center">
+  <img src="docs/assets/library.png" alt="The full library view: a thumbnail grid with aspect and resolution on each tile, plus a sidebar of roots, aspect and resolution filters, folder tags, sort options, and a search bar with a favourites toggle" width="88%" /><br />
+  <sub><em>The full library: search, filter by aspect or resolution, tag, sort, and favourite — then drag onto a monitor or into a slideshow.</em></sub>
+</p>
 
 A slideshow rotates through folders and hand-picked images together, and new files dropped into a watched folder join automatically. You choose how often it rotates, whether it shuffles or plays in order, and how many recent images to skip before repeating. Crop any wallpaper by hand and it keeps that crop each time it comes back around. Next / previous / pause controls sit right on the dock.
 
@@ -108,8 +113,6 @@ A slideshow rotates through folders and hand-picked images together, and new fil
   <img src="docs/assets/slideshow-settings.png" alt="The slideshow settings popover: rotation interval with preset buttons, order set to Shuffle, resume-on-start, avoid-repeating-last count, and skip-missing-files toggle" width="88%" /><br />
   <sub><em>Slideshow timing: how often it rotates, shuffle vs. in order, resume behaviour, and how many recent images to skip.</em></sub>
 </p>
-
-<!-- screenshot slot: full library grid view (optional) -->
 
 ### Scheduling
 
