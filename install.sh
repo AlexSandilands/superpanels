@@ -29,6 +29,7 @@ ICON_SIZES="32x32 128x128 256x256"
 xdg_config_home() { printf '%s' "${XDG_CONFIG_HOME:-$HOME/.config}"; }
 xdg_data_home()   { printf '%s' "${XDG_DATA_HOME:-$HOME/.local/share}"; }
 xdg_state_home()  { printf '%s' "${XDG_STATE_HOME:-$HOME/.local/state}"; }
+xdg_cache_home()  { printf '%s' "${XDG_CACHE_HOME:-$HOME/.cache}"; }
 
 say()  { printf '==> %s\n' "$*"; }
 warn() { printf 'warning: %s\n' "$*" >&2; }
@@ -66,6 +67,11 @@ while [ $# -gt 0 ]; do
     *) err "unknown option: $1 (see --help)";;
   esac
 done
+
+# Normalise a trailing slash so "$PREFIX/bin" comparisons (warn_other_installs)
+# don't spuriously fire when the user passes e.g. --prefix /usr/local/.
+PREFIX="${PREFIX%/}"
+[ -n "$PREFIX" ] || PREFIX="/"
 
 [ "$(uname -s)" = "Linux" ] || err "Superpanels only runs on Linux"
 
@@ -136,20 +142,28 @@ rm_user() { # remove user-owned paths as the invoking user; record if any existe
 # rm(1) unlinks the binary but never stops a process already running off it —
 # the original bug: the daemon kept switching wallpapers post-uninstall.
 # Stopping the xdg-autostart unit tears down the GUI/tray/daemon cgroup it
-# launched at login; pkill mops up any manually started strays. The script's
-# own argv ("sh -s -- --uninstall") never contains these names, so -f is safe.
+# launched at login; pkill mops up any manually started strays.
+#
+# Patterns are anchored to a binary invocation — "(^|/)name($|[[:space:]])" — so
+# -f only matches the executable as argv[0] (bare name or full path), never an
+# unrelated process that merely mentions the string (e.g. an editor open on
+# crates/superpanels-daemon/src or a journalctl follower).
+sp_pkill() { # <pkill flags...>: signal each running Superpanels process once
+  for pat in \
+    '(^|/)superpanels-daemon($|[[:space:]])' \
+    '(^|/)superpanels-gui($|[[:space:]])'; do
+    pkill "$@" -f "$pat" 2>/dev/null || true
+  done
+}
+
 stop_processes() {
   if have systemctl; then
     systemctl --user stop 'app-superpanels@autostart.service' 2>/dev/null || true
   fi
   if have pkill; then
-    for name in superpanels-daemon superpanels-gui; do
-      pkill -f "$name" 2>/dev/null || true
-    done
+    sp_pkill
     sleep 1
-    for name in superpanels-daemon superpanels-gui; do
-      pkill -9 -f "$name" 2>/dev/null || true
-    done
+    sp_pkill -9
   fi
 }
 
@@ -202,11 +216,18 @@ do_uninstall() {
   refresh_user_caches
 
   if [ "$PURGE" -eq 1 ]; then
-    say "purging configuration, data, and state"
+    say "purging configuration, data, cache, and state"
+    cache_home="$(xdg_cache_home)"
+    # superpanels/* are our own config/state and the cached rendered-wallpaper
+    # images (XDG_CACHE_HOME/superpanels/temp); com.superpanels.app/* are the
+    # Tauri/WebKitGTK identifier dirs the GUI's webview writes.
     rm_user \
       "$config_home/superpanels" \
+      "$config_home/com.superpanels.app" \
       "$data_home/superpanels" \
       "$data_home/com.superpanels.app" \
+      "$cache_home/superpanels" \
+      "$cache_home/com.superpanels.app" \
       "$(xdg_state_home)/superpanels"
   fi
 
