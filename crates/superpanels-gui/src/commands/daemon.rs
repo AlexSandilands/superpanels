@@ -33,16 +33,32 @@ pub(crate) async fn daemon_status() -> Value {
 #[tauri::command]
 pub(crate) async fn start_daemon() -> Result<Value, IpcError> {
     super::run_off_main(|| {
-        let exe = locate_daemon_exe();
-        Command::new(&exe).spawn().map_err(|e| {
-            IpcError::internal(format!(
-                "could not spawn '{}': {e} — is `superpanels-daemon` on $PATH?",
-                exe.display()
-            ))
-        })?;
-        Ok(json!({ "exe": exe.display().to_string() }))
+        let spawned = ensure_daemon_running()?;
+        Ok(json!({ "exe": spawned.map(|p| p.display().to_string()) }))
     })
     .await
+}
+
+/// Spawn the daemon only if none is currently listening.
+///
+/// Idempotent and safe to call unconditionally: the daemon binds its socket
+/// exclusively (`superpanels-daemon` refuses to start when a live one exists),
+/// so a redundant spawn is a harmless no-op. Returns the resolved exe path when
+/// a spawn actually happened, or `None` when a daemon was already up.
+///
+/// Blocking — call from a worker thread, not the webview's main thread.
+pub(crate) fn ensure_daemon_running() -> Result<Option<PathBuf>, IpcError> {
+    if ipc_client::try_connect(&socket_path()).is_some() {
+        return Ok(None);
+    }
+    let exe = locate_daemon_exe();
+    Command::new(&exe).spawn().map_err(|e| {
+        IpcError::internal(format!(
+            "could not spawn '{}': {e} — is `superpanels-daemon` on $PATH?",
+            exe.display()
+        ))
+    })?;
+    Ok(Some(exe))
 }
 
 /// Resolve the daemon binary path.

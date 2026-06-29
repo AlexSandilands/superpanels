@@ -14,11 +14,15 @@ const FILE_NAME: &str = "superpanels.desktop";
 // reason: `env WEBKIT_DISABLE_DMABUF_RENDERER=1` works around a WebKitGTK
 // crash on Wayland (`Gdk-Message: Error 71`) seen on common KDE Plasma 6
 // + Mesa/NVIDIA stacks. Mirrored in `.cargo/config.toml` for dev `cargo run`.
+//
+// `--tray` keeps login startup in the background: it installs the tray and
+// starts the daemon without popping the window. The app-menu entry
+// (`desktop_entry.rs`) deliberately omits it so a manual launch opens the GUI.
 const DESKTOP_BODY: &str = "[Desktop Entry]\n\
 Type=Application\n\
 Name=Superpanels\n\
 Comment=Bezel-aware multi-monitor wallpaper manager\n\
-Exec=env WEBKIT_DISABLE_DMABUF_RENDERER=1 superpanels-gui\n\
+Exec=env WEBKIT_DISABLE_DMABUF_RENDERER=1 superpanels-gui --tray\n\
 Icon=superpanels-gui\n\
 Categories=Graphics;Utility;\n\
 Terminal=false\n\
@@ -79,6 +83,13 @@ mod tests {
         let body = std::fs::read_to_string(&path).unwrap();
         assert!(body.contains("superpanels-gui"));
         assert!(body.contains("WEBKIT_DISABLE_DMABUF_RENDERER=1"));
+    }
+
+    #[test]
+    fn autostart_entry_launches_in_tray_mode() {
+        // Login startup must come up in the background (tray + daemon, no
+        // window). Dropping `--tray` here would pop the GUI on every login.
+        assert!(DESKTOP_BODY.contains("superpanels-gui --tray"));
     }
 
     #[test]

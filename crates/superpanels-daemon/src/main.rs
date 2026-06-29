@@ -16,7 +16,7 @@ use clap::Parser;
 use superpanels_core::ipc::socket_path;
 use superpanels_core::slideshow::persist_state as persist_slideshow;
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::{Mutex, watch};
+use tokio::sync::{Mutex, Notify, watch};
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
@@ -259,14 +259,16 @@ async fn run_daemon(cli: Cli) -> Result<()> {
         }
     });
 
-    // Main accept loop — runs until SIGTERM.
+    // Main accept loop — runs until SIGTERM or a `shutdown` IPC request.
+    let shutdown = Arc::new(Notify::new());
     let server_state = Arc::clone(&state);
+    let server_shutdown = Arc::clone(&shutdown);
     let server_handle = tokio::spawn(async move {
-        server::run_server(listener, server_state, timer_tx).await;
+        server::run_server(listener, server_state, timer_tx, server_shutdown).await;
     });
 
-    // Wait for SIGTERM or SIGINT and persist state before exit.
-    wait_for_shutdown().await;
+    // Wait for SIGTERM, SIGINT, or an IPC `shutdown`, then persist before exit.
+    wait_for_shutdown(&shutdown).await;
     info!("shutdown signal received; persisting state and exiting");
 
     server_handle.abort();
@@ -295,14 +297,14 @@ async fn persist_daemon_state(state: &Arc<Mutex<DaemonState>>) {
     }
 }
 
-async fn wait_for_shutdown() {
+async fn wait_for_shutdown(shutdown: &Notify) {
     use tokio::signal::unix::{SignalKind, signal};
     let mut sigterm = match signal(SignalKind::terminate()) {
         Ok(s) => s,
         Err(e) => {
             warn!(error = %e, "SIGTERM handler could not be registered; only Ctrl-C will stop the daemon");
-            // Fall back to waiting forever (SIGKILL will terminate us).
-            std::future::pending::<()>().await;
+            // Fall back to waiting on the IPC signal only (SIGKILL still works).
+            shutdown.notified().await;
             return;
         }
     };
@@ -310,13 +312,14 @@ async fn wait_for_shutdown() {
         Ok(s) => s,
         Err(e) => {
             warn!(error = %e, "SIGINT handler could not be registered");
-            std::future::pending::<()>().await;
+            shutdown.notified().await;
             return;
         }
     };
     tokio::select! {
         _ = sigterm.recv() => info!("received SIGTERM"),
         _ = sigint.recv()  => info!("received SIGINT"),
+        () = shutdown.notified() => info!("received shutdown IPC request"),
     }
 }
 

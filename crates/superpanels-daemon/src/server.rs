@@ -6,7 +6,7 @@ use std::time::Duration;
 use anyhow::Result;
 use superpanels_core::ipc::{IpcRequest, IpcResponse, PROTOCOL_VERSION};
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::{Mutex, watch};
+use tokio::sync::{Mutex, Notify, watch};
 use tracing::{debug, error, trace};
 
 use crate::state::DaemonState;
@@ -18,18 +18,24 @@ mod helpers;
 mod slideshow;
 
 /// Runs until the socket encounters a fatal error. Spawns a task per connection.
+///
+/// `shutdown` is fired by the `shutdown` IPC method so an external caller (the
+/// GUI tray's Exit, the CLI's `daemon stop`) can trigger the same graceful
+/// teardown as SIGTERM without tracking the daemon's PID.
 pub(crate) async fn run_server(
     listener: UnixListener,
     state: Arc<Mutex<DaemonState>>,
     timer_tx: watch::Sender<Option<Duration>>,
+    shutdown: Arc<Notify>,
 ) {
     loop {
         match listener.accept().await {
             Ok((stream, _)) => {
                 let state = Arc::clone(&state);
                 let timer_tx = timer_tx.clone();
+                let shutdown = Arc::clone(&shutdown);
                 tokio::spawn(async move {
-                    if let Err(e) = handle_connection(stream, state, timer_tx).await {
+                    if let Err(e) = handle_connection(stream, state, timer_tx, shutdown).await {
                         debug!(error = %e, "IPC connection closed");
                     }
                 });
@@ -46,6 +52,7 @@ async fn handle_connection(
     mut stream: UnixStream,
     state: Arc<Mutex<DaemonState>>,
     timer_tx: watch::Sender<Option<Duration>>,
+    shutdown: Arc<Notify>,
 ) -> Result<()> {
     loop {
         let body = match frame::read_frame(&mut stream).await {
@@ -70,26 +77,42 @@ async fn handle_connection(
             continue;
         }
         trace!(method = %req.method, "IPC request");
-        let resp = dispatch(req, Arc::clone(&state), timer_tx.clone()).await;
+        let resp = dispatch(
+            req,
+            Arc::clone(&state),
+            timer_tx.clone(),
+            Arc::clone(&shutdown),
+        )
+        .await;
         frame::write_frame(&mut stream, &serde_json::to_vec(&resp)?).await?;
     }
 }
 
 /// Exposed for the startup default-profile apply in `main.rs` and tests.
+///
+/// Uses a throwaway shutdown notifier — neither the startup apply nor any test
+/// dispatches the `shutdown` method, so nothing observes it.
 pub(crate) async fn dispatch_for_tests(
     req: IpcRequest,
     state: Arc<Mutex<DaemonState>>,
     timer_tx: watch::Sender<Option<Duration>>,
 ) -> IpcResponse {
-    dispatch(req, state, timer_tx).await
+    dispatch(req, state, timer_tx, Arc::new(Notify::new())).await
 }
 
 async fn dispatch(
     req: IpcRequest,
     state: Arc<Mutex<DaemonState>>,
     timer_tx: watch::Sender<Option<Duration>>,
+    shutdown: Arc<Notify>,
 ) -> IpcResponse {
     match req.method.as_str() {
+        "shutdown" => {
+            // Reply first, then signal: the caller wants confirmation the
+            // daemon accepted the request before the process tears down.
+            shutdown.notify_one();
+            IpcResponse::success(serde_json::json!({}))
+        }
         "set" => apply::cmd_set(req, state).await,
         "apply_profile" => apply::cmd_apply_profile(req, state, timer_tx).await,
         "apply_canvas" => apply::cmd_apply_canvas(req, state, timer_tx).await,
@@ -209,6 +232,31 @@ mod tests {
 
     fn timer_pair() -> watch::Sender<Option<Duration>> {
         watch::channel::<Option<Duration>>(None).0
+    }
+
+    #[tokio::test]
+    async fn shutdown_request_succeeds_and_fires_the_notifier() {
+        let state = make_state_arc(DaemonState::for_tests(Config::default()));
+        let shutdown = Arc::new(Notify::new());
+        let resp = dispatch(
+            IpcRequest {
+                v: PROTOCOL_VERSION,
+                method: "shutdown".to_owned(),
+                params: json!({}),
+            },
+            Arc::clone(&state),
+            timer_pair(),
+            Arc::clone(&shutdown),
+        )
+        .await;
+
+        assert!(resp.is_ok(), "got: {:?}", resp.error);
+        // `notify_one` left a permit, so the daemon's `wait_for_shutdown`
+        // arm resolves immediately. The timeout guards against a regression
+        // where the arm never fires and the daemon ignores the request.
+        tokio::time::timeout(Duration::from_secs(1), shutdown.notified())
+            .await
+            .expect("shutdown notifier should have been fired");
     }
 
     #[tokio::test]

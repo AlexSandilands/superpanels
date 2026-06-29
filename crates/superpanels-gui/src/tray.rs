@@ -319,7 +319,7 @@ fn build_menu(
     items.push(Box::new(MenuItem::with_id(
         handle,
         ID_QUIT,
-        "Quit",
+        "Exit Superpanels",
         true,
         None::<&str>,
     )?));
@@ -330,7 +330,16 @@ fn build_menu(
 
 fn handle_menu_event(app: &AppHandle, id: &str, _handle: &AppHandle, state: &Arc<AppState>) {
     match id {
-        ID_QUIT => app.exit(0),
+        ID_QUIT => {
+            // We own the daemon's lifecycle, so Exit stops it before quitting.
+            // The daemon's `shutdown` handler takes no locks and replies at
+            // once, so this returns promptly even mid-apply. Best-effort —
+            // quit regardless of the outcome. `request_shutdown` stops the tray
+            // poller before the runtime tears down.
+            let _ = bridge::call("shutdown", json!({}), state.config_path().as_deref());
+            state.request_shutdown();
+            app.exit(0);
+        }
         ID_OPEN => show_main_window(app),
         ID_SETTINGS => {
             show_main_window(app);
