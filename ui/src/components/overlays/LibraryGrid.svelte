@@ -24,10 +24,20 @@
      *  action). Also fired on double-click. */
     onApply: (entry: LibraryEntry) => void;
     onPin: (monitorId: string, path: string) => void;
+    /** Fired when a thumbnail drag begins, so the host can get out of the way
+     *  (close the library) and let the image be dropped on the canvas. */
+    onDragOut?: (() => void) | undefined;
     selection?: SlideshowSelection | null;
     customLayouts?: CustomLayouts | null;
   };
-  let { entries, onApply, onPin, selection = null, customLayouts = null }: Props = $props();
+  let {
+    entries,
+    onApply,
+    onPin,
+    onDragOut,
+    selection = null,
+    customLayouts = null,
+  }: Props = $props();
 
   let scrollEl: HTMLDivElement | undefined = $state();
   let scrollTop = $state(0);
@@ -80,6 +90,9 @@
     ev.dataTransfer.effectAllowed = 'copy';
     ev.dataTransfer.setData('application/x-superpanels-image', entry.path);
     ev.dataTransfer.setData('text/plain', entry.path);
+    // Close the library so the canvas is the drop target; the browser keeps the
+    // drag alive after the source card unmounts.
+    onDragOut?.();
   }
 
   function aspectLabel(ratio: number): string {

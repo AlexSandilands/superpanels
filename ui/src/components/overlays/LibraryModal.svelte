@@ -41,6 +41,9 @@
     onPinToMonitor: (monitorId: string, path: string) => void;
     /** Add an image to the canvas as a new layer. */
     onAddToCanvas: (path: string) => void;
+    /** A thumbnail drag started — the host closes the library so the drop lands
+     *  on the canvas. */
+    onImageDragStart?: () => void;
     /** Slideshow profile whose image set can be edited from here, if any. */
     slideshowTarget?: {
       name: string;
@@ -56,6 +59,7 @@
     onClose,
     onPinToMonitor,
     onAddToCanvas,
+    onImageDragStart,
     slideshowTarget = null,
     onUpdateSlideshow,
     onResetOverride,
@@ -445,6 +449,7 @@
           entries={visible}
           onApply={applyEntry}
           onPin={onPinToMonitor}
+          onDragOut={onImageDragStart}
           {selection}
           {customLayouts}
         />

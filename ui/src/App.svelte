@@ -826,6 +826,7 @@
     imageTransform={imageTransform.value}
     onImageTransformChange={(t) => imageTransform.set(t)}
     onMonitorDrop={requestDropOnMonitor}
+    onCanvasDrop={(path) => requestAddImageToCanvas(path)}
     layers={standard ? canvasLayers.list : []}
     onLayerTransformChange={(id, t) => canvasLayers.patch(id, t)}
     onLayerRemove={(id) => canvasLayers.remove(id)}
@@ -981,6 +982,7 @@
       onClose={() => (libraryOpen = false)}
       onPinToMonitor={requestDropOnMonitor}
       onAddToCanvas={requestAddImageToCanvas}
+      onImageDragStart={() => (libraryOpen = false)}
       {slideshowTarget}
       onUpdateSlideshow={(images) => void updateSlideshowImages(images)}
       onResetOverride={(path) => void removeImageOverride(path)}

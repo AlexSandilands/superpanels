@@ -37,6 +37,9 @@
     imageTransform: ImageTransform;
     onImageTransformChange: (next: ImageTransform) => void;
     onMonitorDrop?: (monitorId: string, path: string) => void;
+    /** Image dropped on the canvas but not over any monitor — add it as a
+     *  normal whole-desktop layer (the off-monitor counterpart to `onMonitorDrop`). */
+    onCanvasDrop?: (path: string) => void;
     // Composite mode — non-empty `layers` switches the canvas from the single
     // span image to a stack of independently-draggable, removable layers.
     layers?: CanvasLayer[];
@@ -53,6 +56,7 @@
     imageTransform,
     onImageTransformChange,
     onMonitorDrop,
+    onCanvasDrop,
     layers = [],
     onLayerTransformChange,
     onLayerRemove,
@@ -413,6 +417,7 @@
     if (!path) return;
     const id = monitorAtClient(ev.clientX, ev.clientY);
     if (id) onMonitorDrop?.(id, path);
+    else onCanvasDrop?.(path);
   }
 
   function handleDragOver(ev: DragEvent) {
