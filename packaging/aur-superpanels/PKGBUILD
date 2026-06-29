@@ -1,0 +1,53 @@
+# Maintainer: Alex Sandilands <profile.alex@proton.me>
+pkgname=superpanels
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Bezel-aware multi-monitor wallpaper manager (CLI, daemon, and GUI)"
+arch=('x86_64')
+url="https://github.com/AlexSandilands/superpanels"
+license=('MIT' 'Apache-2.0')
+depends=('webkit2gtk-4.1' 'gtk3' 'libayatana-appindicator')
+makedepends=('rust' 'nodejs' 'npm')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "$pkgname-$pkgver"
+  # The tagged tree carries version 0.0.0; stamp $pkgver in so the binaries
+  # report the right --version (it comes from CARGO_PKG_VERSION at build time).
+  ./packaging/set-version.sh "$pkgver"
+  npm --prefix ui ci
+}
+
+build() {
+  cd "$pkgname-$pkgver"
+  # tauri-build embeds ui/dist via generate_context!, so build the frontend first.
+  npm --prefix ui run build
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  # Not --locked: set-version.sh rewrites the workspace version, so the
+  # committed Cargo.lock is intentionally refreshed during resolution.
+  cargo build --release --workspace
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+
+  install -Dm755 target/release/superpanels        "$pkgdir/usr/bin/superpanels"
+  install -Dm755 target/release/superpanels-gui     "$pkgdir/usr/bin/superpanels-gui"
+  install -Dm755 target/release/superpanels-daemon  "$pkgdir/usr/bin/superpanels-daemon"
+
+  # The Exec= line bakes in WEBKIT_DISABLE_DMABUF_RENDERER=1 (see GitHub #8).
+  install -Dm644 packaging/superpanels-gui.desktop \
+    "$pkgdir/usr/share/applications/superpanels-gui.desktop"
+
+  install -Dm644 crates/superpanels-gui/icons/32x32-transparent.png \
+    "$pkgdir/usr/share/icons/hicolor/32x32/apps/superpanels-gui.png"
+  install -Dm644 crates/superpanels-gui/icons/128x128-transparent.png \
+    "$pkgdir/usr/share/icons/hicolor/128x128/apps/superpanels-gui.png"
+  install -Dm644 crates/superpanels-gui/icons/icon-transparent.png \
+    "$pkgdir/usr/share/icons/hicolor/256x256/apps/superpanels-gui.png"
+
+  install -Dm644 LICENSE-MIT    "$pkgdir/usr/share/licenses/$pkgname/LICENSE-MIT"
+  install -Dm644 LICENSE-APACHE "$pkgdir/usr/share/licenses/$pkgname/LICENSE-APACHE"
+}

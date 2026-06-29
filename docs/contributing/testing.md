@@ -278,7 +278,7 @@ The monitor canvas's *rendering* is verified by humans; the *math* feeding it is
 - **D-Bus messages reaching KDE.** Mocked in unit tests; manually verified on a real KDE install before release.
 - **System tray appearance.** Manual.
 
-These are listed in [`docs/release/release-checklist.md`](../release/release-checklist.md) as items to walk through before tagging a release.
+These are walked through manually on a real desktop session before tagging a release.
 
 ---
 

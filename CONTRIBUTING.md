@@ -101,8 +101,7 @@ pre-commit run --all-files --hook-stage pre-push
 | [`docs/contributing/style-rust.md`](./docs/contributing/style-rust.md) | While writing Rust — idioms, error handling, API design, what to avoid. |
 | [`docs/contributing/style-frontend.md`](./docs/contributing/style-frontend.md) | While writing TypeScript or Svelte — strict TS, runes, component conventions. |
 | [`docs/contributing/testing.md`](./docs/contributing/testing.md) | When adding tests — unit/integration/property/snapshot conventions. |
-| [`docs/release/packaging.md`](./docs/release/packaging.md) | Before tagging a release — AUR, crates.io, GitHub Actions. |
-| [`docs/release/stabilisation.md`](./docs/release/stabilisation.md) | What still has to be true before 1.0. |
+| [`packaging/README.md`](./packaging/README.md) | Before tagging a release — what publishing does, AUR, crates.io, GitHub Actions. |
 
 Deferred workarounds and known follow-up work are tracked as [GitHub issues](https://github.com/AlexSandilands/superpanels/issues), not in a doc.
 
@@ -112,7 +111,7 @@ Memorise the headings, not the contents. When you hit a question, you'll know wh
 
 ## Workflow
 
-1. Pick something to work on — open [GitHub issues](https://github.com/AlexSandilands/superpanels/issues) or the unticked items in `docs/release/stabilisation.md` / `docs/release/packaging.md`.
+1. Pick something to work on — see the [GitHub issues](https://github.com/AlexSandilands/superpanels/issues).
 2. Make a feature branch: `git checkout -b feat/display-rotation-watch`.
 3. **Write the test first** for non-trivial logic. See [`docs/contributing/testing.md`](./docs/contributing/testing.md).
 4. Implement.

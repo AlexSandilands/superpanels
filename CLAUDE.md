@@ -15,8 +15,7 @@ Linux wallpaper manager focused on **physical-bezel-aware multi-monitor spanning
 | Writing Rust (errors, idioms, API design) | `docs/contributing/style-rust.md` |
 | Writing TypeScript / Svelte | `docs/contributing/style-frontend.md` |
 | Writing or running tests | `docs/contributing/testing.md` |
-| Releasing — packaging, AUR, crates.io | `docs/release/packaging.md` |
-| Roadmap toward 1.0 | `docs/release/stabilisation.md` |
+| Releasing — packaging, AUR, crates.io | `packaging/README.md` |
 | Deferred follow-ups / known workarounds | GitHub issues (see below) |
 | Local setup, tools, hooks | `CONTRIBUTING.md` |
 
