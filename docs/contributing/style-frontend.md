@@ -117,6 +117,9 @@ ui/src/
     ├── slideshow-controller.svelte.ts  ← slideshow state + transport
     ├── canvas/
     │   ├── drag.svelte.ts              ← drag state machine
+    │   ├── image-drag.ts               ← out-of-band library→canvas
+    │   │                                  drop payload (WebKitGTK
+    │   │                                  DataTransfer workaround)
     │   ├── select.ts                   ← selection-scoped mutations
     │   ├── transform-actions.ts        ← gap/cover/reset orchestrations
     │   ├── preview-layout.ts           ← orchestrator + geometry

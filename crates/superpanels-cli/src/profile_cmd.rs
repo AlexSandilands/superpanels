@@ -10,19 +10,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 use superpanels_core::backends::detect_backend;
-use superpanels_core::config::{
-    BackendKind, Config, PerMonitorAssignment, Profile, ProfileBody, StandardLayer,
-};
+use superpanels_core::config::{BackendKind, Config, Profile, ProfileBody, StandardLayer};
 use superpanels_core::detect;
 use superpanels_core::display::{Monitor, MonitorRef};
-use superpanels_core::image::{
-    FitMode as ImageFitMode, clear_temp_dir, load, render_composite, save_temp, scale_to_fit,
-};
-use superpanels_core::layout::{
-    FitMode as LayoutFitMode, ImageRectMm, compute_composite_crop_specs, synthesise_placements,
-};
+use superpanels_core::image::{clear_temp_dir, load, render_composite, save_temp};
+use superpanels_core::layout::{ImageRectMm, compute_composite_crop_specs, synthesise_placements};
 use superpanels_core::schedule::MonitorPlacement;
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::ipc_client;
 
@@ -95,15 +89,6 @@ pub(crate) fn apply_cmd(
                 &standard.layers,
                 &monitors,
                 &profile.monitor_state,
-                backend_kind,
-                &custom_cmd,
-            )?;
-        }
-        ProfileBody::PerMonitor(pm) => {
-            run_per_monitor_apply(
-                &pm.assignments,
-                &monitors,
-                pm.fit,
                 backend_kind,
                 &custom_cmd,
             )?;
@@ -300,50 +285,6 @@ fn run_composite_apply(
     }
     backend.apply(&assignments).context("backend apply")?;
     Ok(())
-}
-
-fn run_per_monitor_apply(
-    assignments: &[PerMonitorAssignment],
-    monitors: &[Monitor],
-    fit: LayoutFitMode,
-    backend_kind: BackendKind,
-    custom_cmd: &str,
-) -> Result<()> {
-    let backend = detect_backend(backend_kind, custom_cmd);
-    clear_temp_dir()?;
-    let token = apply_token();
-    let mut backend_assignments: Vec<(MonitorRef, PathBuf)> = Vec::new();
-    for assignment in assignments {
-        let monitor = monitors.iter().find(|m| {
-            m.stable_id
-                .as_deref()
-                .is_some_and(|id| id == assignment.monitor.stable_id)
-                || m.name == assignment.monitor.name
-        });
-        if let Some(monitor) = monitor {
-            let source = load(&assignment.path)
-                .with_context(|| format!("loading {}", assignment.path.display()))?;
-            let resized = scale_to_fit(&source, monitor.resolution, layout_fit(fit));
-            let safe = sanitise_filename(&monitor.name);
-            let path = save_temp(&resized, &format!("{safe}-{token}.png"))?;
-            backend_assignments.push((monitor_ref(monitor), path));
-        } else {
-            warn!(monitor = %assignment.monitor.name, "monitor not found in layout; skipping");
-        }
-    }
-    backend
-        .apply(&backend_assignments)
-        .context("backend apply")?;
-    Ok(())
-}
-
-fn layout_fit(f: LayoutFitMode) -> ImageFitMode {
-    match f {
-        LayoutFitMode::Fill => ImageFitMode::Fill,
-        LayoutFitMode::Fit => ImageFitMode::Fit,
-        LayoutFitMode::Stretch => ImageFitMode::Stretch,
-        LayoutFitMode::Center => ImageFitMode::Center,
-    }
 }
 
 fn monitor_ref(m: &Monitor) -> MonitorRef {

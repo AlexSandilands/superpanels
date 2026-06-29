@@ -5,14 +5,13 @@
 //! consistent with the live monitor set and the on-disk image / folder
 //! references.
 
-use std::collections::HashSet;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::config::{ImageSet, ImageSource, PerMonitorAssignment, Profile, ProfileBody};
-use crate::display::{Monitor, MonitorRef};
+use crate::config::{ImageSet, ImageSource, Profile, ProfileBody};
+use crate::display::Monitor;
 use crate::schedule::{TopologyFingerprint, monitor_key};
 
 /// Concrete reason a profile is disabled. The GUI lists every reason that
@@ -34,9 +33,6 @@ pub enum DisableReason {
     },
     /// Slideshow image set has no sources at all — nothing was picked yet.
     SlideshowEmpty,
-    MonitorNotConnected {
-        monitor: MonitorRef,
-    },
     PhysicalSizeMissing {
         stable_id: String,
     },
@@ -63,8 +59,6 @@ impl ProfileValidity {
                 actual: actual_fp,
             });
         }
-
-        let connected_keys: HashSet<String> = monitors.iter().map(monitor_key).collect();
 
         // Physical size only matters for profiles that project an image onto the
         // canvas plane. An empty Standard renders an all-black desktop and needs
@@ -106,20 +100,6 @@ impl ProfileValidity {
                     reasons.push(DisableReason::FolderMissingOrEmpty {
                         path: image_set_representative_path(images),
                     });
-                }
-            }
-            ProfileBody::PerMonitor(pm) => {
-                for PerMonitorAssignment { monitor, path } in &pm.assignments {
-                    if !connected_keys.contains(&monitor.stable_id)
-                        && !connected_keys.contains(&monitor.name)
-                    {
-                        reasons.push(DisableReason::MonitorNotConnected {
-                            monitor: monitor.clone(),
-                        });
-                    }
-                    if !path.exists() {
-                        reasons.push(DisableReason::ImageMissing { path: path.clone() });
-                    }
                 }
             }
         }

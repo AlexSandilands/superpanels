@@ -87,10 +87,6 @@ impl WallpaperBackend for CustomBackend {
             backend: NAME,
         })
     }
-
-    fn supports_per_monitor(&self) -> bool {
-        true
-    }
 }
 
 /// Split on whitespace and substitute placeholders. `OsString` so non-UTF-8
@@ -232,9 +228,8 @@ mod tests {
     }
 
     #[test]
-    fn name_and_per_monitor_flags() {
+    fn name_is_stable() {
         let backend = CustomBackend::new("x");
         assert_eq!(backend.name(), "custom");
-        assert!(backend.supports_per_monitor());
     }
 }

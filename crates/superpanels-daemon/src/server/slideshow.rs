@@ -40,7 +40,7 @@ pub(super) async fn cmd_slideshow_advance(
         };
         let images = match &profile.body {
             ProfileBody::Slideshow(slideshow) => slideshow.source.images.clone(),
-            ProfileBody::Standard(_) | ProfileBody::PerMonitor(_) => {
+            ProfileBody::Standard(_) => {
                 return IpcResponse::failure("active profile has no slideshow");
             }
         };
@@ -117,7 +117,7 @@ pub(super) async fn cmd_slideshow_prev(state: Arc<Mutex<DaemonState>>) -> IpcRes
         };
         match &profile.body {
             ProfileBody::Slideshow(_) => {}
-            ProfileBody::Standard(_) | ProfileBody::PerMonitor(_) => {
+            ProfileBody::Standard(_) => {
                 return IpcResponse::failure("active profile has no slideshow");
             }
         }

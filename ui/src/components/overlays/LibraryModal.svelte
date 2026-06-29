@@ -62,6 +62,11 @@
     onShowImage,
   }: Props = $props();
 
+  // While a thumbnail is being dragged onto the canvas, the modal hides and goes
+  // click-through (it stays mounted so the native drag survives); it closes once
+  // the drag ends.
+  let dragging = $state(false);
+
   let searchEl: HTMLInputElement | undefined = $state();
   // Editing the image set is the primary action while a slideshow profile is
   // selected, so the mode follows the target (which can settle a tick after
@@ -145,7 +150,7 @@
   }
 </script>
 
-<Backdrop {onClose}>
+<Backdrop {onClose} passthrough={dragging}>
   <div
     class="panel flex flex-col overflow-hidden"
     style:width="min(1100px, 92vw)"
@@ -445,6 +450,8 @@
           entries={visible}
           onApply={applyEntry}
           onPin={onPinToMonitor}
+          onDragBegin={() => (dragging = true)}
+          onDragEnd={onClose}
           {selection}
           {customLayouts}
         />

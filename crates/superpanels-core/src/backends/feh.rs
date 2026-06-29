@@ -75,10 +75,6 @@ impl WallpaperBackend for FehBackend {
             backend: NAME,
         })
     }
-
-    fn supports_per_monitor(&self) -> bool {
-        false
-    }
 }
 
 #[cfg(test)]
@@ -89,11 +85,6 @@ mod tests {
     #[test]
     fn name_is_stable() {
         assert_eq!(FehBackend::new().name(), "feh");
-    }
-
-    #[test]
-    fn supports_per_monitor_is_false() {
-        assert!(!FehBackend::new().supports_per_monitor());
     }
 
     #[test]

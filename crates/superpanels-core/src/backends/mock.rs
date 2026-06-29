@@ -58,10 +58,6 @@ impl WallpaperBackend for MockBackend {
             backend: "mock",
         })
     }
-
-    fn supports_per_monitor(&self) -> bool {
-        true
-    }
 }
 
 #[cfg(test)]

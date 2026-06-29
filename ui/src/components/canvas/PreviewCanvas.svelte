@@ -21,6 +21,7 @@
     type PreviewMonitor,
   } from '$lib/canvas/preview-layout';
   import { createDragController } from '$lib/canvas/drag.svelte';
+  import { takeDraggedImagePath } from '$lib/canvas/image-drag';
   import { cursorFor, hitTest, type Hit } from '$lib/canvas/hit-test';
   import type { ImageTransform } from '$lib/stores/image-transform.svelte';
   import type { CanvasLayer } from '$lib/stores/canvas-layers.svelte';
@@ -37,6 +38,9 @@
     imageTransform: ImageTransform;
     onImageTransformChange: (next: ImageTransform) => void;
     onMonitorDrop?: (monitorId: string, path: string) => void;
+    /** Image dropped on the canvas but not over any monitor — add it as a
+     *  normal whole-desktop layer (the off-monitor counterpart to `onMonitorDrop`). */
+    onCanvasDrop?: (path: string) => void;
     // Composite mode — non-empty `layers` switches the canvas from the single
     // span image to a stack of independently-draggable, removable layers.
     layers?: CanvasLayer[];
@@ -53,6 +57,7 @@
     imageTransform,
     onImageTransformChange,
     onMonitorDrop,
+    onCanvasDrop,
     layers = [],
     onLayerTransformChange,
     onLayerRemove,
@@ -189,6 +194,38 @@
       imageUrl,
       imgRect,
     });
+  }
+
+  // Drop targeting tests monitor rects directly, ignoring layer/image z-order:
+  // a monitor covered by an existing layer must still register as the drop
+  // target so a dropped image can snap onto it (the general `hitAt` returns the
+  // layer on top, which is correct for pointer gestures but wrong for drops).
+  function monitorAtClient(clientX: number, clientY: number): string | null {
+    if (!stageEl) return null;
+    const r = stageEl.getBoundingClientRect();
+    const px = clientX - r.left;
+    const py = clientY - r.top;
+    for (let i = monitorRects.length - 1; i >= 0; i -= 1) {
+      const rect = monitorRects[i];
+      const m = previewMonitors[i];
+      if (
+        rect &&
+        m &&
+        px >= rect.x &&
+        px <= rect.x + rect.w &&
+        py >= rect.y &&
+        py <= rect.y + rect.h
+      )
+        return m.id;
+    }
+    return null;
+  }
+
+  /** Monitor id at a viewport-client coordinate, or `null` when not over one.
+   *  App's OS file-drop path uses this: Tauri's native drop carries a position
+   *  but bypasses this component's own `ondrop` handler. */
+  export function monitorIdAtClient(clientX: number, clientY: number): string | null {
+    return monitorAtClient(clientX, clientY);
   }
 
   function onPointerDown(ev: PointerEvent) {
@@ -374,20 +411,22 @@
   function handleDrop(ev: DragEvent) {
     ev.preventDefault();
     dropHover = null;
-    const path =
-      ev.dataTransfer?.getData('application/x-superpanels-image') ??
-      ev.dataTransfer?.getData('text/plain') ??
-      '';
+    // Only handle in-app library drags, whose absolute path arrives out-of-band
+    // (WebKitGTK clobbers the DataTransfer for an <img>-bearing drag — see
+    // `image-drag.ts`). OS / file-manager drags carry no in-app payload and are
+    // delivered cleanly via Tauri's native file-drop (App's window `onDrop`), so
+    // ignoring them here avoids a duplicate add and a non-absolute path error.
+    const path = takeDraggedImagePath();
     if (!path) return;
-    const hit = hitAt(ev.clientX, ev.clientY);
-    if (hit.type === 'monitor') onMonitorDrop?.(hit.id, path);
+    const id = monitorAtClient(ev.clientX, ev.clientY);
+    if (id) onMonitorDrop?.(id, path);
+    else onCanvasDrop?.(path);
   }
 
   function handleDragOver(ev: DragEvent) {
     if (!ev.dataTransfer) return;
     ev.preventDefault();
-    const hit = hitAt(ev.clientX, ev.clientY);
-    dropHover = hit.type === 'monitor' ? hit.id : null;
+    dropHover = monitorAtClient(ev.clientX, ev.clientY);
   }
 </script>
 

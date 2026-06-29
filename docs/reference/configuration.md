@@ -147,7 +147,7 @@ A profile is **the mode the user is in**, not a one-shot apply request. It bundl
 
 - `monitor_state: HashMap<String, MonitorPlacement>` — physical mm placements keyed by `stable_id` (or `name` fallback). Gaps between monitors fall out of these placements; there is no separate bezel field.
 - `topology: TopologyFingerprint` — opaque hash over the connected `stable_id`s + rotations the profile was authored against. Compared by equality at apply time; mismatch disables the profile until the user re-authors via the **topology-repair flow**.
-- `body: ProfileBody` — one of three flat variants: `Standard { layers }`, `Slideshow { source, image_rect_mm }`, or `PerMonitor { assignments, fit }`. The flat split keeps "per-monitor + slideshow" unrepresentable.
+- `body: ProfileBody` — one of two flat variants: `Standard { layers }` or `Slideshow { source, image_rect_mm }`. Both share the unified canvas / `monitor_state` model; to fill a single monitor with one image, drop it onto that monitor (a one-layer Standard cover-fit to that monitor's rect) rather than a dedicated mode.
 - `Standard { layers: Vec<StandardLayer> }` — one or more free-positioned images on the canvas at once. **A single image is just a one-layer Standard** — there is no separate single-image mode. Each `StandardLayer` is `{ path, image_rect_mm }` in canvas mm-space; `layers` is bottom-to-top stacking order. At apply, every monitor alpha-composites the layers that overlap it (top over bottom), uncovered regions render black — so one image can slice across two monitors while another fills a third. Shares the profile-level `monitor_state` (placements/gaps). See `docs/reference/layout-math.md` § Standard.
 - `Slideshow { source, image_rect_mm }` — `source` holds the image set, timing `config`, sparse per-image `overrides`, and the `uniform_layout` flag; `image_rect_mm` is the profile-level canvas rectangle. A slideshow source may carry sparse per-image `overrides` (placements + image rect keyed by absolute path); the daemon's slideshow-apply choke point swaps them in when that image comes up, and the GUI canvas follows live. Untuned slideshow images use the profile's placements with a per-image cover-fit rect (aspect preserved, sliced across the placed desktop plane), unless the slideshow sets `uniform_layout` — then the profile-level `image_rect_mm` applies to every untuned image.
 
@@ -157,7 +157,6 @@ A profile is **disabled** when any of:
 - A Standard layer's image is missing, or the Standard profile has no layers (`standard_empty`).
 - Slideshow image set has no sources yet (`slideshow_empty` — the GUI offers the "add images" flow instead of repair).
 - Slideshow image set has no usable source (every folder missing/empty and every picked image missing — one healthy source keeps the profile enabled).
-- Referenced `MonitorRef` in a `PerMonitor` body is not connected.
 - Required `physical_size_mm` missing for any expected monitor.
 
 Disabled profiles show greyed-out with their disable reasons; they don't auto-apply when a schedule fires.

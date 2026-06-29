@@ -42,8 +42,7 @@
       if (n === 1) return p.body.layers[0]?.path || '(no image)';
       return `${n} image${n === 1 ? '' : 's'}`;
     }
-    if (p.body.type === 'slideshow') return 'slideshow';
-    return `${p.body.assignments.length} pins`;
+    return 'slideshow';
   }
 </script>
 

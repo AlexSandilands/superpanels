@@ -9,7 +9,7 @@
 </script>
 
 <div class="pin-pop">
-  <div class="section-label" style:margin-bottom="4px">Pin to…</div>
+  <div class="section-label" style:margin-bottom="4px">Snap onto…</div>
   {#if monitorStore.monitors.length === 0}
     <div style:font-size="11px" style:color="var(--text-3)">No monitors detected.</div>
   {:else}

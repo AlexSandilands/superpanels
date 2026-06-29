@@ -73,10 +73,6 @@ impl WallpaperBackend for HyprlandBackend {
             backend: NAME,
         })
     }
-
-    fn supports_per_monitor(&self) -> bool {
-        true
-    }
 }
 
 fn preload(path: &std::path::Path) -> Result<(), BackendError> {
@@ -136,10 +132,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn name_and_per_monitor_flags() {
+    fn name_is_stable() {
         let b = HyprlandBackend::new();
         assert_eq!(b.name(), "hyprland");
-        assert!(b.supports_per_monitor());
     }
 
     #[test]

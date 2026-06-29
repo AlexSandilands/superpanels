@@ -83,10 +83,6 @@ impl WallpaperBackend for GnomeBackend {
             backend: NAME,
         })
     }
-
-    fn supports_per_monitor(&self) -> bool {
-        false
-    }
 }
 
 fn gsettings_set(key: &str, value: &str) -> Result<(), BackendError> {
@@ -224,10 +220,9 @@ mod tests {
     }
 
     #[test]
-    fn name_is_stable_and_per_monitor_is_false() {
+    fn name_is_stable() {
         let b = GnomeBackend::new();
         assert_eq!(b.name(), "gnome");
-        assert!(!b.supports_per_monitor());
     }
 
     #[test]

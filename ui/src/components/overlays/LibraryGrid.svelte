@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { LibraryEntry } from '$lib/api';
+  import { beginImageDrag, endImageDrag } from '$lib/canvas/image-drag';
   import { libraryStore } from '$lib/stores/library.svelte';
   import { toast } from '$lib/stores/toast.svelte';
   import Icon from '../widgets/Icon.svelte';
@@ -24,10 +25,23 @@
      *  action). Also fired on double-click. */
     onApply: (entry: LibraryEntry) => void;
     onPin: (monitorId: string, path: string) => void;
+    /** A thumbnail drag began — the host gets out of the way (hides the library)
+     *  so the image can be dropped on the canvas. */
+    onDragBegin?: (() => void) | undefined;
+    /** The drag ended (dropped or cancelled) — the host can close. */
+    onDragEnd?: (() => void) | undefined;
     selection?: SlideshowSelection | null;
     customLayouts?: CustomLayouts | null;
   };
-  let { entries, onApply, onPin, selection = null, customLayouts = null }: Props = $props();
+  let {
+    entries,
+    onApply,
+    onPin,
+    onDragBegin,
+    onDragEnd,
+    selection = null,
+    customLayouts = null,
+  }: Props = $props();
 
   let scrollEl: HTMLDivElement | undefined = $state();
   let scrollTop = $state(0);
@@ -77,9 +91,21 @@
 
   function onDragStart(ev: DragEvent, entry: LibraryEntry) {
     if (!ev.dataTransfer) return;
+    // The absolute path travels out-of-band: WebKitGTK clobbers the DataTransfer
+    // for an element drag containing an <img> (see `image-drag.ts`). The setData
+    // below only keeps the native drag alive and gives it a copy cursor.
+    beginImageDrag(entry.path);
     ev.dataTransfer.effectAllowed = 'copy';
-    ev.dataTransfer.setData('application/x-superpanels-image', entry.path);
     ev.dataTransfer.setData('text/plain', entry.path);
+    // Give the drag a visible ghost from the thumbnail itself.
+    const card = ev.currentTarget as HTMLElement | null;
+    const img = card?.querySelector('img');
+    if (img) ev.dataTransfer.setDragImage(img, img.clientWidth / 2, img.clientHeight / 2);
+    // Hide the library on the *next* frame, not synchronously: the drag image is
+    // snapshotted when this handler returns, and unmounting/hiding the source
+    // mid-dragstart cancels the drag on webkit. Deferring keeps the drag alive
+    // and the source mounted (the host hides it, it doesn't unmount it).
+    requestAnimationFrame(() => onDragBegin?.());
   }
 
   function aspectLabel(ratio: number): string {
@@ -121,6 +147,10 @@
           class:selected={m === 'image'}
           draggable="true"
           ondragstart={(ev) => onDragStart(ev, item.entry)}
+          ondragend={() => {
+            endImageDrag();
+            onDragEnd?.();
+          }}
           ondblclick={() => {
             // In selection mode the single click already toggled — a second
             // toggle here would make every double-click fire three times.
@@ -240,7 +270,7 @@
                 <button
                   class="btn sm"
                   style:padding="0 6px"
-                  title="Set for monitor…"
+                  title="Snap onto monitor…"
                   onclick={(ev) => {
                     ev.stopPropagation();
                     pinFor = pinFor === item.entry.path ? null : item.entry.path;

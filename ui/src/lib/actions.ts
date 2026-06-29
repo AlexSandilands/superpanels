@@ -4,7 +4,7 @@
 
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { api, errorMessage, type Profile } from '$lib/api';
-import { buildPreviewMonitors, stableId } from '$lib/canvas/preview-layout';
+import { buildPreviewMonitors } from '$lib/canvas/preview-layout';
 import { canvasView, type MonitorOverride } from '$lib/stores/canvas-view.svelte';
 import { canvasLayers } from '$lib/stores/canvas-layers.svelte';
 import { imageTransform } from '$lib/stores/image-transform.svelte';
@@ -19,13 +19,7 @@ import { runtime } from '$lib/stores/runtime.svelte';
 import { toast } from '$lib/stores/toast.svelte';
 import type { ImageRectMm } from '$lib/types/ImageRectMm';
 import type { MonitorPlacement } from '$lib/types/MonitorPlacement';
-import {
-  isPerMonitorBody,
-  isSlideshowBody,
-  isStandardBody,
-  type PerMonitorAssignment,
-  type SlideshowSource,
-} from '$lib/types/profile-helpers';
+import { isSlideshowBody, isStandardBody, type SlideshowSource } from '$lib/types/profile-helpers';
 
 function imageRectFromTransform(): ImageRectMm {
   const t = imageTransform.value;
@@ -269,31 +263,22 @@ export async function addImageToSlideshowSet(path: string): Promise<void> {
   toast.success('Added to slideshow', path.split('/').pop() ?? path);
 }
 
-export function pinImageToMonitor(monitorId: string, path: string): void {
+/** Drop an image directly onto a monitor: add it as a standard-canvas layer
+ *  contain-fitted to that monitor at the image's aspect — the whole image sits
+ *  inside the monitor (letterboxed for wider images, pillarboxed for taller),
+ *  never cropped. The snap buttons fill it from there. Falls back to a
+ *  whole-desktop cover-fit if the monitor isn't in the current layout. */
+export function dropImageOnMonitor(monitorId: string, path: string): void {
   if (!profileStore.draft) profileStore.newProfile();
-  const detected = monitorStore.monitors.find((m) => stableId(m) === monitorId);
-  if (!detected) {
-    toast.error('Drop ignored', 'monitor not found in layout');
-    return;
-  }
-  const assignment: PerMonitorAssignment = {
-    monitor: { stable_id: detected.stable_id ?? '', name: detected.name },
-    path,
-  };
   profileStore.patchDraft((d) => {
-    if (!isPerMonitorBody(d.body)) {
-      d.body = { type: 'per_monitor', assignments: [assignment], fit: 'fill' };
-      return;
+    if (!isStandardBody(d.body)) {
+      d.body = { type: 'standard', layers: [] };
     }
-    const idx = d.body.assignments.findIndex(
-      (a) =>
-        (a.monitor.stable_id !== '' && a.monitor.stable_id === assignment.monitor.stable_id) ||
-        a.monitor.name === assignment.monitor.name,
-    );
-    if (idx >= 0) d.body.assignments[idx] = assignment;
-    else d.body.assignments.push(assignment);
   });
-  toast.success('Image pinned', `${detected.name}: ${path.split('/').pop() ?? path}`);
+  const monitors = buildPreviewMonitors(monitorStore.monitors, canvasView.overrides);
+  void canvasLayers.add(path, monitors, monitorId);
+  const name = monitors.find((m) => m.id === monitorId)?.name;
+  toast.success('Snapped to monitor', `${name ? `${name}: ` : ''}${path.split('/').pop() ?? path}`);
 }
 
 // Source writes queue behind one another so a burst of library toggles can't

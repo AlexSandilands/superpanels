@@ -68,8 +68,6 @@ pub trait WallpaperBackend: Send + Sync {
     /// Cheap check — no subprocess spawn.
     fn availability(&self) -> Availability;
     fn apply(&self, assignments: &[(MonitorRef, PathBuf)]) -> Result<AppliedReport, BackendError>;
-    /// `false` for backends that composite then set one image.
-    fn supports_per_monitor(&self) -> bool;
 }
 
 /// Walk the ladder and return the first available backend.
@@ -155,10 +153,6 @@ impl WallpaperBackend for UnavailableBackend {
                 self.tried.join(", ")
             ),
         })
-    }
-
-    fn supports_per_monitor(&self) -> bool {
-        false
     }
 }
 

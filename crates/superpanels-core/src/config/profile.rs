@@ -8,12 +8,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::display::MonitorRef;
-use crate::layout::{FitMode, ImageRectMm};
+use crate::layout::ImageRectMm;
 use crate::schedule::MonitorPlacement;
 
-/// `body` of a [`super::Profile`]. Each variant is a distinct wallpaper mode;
-/// the flat split keeps "per-monitor + slideshow" unrepresentable.
+/// `body` of a [`super::Profile`]. Each variant is a distinct wallpaper mode.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../ui/src/lib/types/")]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -22,7 +20,6 @@ pub enum ProfileBody {
     /// is just a one-layer Standard — there is no separate single-image mode.
     Standard(StandardProfile),
     Slideshow(SlideshowProfile),
-    PerMonitor(PerMonitorProfile),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -221,21 +218,6 @@ pub struct StandardProfile {
 pub struct StandardLayer {
     pub path: PathBuf,
     pub image_rect_mm: ImageRectMm,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../ui/src/lib/types/")]
-pub struct PerMonitorProfile {
-    pub assignments: Vec<PerMonitorAssignment>,
-    #[serde(default)]
-    pub fit: FitMode,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../ui/src/lib/types/")]
-pub struct PerMonitorAssignment {
-    pub monitor: MonitorRef,
-    pub path: PathBuf,
 }
 
 /// Type alias rather than a wrapper struct: `chrono::DateTime<Utc>`

@@ -94,10 +94,6 @@ impl WallpaperBackend for SwayBackend {
             backend: NAME,
         })
     }
-
-    fn supports_per_monitor(&self) -> bool {
-        true
-    }
 }
 
 fn select_tool() -> Option<SwayTool> {
@@ -157,10 +153,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn name_and_per_monitor_flags() {
+    fn name_is_stable() {
         let b = SwayBackend::new();
         assert_eq!(b.name(), "sway");
-        assert!(b.supports_per_monitor());
     }
 
     #[test]

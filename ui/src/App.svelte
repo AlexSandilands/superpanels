@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import type { Profile } from '$lib/api';
+  import { takeDraggedImagePath } from '$lib/canvas/image-drag';
   import { canvasView } from '$lib/stores/canvas-view.svelte';
   import { canvasLayers } from '$lib/stores/canvas-layers.svelte';
   import { daemonStatus } from '$lib/stores/daemon-status.svelte';
@@ -25,9 +26,9 @@
     addImageToSlideshowSet,
     applyDraftProfile,
     applyMonitorStateToCanvas,
+    dropImageOnMonitor,
     openMainWindow,
     persistSlideshowSource,
-    pinImageToMonitor,
     quitApp,
     revertCanvasToActive,
     saveActiveProfile,
@@ -486,14 +487,26 @@
 
   // Adding an image while editing a slideshow would silently discard its
   // source/timer/overrides; offer Add-to-set vs Convert-to-standard instead.
-  let pendingCanvasDrop = $state<{ path: string } | null>(null);
+  // Bound to PreviewCanvas so the OS file-drop path can hit-test the drop point
+  // against the monitors — Tauri's native drop bypasses the canvas's own
+  // `ondrop` handler, so it can't reuse that path's monitor targeting.
+  let canvasRef = $state<{ monitorIdAtClient: (x: number, y: number) => string | null }>();
 
-  function requestAddImageToCanvas(path: string): void {
+  let pendingCanvasDrop = $state<{ path: string; monitorId?: string } | null>(null);
+
+  function requestAddImageToCanvas(path: string, monitorId?: string): void {
     if (draft && isSlideshowBody(draft.body)) {
-      pendingCanvasDrop = { path };
+      pendingCanvasDrop = monitorId ? { path, monitorId } : { path };
       return;
     }
-    addImageToCanvas(path);
+    if (monitorId) dropImageOnMonitor(monitorId, path);
+    else addImageToCanvas(path);
+  }
+
+  // Canvas / library drops that target a specific monitor add a layer pre-snapped
+  // to fill it; they still route through the slideshow-discard guard above.
+  function requestDropOnMonitor(monitorId: string, path: string): void {
+    requestAddImageToCanvas(path, monitorId);
   }
 
   // Schedule-preemption tracking (§4e.11.6). The sentinel + dirty-canvas
@@ -678,7 +691,20 @@
       onOpenSettings: () => (settingsOpen = true),
       onDragOver: () => (dragOverlay = true),
       onDragLeave: () => (dragOverlay = false),
-      onDrop: (path) => requestAddImageToCanvas(path),
+      onDrop: (path, position) => {
+        // An internal library drag is delivered through this native handler too
+        // on WebKitGTK, but its `path` is the thumbnail's `blob:` URL, not the
+        // file — the real absolute path travels out-of-band (see `image-drag.ts`).
+        // OS file-manager drags have no in-app payload and use the native `path`.
+        const dropPath = takeDraggedImagePath() ?? path;
+        if (!dropPath.startsWith('/')) return;
+        // Tauri reports the drop in physical pixels; the canvas hit-test works
+        // in CSS pixels relative to the (viewport-filling) stage.
+        const dpr = window.devicePixelRatio || 1;
+        const monitorId =
+          canvasRef?.monitorIdAtClient(position.x / dpr, position.y / dpr) ?? undefined;
+        requestAddImageToCanvas(dropPath, monitorId);
+      },
       onMonitorsChanged: () => void monitorStore.refresh(),
     });
 
@@ -800,12 +826,14 @@
 
 <div class="fixed inset-0 overflow-hidden">
   <PreviewCanvas
+    bind:this={canvasRef}
     monitors={monitorStore.monitors}
     bezelHmm={snapHmm}
     imageUrl={standard ? null : imageUrl}
     imageTransform={imageTransform.value}
     onImageTransformChange={(t) => imageTransform.set(t)}
-    onMonitorDrop={pinImageToMonitor}
+    onMonitorDrop={requestDropOnMonitor}
+    onCanvasDrop={(path) => requestAddImageToCanvas(path)}
     layers={standard ? canvasLayers.list : []}
     onLayerTransformChange={(id, t) => canvasLayers.patch(id, t)}
     onLayerRemove={(id) => canvasLayers.remove(id)}
@@ -959,7 +987,7 @@
   {#if libraryOpen}
     <LibraryModal
       onClose={() => (libraryOpen = false)}
-      onPinToMonitor={pinImageToMonitor}
+      onPinToMonitor={requestDropOnMonitor}
       onAddToCanvas={requestAddImageToCanvas}
       {slideshowTarget}
       onUpdateSlideshow={(images) => void updateSlideshowImages(images)}
@@ -1038,7 +1066,9 @@
       onConvert={() => {
         const next = pendingCanvasDrop;
         pendingCanvasDrop = null;
-        if (next) addImageToCanvas(next.path);
+        if (!next) return;
+        if (next.monitorId) dropImageOnMonitor(next.monitorId, next.path);
+        else addImageToCanvas(next.path);
       }}
       onAddToSet={() => {
         const next = pendingCanvasDrop;

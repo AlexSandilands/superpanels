@@ -137,18 +137,15 @@
     if (b.type === 'standard') {
       return `Standard (${b.layers.length} image${b.layers.length === 1 ? '' : 's'})`;
     }
-    if (b.type === 'slideshow') {
-      const src = b.source;
-      if (src.images.sources.length === 0) return 'Slideshow (empty)';
-      const folders = folderCount(src.images);
-      const images = imageCount(src.images);
-      const parts = [
-        folders > 0 ? `${folders} folder${folders === 1 ? '' : 's'}` : null,
-        images > 0 ? `${images} image${images === 1 ? '' : 's'}` : null,
-      ].filter(Boolean);
-      return `Slideshow (${parts.join(', ')})`;
-    }
-    return `Per-monitor (${b.assignments.length})`;
+    const src = b.source;
+    if (src.images.sources.length === 0) return 'Slideshow (empty)';
+    const folders = folderCount(src.images);
+    const images = imageCount(src.images);
+    const parts = [
+      folders > 0 ? `${folders} folder${folders === 1 ? '' : 's'}` : null,
+      images > 0 ? `${images} image${images === 1 ? '' : 's'}` : null,
+    ].filter(Boolean);
+    return `Slideshow (${parts.join(', ')})`;
   }
 
   function disableReasonText(r: DisableReason): string {
@@ -161,8 +158,6 @@
         return `folder missing or empty: ${r.path}`;
       case 'slideshow_empty':
         return 'slideshow has no images yet';
-      case 'monitor_not_connected':
-        return `monitor not connected (${r.monitor.name})`;
       case 'physical_size_missing':
         return `monitor size not set (${r.stable_id})`;
     }
