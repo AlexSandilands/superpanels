@@ -334,14 +334,16 @@ check_runtime_deps() {
     return
   fi
 
+  # Only the header carries the `warning:` label; the detail/command lines are
+  # plain (still yellow on a TTY, still stderr) so the block reads as one notice.
   warn "the GUI needs these runtime libraries, which appear to be missing:"
   printf '%s' "$missing_lines" | while IFS= read -r line; do
-    [ -n "$line" ] && warn "$line"
+    [ -n "$line" ] && printf '%s%s%s\n' "$YELLOW" "$line" "$YRESET" >&2
   done
-  warn "install them with:"
-  warn "  $(install_cmd "$family" "$missing_pkgs")"
+  printf '%sinstall them with:%s\n' "$YELLOW" "$YRESET" >&2
+  printf '%s  %s%s\n' "$YELLOW" "$(install_cmd "$family" "$missing_pkgs")" "$YRESET" >&2
   if [ "$family" = arch ]; then
-    warn "  (or install the AUR package, which declares these: yay -S superpanels)"
+    printf '%s  (or install the AUR package, which declares these: yay -S superpanels)%s\n' "$YELLOW" "$YRESET" >&2
   fi
 }
 
