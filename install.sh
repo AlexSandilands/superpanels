@@ -31,8 +31,13 @@ xdg_data_home()   { printf '%s' "${XDG_DATA_HOME:-$HOME/.local/share}"; }
 xdg_state_home()  { printf '%s' "${XDG_STATE_HOME:-$HOME/.local/state}"; }
 xdg_cache_home()  { printf '%s' "${XDG_CACHE_HOME:-$HOME/.cache}"; }
 
+# Colorize warnings (stderr) and the dependency-OK line (stdout) only when the
+# stream is a TTY, so piped/redirected output (`| sh`, logs) stays escape-free.
+if [ -t 2 ]; then YELLOW="$(printf '\033[33m')"; YRESET="$(printf '\033[0m')"; else YELLOW=""; YRESET=""; fi
+if [ -t 1 ]; then GREEN="$(printf '\033[32m')";  GRESET="$(printf '\033[0m')";  else GREEN="";  GRESET=""; fi
+
 say()  { printf '==> %s\n' "$*"; }
-warn() { printf 'warning: %s\n' "$*" >&2; }
+warn() { printf '%swarning: %s%s\n' "$YELLOW" "$*" "$YRESET" >&2; }
 err()  { printf 'error: %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
@@ -243,19 +248,101 @@ do_uninstall() {
   fi
 }
 
-webkit_note() {
-  pkg="webkit2gtk-4.1"
+# The GUI's runtime libraries. WebKitGTK is a NEEDED link dep (its absence
+# fails at the dynamic linker), but the appindicator tray lib is dlopen()ed at
+# runtime, so a missing one only surfaces as a startup panic (GitHub #35). We
+# probe for both after install and warn — in yellow — only about what's absent.
+#
+# Per-distro package names mirror the declared deps of the native packages; keep
+# this in sync with packaging/aur-superpanels/PKGBUILD (depends=...) and
+# crates/superpanels-gui/tauri.conf.json (linux.deb/.rpm depends).
+
+# ldconfig lives in /sbin, often off a non-root PATH — try the usual locations.
+ldconfig_cache() {
+  if have ldconfig; then ldconfig -p 2>/dev/null
+  elif [ -x /sbin/ldconfig ]; then /sbin/ldconfig -p 2>/dev/null
+  elif [ -x /usr/sbin/ldconfig ]; then /usr/sbin/ldconfig -p 2>/dev/null
+  fi
+}
+
+# True if any of the given sonames is findable by the runtime loader.
+lib_present() { # <soname>...
+  for so in "$@"; do
+    ldconfig_cache | grep -Fq -- "$so" && return 0
+    for d in /usr/lib /usr/lib64 /lib /lib64 /usr/lib/x86_64-linux-gnu /usr/local/lib; do
+      [ -e "$d/$so" ] && return 0
+    done
+  done
+  return 1
+}
+
+distro_family() {
   if [ -r /etc/os-release ]; then
     # shellcheck disable=SC1091
     id="$(. /etc/os-release 2>/dev/null && echo "${ID:-} ${ID_LIKE:-}")"
     case "$id" in
-      *fedora*|*rhel*) pkg="webkit2gtk4.1 (dnf)";;
-      *debian*|*ubuntu*) pkg="libwebkit2gtk-4.1-0 (apt)";;
-      *arch*) pkg="webkit2gtk-4.1 (pacman) — or just: yay -S superpanels";;
+      *arch*)            echo arch;   return;;
+      *fedora*|*rhel*)   echo fedora; return;;
+      *debian*|*ubuntu*) echo debian; return;;
     esac
   fi
+  echo unknown
+}
+
+pkg_name() { # <dep> <family>
+  case "$1.$2" in
+    webkit.fedora)       echo webkit2gtk4.1;;
+    webkit.debian)       echo libwebkit2gtk-4.1-0;;
+    webkit.*)            echo webkit2gtk-4.1;;
+    appindicator.fedora) echo libayatana-appindicator-gtk3;;
+    appindicator.debian) echo libayatana-appindicator3-1;;
+    appindicator.arch)   echo libayatana-appindicator;;
+    appindicator.*)      echo libayatana-appindicator3;;
+  esac
+}
+
+install_cmd() { # <family> <pkgs>
+  case "$1" in
+    arch)   echo "sudo pacman -S --needed $2";;
+    fedora) echo "sudo dnf install $2";;
+    debian) echo "sudo apt install $2";;
+    *)      echo "install with your package manager: $2";;
+  esac
+}
+
+check_runtime_deps() {
+  family="$(distro_family)"
+  missing_pkgs=""
+  missing_lines=""
+
+  if ! lib_present libwebkit2gtk-4.1.so.0; then
+    p="$(pkg_name webkit "$family")"
+    missing_pkgs="${missing_pkgs:+$missing_pkgs }$p"
+    missing_lines="${missing_lines}  $p — renders the GUI's webview (required)
+"
+  fi
+  if ! lib_present libayatana-appindicator3.so.1 libappindicator3.so.1; then
+    p="$(pkg_name appindicator "$family")"
+    missing_pkgs="${missing_pkgs:+$missing_pkgs }$p"
+    missing_lines="${missing_lines}  $p — provides the system-tray icon; the GUI won't start without it (required)
+"
+  fi
+
   echo
-  say "the GUI needs WebKitGTK 4.1 at runtime: install '$pkg' if it isn't already."
+  if [ -z "$missing_pkgs" ]; then
+    printf '%s==> all GUI runtime dependencies satisfied%s\n' "$GREEN" "$GRESET"
+    return
+  fi
+
+  warn "the GUI needs these runtime libraries, which appear to be missing:"
+  printf '%s' "$missing_lines" | while IFS= read -r line; do
+    [ -n "$line" ] && warn "$line"
+  done
+  warn "install them with:"
+  warn "  $(install_cmd "$family" "$missing_pkgs")"
+  if [ "$family" = arch ]; then
+    warn "  (or install the AUR package, which declares these: yay -S superpanels)"
+  fi
 }
 
 do_install() {
@@ -314,7 +401,7 @@ do_install() {
   refresh_caches
 
   say "installed Superpanels $VERSION — run 'superpanels-gui' or 'superpanels --help'"
-  webkit_note
+  check_runtime_deps
 }
 
 case "$ACTION" in
