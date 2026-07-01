@@ -51,30 +51,38 @@ pub fn compute_crop_specs(/* ... */) -> Result<Vec<CropSpec>, LayoutError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::schedule::monitor_key;
 
-    fn monitor(id: u32, w_px: u32, h_px: u32, w_mm: u32, h_mm: u32) -> Monitor {
+    fn monitor(id: u32, name: &str, w_px: u32, h_px: u32, w_mm: u32, h_mm: u32) -> Monitor {
         // helper for terse test setup
     }
 
-    #[test]
-    fn single_monitor_no_bezel_returns_full_image() {
-        let monitors = vec![monitor(0, 1920, 1080, 527, 296)];
-        let bezels = BezelConfig::zero();
-        let crops = compute_crop_specs(&monitors, &bezels, FitMode::Fill, (1920, 1080)).unwrap();
-
-        assert_eq!(crops.len(), 1);
-        assert_eq!(crops[0].src_rect, Rect::new(0, 0, 1920, 1080));
+    fn place(x_mm: f32, y_mm: f32) -> MonitorPlacement {
+        MonitorPlacement { x_mm, y_mm }
     }
 
     #[test]
-    fn two_identical_monitors_with_uniform_bezel() {
+    fn single_monitor_image_covering_returns_full_image() {
+        let monitors = vec![monitor(0, "DP-1", 1920, 1080, 480, 270)];
+        let mut placements = HashMap::new();
+        placements.insert(monitor_key(&monitors[0]), place(0.0, 0.0));
+        let rect = ImageRectMm { x_mm: 0.0, y_mm: 0.0, w_mm: 480.0, h_mm: 270.0 };
+        let crops = compute_crop_specs(&monitors, &placements, (1920, 1080), rect).unwrap();
+
+        assert_eq!(crops.len(), 1);
+        assert_eq!(crops[0].src_rect.w, 1920);
+    }
+
+    #[test]
+    fn two_monitors_with_gap_skip_gap_in_source() {
         // ...
     }
 
     #[test]
     fn empty_monitor_list_returns_error() {
-        let bezels = BezelConfig::zero();
-        let result = compute_crop_specs(&[], &bezels, FitMode::Fill, (1920, 1080));
+        let placements = HashMap::new();
+        let rect = ImageRectMm { x_mm: 0.0, y_mm: 0.0, w_mm: 100.0, h_mm: 100.0 };
+        let result = compute_crop_specs(&[], &placements, (1920, 1080), rect);
         assert!(matches!(result, Err(LayoutError::EmptyMonitorList)));
     }
 }
@@ -85,7 +93,7 @@ mod tests {
 - Test name describes the scenario AND the expected outcome:
   - ✅ `single_monitor_no_bezel_returns_full_image`
   - ❌ `test_compute_crop_specs_1`
-- Helper functions for setup — `monitor()`, `bezels_uniform(8.0, 5.0)` — keep tests readable.
+- Helper functions for setup — `monitor()`, `place(0.0, 0.0)` — keep tests readable.
 - One concept per test. If you find yourself writing "Test 1, Test 2, Test 3" assertions, split the test.
 - `assert!(matches!(...))` is the idiomatic way to assert a `Result` variant.
 - Use `tempfile::tempdir()` for any test that touches the filesystem. Never `/tmp` directly.
@@ -190,8 +198,9 @@ fn arb_monitors() -> impl Strategy<Value = Vec<Monitor>> {
 proptest! {
     #[test]
     fn crops_never_overlap(monitors in arb_monitors()) {
-        let bezels = BezelConfig::uniform(8.0, 0.0);
-        let crops = compute_crop_specs(&monitors, &bezels, FitMode::Fill, (10000, 1080)).unwrap();
+        let placements = synthesise_placements(&monitors);
+        let rect = cover_image_rect_mm(&monitors, (10000, 1080));
+        let crops = compute_crop_specs(&monitors, &placements, (10000, 1080), rect).unwrap();
         for (i, a) in crops.iter().enumerate() {
             for b in crops.iter().skip(i + 1) {
                 prop_assert!(!a.src_rect.intersects(&b.src_rect));
@@ -201,8 +210,9 @@ proptest! {
 
     #[test]
     fn every_monitor_gets_one_crop(monitors in arb_monitors()) {
-        let bezels = BezelConfig::uniform(8.0, 0.0);
-        let crops = compute_crop_specs(&monitors, &bezels, FitMode::Fill, (10000, 1080)).unwrap();
+        let placements = synthesise_placements(&monitors);
+        let rect = cover_image_rect_mm(&monitors, (10000, 1080));
+        let crops = compute_crop_specs(&monitors, &placements, (10000, 1080), rect).unwrap();
         prop_assert_eq!(crops.len(), monitors.len());
     }
 }
@@ -224,12 +234,15 @@ Every example in a public-API rustdoc must compile and run. `cargo test` runs th
 /// # Example
 ///
 /// ```
-/// use superpanels_core::{Monitor, BezelConfig, FitMode, compute_crop_specs};
+/// use superpanels_core::{Monitor, compute_crop_specs, cover_image_rect_mm, synthesise_placements};
 ///
-/// let monitor = Monitor::new(/* ... */);
-/// let bezels  = BezelConfig::uniform(8.0, 5.0);
-/// let crops   = compute_crop_specs(&[monitor], &bezels, FitMode::Fill, (1920, 1080))?;
-/// assert_eq!(crops.len(), 1);
+/// // Each monitor must carry `physical_size_mm: Some(..)`, or layout fails
+/// // with `LayoutError::PhysicalSizeMissing`.
+/// let monitors: Vec<Monitor> = vec![/* ... */];
+/// let placements = synthesise_placements(&monitors);
+/// let rect       = cover_image_rect_mm(&monitors, (1920, 1080));
+/// let crops      = compute_crop_specs(&monitors, &placements, (1920, 1080), rect)?;
+/// assert_eq!(crops.len(), monitors.len());
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub fn compute_crop_specs(/* ... */) -> Result<Vec<CropSpec>, LayoutError> { /* ... */ }

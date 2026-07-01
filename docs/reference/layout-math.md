@@ -20,15 +20,14 @@ Rotation is **not** authored — it's OS-reported via `Monitor.rotation` and app
 
 - `monitors: &[Monitor]` — detected layout. `Monitor.physical_size_mm: Option<(f64, f64)>` must be `Some` for every entry; missing values fail with `LayoutError::PhysicalSizeMissing`.
 - `placements: &HashMap<String, MonitorPlacement, _>` — from the active profile's `monitor_state`.
-- `image_size`, `image_rect_mm`, `fit_mode` — together control how the source rectangle is sized on the canvas.
+- `image_size_px: (u32, u32)` — the source image's natural pixel size.
+- `image_rect_mm: ImageRectMm` — the image's rectangle in canvas mm-space (`x_mm, y_mm, w_mm, h_mm`). This is the source of truth for where the image sits on the canvas.
 
 ## Algorithm
 
 1. **Collect monitors.** Sort deterministically. Reject if any monitor has `physical_size_mm == None`.
 2. **Apply rotation** to each monitor: a portrait 27" panel's effective width is its short side, its height its long side.
-3. **Resolve the source rectangle on the canvas.**
-   - When the profile pins `image_rect_mm: ImageRectMm`, use it directly.
-   - Otherwise derive from `FitMode` and the monitors' bounding box.
+3. **Resolve the source rectangle on the canvas.** The caller passes `image_rect_mm` directly — it's always the source of truth. A profile with no pinned rectangle synthesises a default via `cover_image_rect_mm`, which covers the monitors' bounding box.
 4. **Pick reference PPI.** Default to `max(monitor.ppi)` so the densest panel paints native-resolution; user can override per-profile.
 5. **For each monitor, compute `src_rect`** in source-image pixels:
    - `origin_mm = placement.(x_mm, y_mm)`

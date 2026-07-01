@@ -178,16 +178,16 @@ Prefer `impl Trait` in argument position — it reads top-down and avoids introd
 
 ```rust
 let crops = LayoutBuilder::new(&monitors)
-    .bezels(BezelConfig::uniform(8.0, 5.0))
-    .fit(FitMode::Fill)
-    .reference_ppi(108.0)
-    .compute(image_size)?;
+    .placements(&placements)
+    .image_size(image_size_px)
+    .image_rect(image_rect_mm)
+    .compute()?;
 ```
 
 vs.
 
 ```rust
-let crops = compute_crop_specs(&monitors, &bezels, FitMode::Fill, Some(108.0), image_size)?;
+let crops = compute_crop_specs(&monitors, &placements, image_size_px, image_rect_mm)?;
 ```
 
 Builder wins for legibility once you cross 3–4 args. Don't introduce a builder for a 2-arg fn.
@@ -293,11 +293,12 @@ We use `tracing`, not `log` and not `println!`.
 ```rust
 use tracing::{debug, info, warn, error, instrument};
 
-#[instrument(skip(image), fields(monitors = monitors.len()))]
+#[instrument(skip(placements), fields(monitors = monitors.len()))]
 pub fn compute_crop_specs(
     monitors: &[Monitor],
-    image: &DynamicImage,
-    bezels: &BezelConfig,
+    placements: &HashMap<String, MonitorPlacement>,
+    image_size_px: (u32, u32),
+    image_rect_mm: ImageRectMm,
 ) -> Result<Vec<CropSpec>, LayoutError> {
     info!("computing crop specs");
     // ...
