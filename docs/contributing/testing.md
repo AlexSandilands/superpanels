@@ -234,9 +234,11 @@ Every example in a public-API rustdoc must compile and run. `cargo test` runs th
 /// # Example
 ///
 /// ```
-/// use superpanels_core::{compute_crop_specs, cover_image_rect_mm, synthesise_placements};
+/// use superpanels_core::{Monitor, compute_crop_specs, cover_image_rect_mm, synthesise_placements};
 ///
-/// let monitors   = detect_monitors();
+/// // Each monitor must carry `physical_size_mm: Some(..)`, or layout fails
+/// // with `LayoutError::PhysicalSizeMissing`.
+/// let monitors: Vec<Monitor> = vec![/* ... */];
 /// let placements = synthesise_placements(&monitors);
 /// let rect       = cover_image_rect_mm(&monitors, (1920, 1080));
 /// let crops      = compute_crop_specs(&monitors, &placements, (1920, 1080), rect)?;
