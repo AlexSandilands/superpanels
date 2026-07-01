@@ -20,7 +20,6 @@
   --ok: #65c466;
   --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
   --ui: 'Inter', -apple-system, system-ui, sans-serif;
-  --pad: 14px;
   --radius: 8px;
   --radius-lg: 12px;
 }
@@ -35,13 +34,6 @@
   --text: oklch(0.2 0.01 250);
   --text-2: oklch(0.42 0.012 250);
   --text-3: oklch(0.58 0.012 250);
-}
-
-[data-density='compact'] {
-  --pad: 10px;
-}
-[data-density='spacious'] {
-  --pad: 18px;
 }
 
 * {

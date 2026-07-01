@@ -1,12 +1,24 @@
-// Persistent UI preferences: theme, accent, density, dim-always, blur.
-// Mirrored to <html data-theme=… data-density=… data-blur=…> + a CSS custom
-// property for accent so the design tokens in `app.css` pick them up.
+// Persistent UI preferences: theme, accent, scale, dim-always, blur.
+// Mirrored to <html data-theme=… data-blur=…> + a CSS custom property for
+// accent so the design tokens in `app.css` pick them up. `scale` drives native
+// webview zoom instead — px-based controls don't respond to a root font-size,
+// so we zoom the whole webview (which WebKitGTK folds into devicePixelRatio,
+// keeping the preview canvas hit-testing correct).
+
+import { getCurrentWebview } from '@tauri-apps/api/webview';
 
 export type Theme = 'auto' | 'light' | 'dark';
-export type Density = 'compact' | 'regular' | 'spacious';
+export type Scale = 'compact' | 'comfortable' | 'large';
 
 const KEY = 'superpanels.ui.v1';
 const DEFAULT_ACCENT = '#3daee9';
+
+// `compact` is the app's original fixed size; larger tiers zoom up from there.
+const SCALE_FACTORS: Record<Scale, number> = {
+  compact: 1.0,
+  comfortable: 1.1,
+  large: 1.2,
+};
 
 export const ACCENT_OPTIONS = [
   '#3daee9',
@@ -20,7 +32,7 @@ export const ACCENT_OPTIONS = [
 type Persisted = {
   theme: Theme;
   accent: string;
-  density: Density;
+  scale: Scale;
   dimsAlways: boolean;
   followSystemAccent: boolean;
   windowBlur: boolean;
@@ -34,7 +46,7 @@ function load(): Persisted {
   const fallback: Persisted = {
     theme: 'dark',
     accent: DEFAULT_ACCENT,
-    density: 'regular',
+    scale: 'compact',
     dimsAlways: true,
     followSystemAccent: false,
     windowBlur: true,
@@ -69,10 +81,19 @@ function applyTheme(theme: Theme): 'light' | 'dark' {
   return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
 }
 
+function applyWebviewZoom() {
+  if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
+  void getCurrentWebview()
+    .setZoom(SCALE_FACTORS[state.scale])
+    .catch(() => {
+      // Non-Tauri or unsupported webview: scale is a no-op, other tokens still apply.
+    });
+}
+
 export function applyDocumentTokens() {
+  applyWebviewZoom();
   if (typeof document === 'undefined') return;
   document.documentElement.dataset.theme = applyTheme(state.theme);
-  document.documentElement.dataset.density = state.density;
   document.documentElement.dataset.blur = state.windowBlur ? 'on' : 'off';
   document.documentElement.style.setProperty('--accent', state.accent);
 }
@@ -84,8 +105,8 @@ export const ui = {
   get accent() {
     return state.accent;
   },
-  get density() {
-    return state.density;
+  get scale() {
+    return state.scale;
   },
   get dimsAlways() {
     return state.dimsAlways;
