@@ -35,6 +35,7 @@ You need:
 | Rust toolchain | The core language | The `rust-toolchain.toml` file pins the channel; `rustup` installs it on first `cargo` call. Get rustup with `pacman -S rustup` then `rustup default stable`. |
 | Node + npm | Frontend tooling (prettier, eslint, Svelte) | `pacman -S nodejs npm` |
 | Tauri prerequisites | Building the GUI | `pacman -S webkit2gtk-4.1 base-devel curl wget file openssl librsvg` (Tauri v2 — no GTK3 indicator/appmenu packages needed) |
+| just | Task runner for the project's [`justfile`](./justfile) (build, run the GUI/daemon, `just check`) | `pacman -S just` |
 | pre-commit | Git hook runner | `pacman -S pre-commit` (or `pip install --user pre-commit`) |
 | typos | Fast spell-checker (used by pre-commit) | `pacman -S typos` (or `cargo install --locked typos-cli`) |
 | cargo-deny | Dep-policy enforcement | `cargo install --locked cargo-deny` |
@@ -49,6 +50,28 @@ Optional but recommended:
 | `samply` | Sampling profiler for performance work: `cargo install --locked samply` |
 
 > **Always pass `--locked` to `cargo install`.** It tells cargo to use the exact dependency versions in the tool's published `Cargo.lock`, instead of resolving fresh from the registry — which avoids transient dep-resolution failures breaking your install. Some tools (e.g. `cargo-nextest`) refuse to install without it.
+
+### Quick copy-paste (Arch / CachyOS)
+
+```sh
+# 1. System packages (Tauri v2 build prereqs + tooling). --needed skips
+#    anything already installed.
+sudo pacman -S --needed rustup nodejs npm just pre-commit typos \
+  base-devel curl wget file openssl librsvg webkit2gtk-4.1
+
+# 2. Rust toolchain (rust-toolchain.toml pins the rest — rustfmt, clippy).
+rustup default stable
+
+# 3. Cargo-installed dev tools (--locked required — see note above).
+cargo install --locked cargo-deny
+#   optional but recommended:
+# cargo install --locked cargo-nextest cargo-watch cargo-machete
+
+# 4. Frontend deps.
+npm --prefix ui ci
+```
+
+Run step 3 onward only after step 2 — `cargo` doesn't exist until `rustup default stable` completes.
 
 After installing tools, install the git hooks once per clone:
 

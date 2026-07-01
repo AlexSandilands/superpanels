@@ -54,7 +54,7 @@ return_self_not_must_use = "allow"
 [workspace.dependencies]
 # Declared here so commits 2+ can pull them in via `dep.workspace = true`.
 # None are wired into a per-crate `[dependencies]` block yet.
-anyhow             = "1.0.102"
+anyhow             = "1.0.103"
 base64             = "0.22"
 chrono             = "0.4"
 clap               = { version = "4.6.1", features = ["derive"] }
