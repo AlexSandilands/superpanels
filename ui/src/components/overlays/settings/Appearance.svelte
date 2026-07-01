@@ -2,13 +2,13 @@
   import { onMount } from 'svelte';
   import { api, errorMessage, type TrayIconStyle } from '$lib/api';
   import { toast } from '$lib/stores/toast.svelte';
-  import { ui, ACCENT_OPTIONS, type Density, type Theme } from '$lib/stores/ui.svelte';
+  import { ui, ACCENT_OPTIONS, type Scale, type Theme } from '$lib/stores/ui.svelte';
   import SectionHeader from './SectionHeader.svelte';
   import SettingRow from './SettingRow.svelte';
   import Toggle from './Toggle.svelte';
 
   const themes: Theme[] = ['auto', 'light', 'dark'];
-  const densities: Density[] = ['compact', 'regular', 'spacious'];
+  const scales: Scale[] = ['compact', 'comfortable', 'large'];
   const trayStyles: TrayIconStyle[] = ['white', 'blue'];
 
   let trayStyle = $state<TrayIconStyle>('white');
@@ -43,11 +43,11 @@
   </div>
 </SettingRow>
 
-<SettingRow label="Density" sub="Controls dock and panel padding throughout the app.">
+<SettingRow label="Scale" sub="Resizes the whole interface — buttons, icons, and text.">
   <div class="seg">
-    {#each densities as d (d)}
-      <button class:seg-active={ui.density === d} onclick={() => ui.set({ density: d })}>
-        {d}
+    {#each scales as s (s)}
+      <button class:seg-active={ui.scale === s} onclick={() => ui.set({ scale: s })}>
+        {s}
       </button>
     {/each}
   </div>
