@@ -29,6 +29,7 @@ pipeline does **no** package-repository publishing and **no** AUR push.
 | Channel | Automated on tag? | What a user actually runs |
 |---|---|---|
 | `curl … /install.sh \| sh` | ✅ yes | installs immediately from the release tarball |
+| `makepkg -si` (in `aur-superpanels/`) | n/a — always in the repo | builds from source, installs a `pacman`-tracked package; no AUR needed (below) |
 | `.deb` / `.rpm` / `.AppImage` | ⚠️ built & attached, **not** in any repo | download the file, then `sudo dnf install ./…rpm` / `sudo apt install ./…deb` |
 | `yay -S superpanels` (AUR) | ❌ no | works only after a **manual** push to the AUR remote (below) |
 | `dnf install superpanels` / `apt install superpanels` | ❌ no | needs a hosted repo (Fedora COPR / apt PPA) — not built yet |
@@ -75,13 +76,35 @@ needs no per-release change.
 > **Tip:** shake the pipeline out with a `vX.Y.Z-rc.1` pre-release tag before the
 > real tag — the live Tauri bundle / AppImage build isn't exercised by PR CI.
 
+## Build & install from source with `makepkg`
+
+`aur-superpanels/PKGBUILD` doubles as a from-source installer that needs **no AUR
+account and no hosted repo** — it works straight from a checkout today. It compiles
+the workspace and installs a real, `pacman`-tracked package (so upgrades and
+uninstall are clean), pulling the runtime `depends` in automatically:
+
+```sh
+cd packaging/aur-superpanels
+makepkg -si
+```
+
+Needs `base-devel` (for `makepkg`) plus the `makedepends` below; `makepkg` installs
+the runtime `depends` for you. It builds the **latest tagged release** — `source=()`
+downloads that tag's tarball, so local working-tree edits are *not* included; for
+those, use the `cargo build` flow in the root README's "Building from source".
+
+> On **CachyOS** — and any Arch box with `lto` enabled globally in `makepkg.conf` —
+> this only links because the PKGBUILD sets `options=('!lto')`; see
+> [Known constraints](#known-constraints).
+
 ## Updating the AUR package
 
 After a release exists:
 
 1. Bump `pkgver` in `aur-superpanels/PKGBUILD`.
-2. `cd aur-superpanels && updpkgsums` — fills in the real `sha256sums` for the tag
-   tarball (the committed copy carries a `SKIP` placeholder).
+2. `cd aur-superpanels && updpkgsums` — refresh `sha256sums` for the new tag's
+   tarball (the committed PKGBUILD carries the previous release's real hash, not a
+   `SKIP` placeholder).
 3. `makepkg --printsrcinfo > .SRCINFO`.
 4. `makepkg -f` to confirm it builds, then push to the AUR remote.
 
@@ -89,7 +112,9 @@ The AUR `PKGBUILD` runs `set-version.sh` in `prepare()` (the tag tarball ships
 `0.0.0`) and builds without `--locked` so the version rewrite can re-resolve the
 lock. `depends=(webkit2gtk-4.1 gtk3 libayatana-appindicator)`; `makedepends=(rust
 nodejs npm)` since it builds the frontend then the workspace and installs files by
-hand (no Tauri bundler).
+hand (no Tauri bundler). It also sets `options=('!lto')` — the bundled `rusqlite`
+`sqlite3.c` must stay a plain object rather than a GCC-LTO one (see Known
+constraints).
 
 ## crates.io (CLI escape hatch — not yet published)
 
@@ -115,4 +140,11 @@ hand (no Tauri bundler).
   the packaged launchers (`superpanels-gui.desktop`, `desktop-entry.hbs`). Collapsing
   these — plus the `[Desktop Entry]` body and the icon-size→hicolor mapping — onto a
   single generated source is tracked as a follow-up.
+- **makepkg LTO breaks the bundled sqlite link.** `rusqlite`'s bundled `sqlite3.c`,
+  compiled under makepkg's `lto` option, becomes a GCC-GIMPLE (fat-LTO) object whose
+  `sqlite3_*` symbols `rust-lld` can't resolve — the daemon link fails with
+  `undefined symbol: sqlite3_column_type` and friends. Stock Arch leaves LTO opt-in,
+  so it never bites there; **CachyOS (the primary target) enables it globally**, so
+  the PKGBUILD carries `options=('!lto')`. Don't drop it, and build-test the PKGBUILD
+  on an LTO-enabled machine — a stock-Arch build passes without it and hides the bug.
 - **AUR review feedback** may require PKGBUILD changes; budget a day after submission.

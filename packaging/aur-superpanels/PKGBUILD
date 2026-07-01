@@ -1,6 +1,6 @@
 # Maintainer: Alex Sandilands <profile.alex@proton.me>
 pkgname=superpanels
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Bezel-aware multi-monitor wallpaper manager (CLI, daemon, and GUI)"
 arch=('x86_64')
@@ -8,8 +8,13 @@ url="https://github.com/AlexSandilands/superpanels"
 license=('MIT' 'Apache-2.0')
 depends=('webkit2gtk-4.1' 'gtk3' 'libayatana-appindicator')
 makedepends=('rust' 'nodejs' 'npm')
+# rusqlite's `bundled` sqlite3.c must compile to a real object, not a GCC-LTO
+# one: rustc links with rust-lld, which can't read GCC's GIMPLE bytecode, so an
+# -flto object leaves every sqlite3_* symbol undefined. Stock Arch leaves LTO
+# opt-in, but CachyOS (our primary target) enables it globally in makepkg.conf.
+options=('!lto')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('b4056144774c6358952d5d8b394dddcb87bbf5cedfabef899d27b5bb944a03dd')
 
 prepare() {
   cd "$pkgname-$pkgver"

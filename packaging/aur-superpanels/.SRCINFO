@@ -1,6 +1,6 @@
 pkgbase = superpanels
 	pkgdesc = Bezel-aware multi-monitor wallpaper manager (CLI, daemon, and GUI)
-	pkgver = 0.1.0
+	pkgver = 0.2.0
 	pkgrel = 1
 	url = https://github.com/AlexSandilands/superpanels
 	arch = x86_64
@@ -12,7 +12,8 @@ pkgbase = superpanels
 	depends = webkit2gtk-4.1
 	depends = gtk3
 	depends = libayatana-appindicator
-	source = superpanels-0.1.0.tar.gz::https://github.com/AlexSandilands/superpanels/archive/refs/tags/v0.1.0.tar.gz
-	sha256sums = SKIP
+	options = !lto
+	source = superpanels-0.2.0.tar.gz::https://github.com/AlexSandilands/superpanels/archive/refs/tags/v0.2.0.tar.gz
+	sha256sums = b4056144774c6358952d5d8b394dddcb87bbf5cedfabef899d27b5bb944a03dd
 
 pkgname = superpanels
