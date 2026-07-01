@@ -154,6 +154,22 @@ superpanels set panorama.jpg --save-as desk
 
 Rust workspace (`crates/superpanels-{core,cli,daemon,gui}`) with a Svelte 5 frontend in `ui/`. Stable toolchain; Node for the GUI frontend.
 
+**Dependencies:**
+
+- **Rust toolchain** — `rustup` (the pinned channel installs on first `cargo` call).
+- **Node + npm** — builds the GUI frontend.
+- **Tauri v2 build prereqs** — `base-devel`, `curl`, `wget`, `file`, `openssl`, `librsvg`, and **WebKitGTK 4.1** (`webkit2gtk-4.1`).
+- **`just`** — task runner for the [`justfile`](./justfile) (optional for a plain build; used throughout the dev flow).
+
+On Arch / CachyOS:
+
+```sh
+sudo pacman -S --needed rustup nodejs npm just base-devel curl wget file openssl librsvg webkit2gtk-4.1
+rustup default stable
+```
+
+Then build:
+
 ```sh
 git clone https://github.com/AlexSandilands/superpanels.git
 cd superpanels
@@ -166,7 +182,7 @@ npm --prefix ui ci && npm --prefix ui run build
 cargo build --release -p superpanels-gui
 ```
 
-Tauri OS prerequisites, the dev/HMR flow, and the WebKitGTK Wayland note are in [CONTRIBUTING.md](./CONTRIBUTING.md). Packaging and release mechanics live in [`packaging/README.md`](./packaging/README.md).
+Contributing (extra tooling — `pre-commit`, `typos`, `cargo-deny` — plus the dev/HMR flow and the WebKitGTK Wayland note) is covered in [CONTRIBUTING.md](./CONTRIBUTING.md). Packaging and release mechanics live in [`packaging/README.md`](./packaging/README.md).
 
 ## Documentation
 
