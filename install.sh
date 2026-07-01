@@ -21,6 +21,7 @@ PREFIX="${PREFIX:-/usr/local}"
 VERSION=""
 ACTION="install"
 PURGE=0
+PRERELEASE=0
 ICON_SIZES="32x32 128x128 256x256"
 
 # Default XDG dirs the GUI writes into at runtime (autostart entry, app-menu
@@ -52,6 +53,7 @@ plus the desktop entry and icons from a GitHub release.
 
 Options (after `| sh -s --`, or when running the file directly):
   --version <v>    install a specific version (default: latest release)
+  --prerelease     install the newest release including prereleases (rc/beta)
   --prefix <dir>   install root (default: /usr/local; use ~/.local for no sudo)
   --uninstall      stop the daemon/tray and remove the install (keeps config)
   --purge          like --uninstall, and also delete config/data/state
@@ -64,6 +66,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --version) VERSION="${2:?--version needs an argument}"; shift 2;;
     --version=*) VERSION="${1#*=}"; shift;;
+    --prerelease) PRERELEASE=1; shift;;
     --prefix) PREFIX="${2:?--prefix needs an argument}"; shift 2;;
     --prefix=*) PREFIX="${1#*=}"; shift;;
     --uninstall) ACTION="uninstall"; shift;;
@@ -349,10 +352,20 @@ check_runtime_deps() {
 
 do_install() {
   if [ -z "$VERSION" ]; then
-    say "resolving latest release"
-    VERSION="$(fetch_stdout "https://api.github.com/repos/$REPO/releases/latest" \
-      | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
-    [ -n "$VERSION" ] || err "could not determine the latest release"
+    if [ "$PRERELEASE" -eq 1 ]; then
+      # `releases/latest` excludes prereleases; hit the unfiltered list and
+      # take the first entry (GitHub returns newest-first) so `rc`/`beta`
+      # tags — which the release workflow flags as prereleases — are reachable.
+      say "resolving newest release (including prereleases)"
+      VERSION="$(fetch_stdout "https://api.github.com/repos/$REPO/releases?per_page=1" \
+        | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+      [ -n "$VERSION" ] || err "could not determine the newest release"
+    else
+      say "resolving latest release"
+      VERSION="$(fetch_stdout "https://api.github.com/repos/$REPO/releases/latest" \
+        | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+      [ -n "$VERSION" ] || err "could not determine the latest release"
+    fi
   fi
   VERSION="${VERSION#v}"
 

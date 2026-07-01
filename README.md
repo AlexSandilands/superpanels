@@ -52,7 +52,7 @@ curl -fsSL https://raw.githubusercontent.com/AlexSandilands/superpanels/main/ins
 
 To also delete your settings, slideshow state, and data, use `--purge` instead of `--uninstall`. If you installed with a custom `--prefix`, pass the same one when uninstalling.
 
-**Options** (after `| sh -s --`): `--version <v>` to pin a release, `--prefix <dir>` to install somewhere else (e.g. `~/.local` for no sudo). The GUI needs two runtime libraries — **WebKitGTK 4.1** (renders the webview) and a **system-tray library** (provides the tray icon; the GUI won't start without it). The installer scans for both and prints the exact command for your distro if either is missing:
+**Options** (after `| sh -s --`): `--version <v>` to pin a release, `--prerelease` to install the newest release including prereleases (`rc`/`beta`), `--prefix <dir>` to install somewhere else (e.g. `~/.local` for no sudo). The GUI needs two runtime libraries — **WebKitGTK 4.1** (renders the webview) and a **system-tray library** (provides the tray icon; the GUI won't start without it). The installer scans for both and prints the exact command for your distro if either is missing:
 
 | Distro | WebKitGTK | System tray |
 |---|---|---|
