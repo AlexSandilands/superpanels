@@ -6,6 +6,7 @@
   import ProfileMenu from './ProfileMenu.svelte';
   import WindowMenu from './WindowMenu.svelte';
   import { runtime } from '$lib/stores/runtime.svelte';
+  import { daemonStatus } from '$lib/stores/daemon-status.svelte';
 
   type Props = {
     profiles: Profile[];
@@ -96,6 +97,17 @@
 
   const lastApplyText = $derived(runtime.describeLastApply(nowMs));
   const activeProfile = $derived(profiles.find((p) => p.name === activeName) ?? null);
+
+  const daemonDotClass = $derived(
+    daemonStatus.starting ? 'warn' : daemonStatus.connected ? 'ok' : 'danger',
+  );
+  const daemonDotTitle = $derived(
+    daemonStatus.starting
+      ? 'Daemon starting…'
+      : daemonStatus.connected
+        ? 'Daemon connected'
+        : 'Daemon not running',
+  );
 </script>
 
 <div
@@ -164,8 +176,8 @@
   <div style:flex="1"></div>
 
   <div class="flex items-center" style:gap="8px">
-    <span class="chip" title="Last apply">
-      <span class="dot ok"></span>
+    <span class="chip" title={daemonDotTitle}>
+      <span class="dot {daemonDotClass}"></span>
       <span class="mono" style:color="var(--text-2)">{backendName}</span>
       <span style:color="var(--text-3)">·</span>
       <span class="mono" style:color="var(--text-3)">{lastApplyText}</span>
