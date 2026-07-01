@@ -60,7 +60,21 @@ function load(): Persisted {
     const raw = window.localStorage?.getItem(KEY);
     if (!raw) return fallback;
     const parsed = JSON.parse(raw) as Partial<Persisted>;
-    return { ...fallback, ...parsed };
+    // Rebuild field-by-field rather than spread-merging: unknown/removed keys
+    // (e.g. the dropped `density`) never enter state, so the blob self-heals on
+    // the next persist() and renamed prefs don't accumulate.
+    return {
+      theme: parsed.theme ?? fallback.theme,
+      accent: parsed.accent ?? fallback.accent,
+      scale: parsed.scale ?? fallback.scale,
+      dimsAlways: parsed.dimsAlways ?? fallback.dimsAlways,
+      followSystemAccent: parsed.followSystemAccent ?? fallback.followSystemAccent,
+      windowBlur: parsed.windowBlur ?? fallback.windowBlur,
+      trayRun: parsed.trayRun ?? fallback.trayRun,
+      notify: parsed.notify ?? fallback.notify,
+      motion: parsed.motion ?? fallback.motion,
+      locale: parsed.locale ?? fallback.locale,
+    };
   } catch {
     return fallback;
   }
