@@ -211,20 +211,39 @@ async fn run_daemon(cli: Cli) -> Result<()> {
     // doesn't fire. See §6.3.
     display_watch::spawn(Arc::clone(&state), monitors_tx.clone());
 
-    // Apply the default profile (if set) after a short delay to allow compositor readiness.
+    // Apply the default profile (if set) after a short delay to allow compositor
+    // readiness. At session login the compositor (e.g. plasmashell) may not be up
+    // when the first apply fires, so retry with backoff before giving up —
+    // otherwise the desktop keeps whatever wallpaper the compositor cached.
     if let Some(profile_name) = initial_profile {
         let state_clone = Arc::clone(&state);
         let timer_tx_clone = timer_tx.clone();
         tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(500)).await;
-            let req = superpanels_core::ipc::IpcRequest {
-                v: superpanels_core::ipc::PROTOCOL_VERSION,
-                method: "apply_profile".to_owned(),
-                params: serde_json::json!({"name": profile_name}),
-            };
-            let resp = server::dispatch_for_tests(req, state_clone, timer_tx_clone).await;
-            if !resp.is_ok() {
-                warn!(error = ?resp.error, "default profile apply on startup failed");
+            // Cumulative delays from boot: ~0.5s, ~2s, ~5s.
+            const BACKOFF_MS: [u64; 3] = [500, 1500, 3000];
+            for (attempt, delay_ms) in BACKOFF_MS.iter().enumerate() {
+                tokio::time::sleep(Duration::from_millis(*delay_ms)).await;
+                let req = superpanels_core::ipc::IpcRequest {
+                    v: superpanels_core::ipc::PROTOCOL_VERSION,
+                    method: "apply_profile".to_owned(),
+                    params: serde_json::json!({"name": profile_name}),
+                };
+                let resp = server::dispatch_for_tests(
+                    req,
+                    Arc::clone(&state_clone),
+                    timer_tx_clone.clone(),
+                )
+                .await;
+                if resp.is_ok() {
+                    break;
+                }
+                if attempt + 1 == BACKOFF_MS.len() {
+                    warn!(error = ?resp.error, attempts = BACKOFF_MS.len(),
+                        "default profile apply on startup failed after retries");
+                } else {
+                    warn!(error = ?resp.error, attempt = attempt + 1,
+                        "default profile apply on startup failed; retrying");
+                }
             }
         });
     }
