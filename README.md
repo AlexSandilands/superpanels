@@ -188,6 +188,18 @@ npm --prefix ui ci && npm --prefix ui run build
 cargo build --release -p superpanels-gui
 ```
 
+**Arch / CachyOS — install as a `pacman` package:** for a proper package that
+`pacman`/`paru` tracks (clean upgrades and uninstall) instead of the loose binaries
+above, build straight from the bundled PKGBUILD — no AUR account needed:
+
+```sh
+cd packaging/aur-superpanels
+makepkg -si   # compiles from source, pulls the runtime deps, installs the package
+```
+
+This builds the **latest tagged release**, not your local edits (the PKGBUILD
+fetches the release tarball). See [`packaging/README.md`](./packaging/README.md).
+
 Contributing needs extra tooling (`pre-commit`, `typos`, `cargo-deny`) and git hooks. [CONTRIBUTING.md](./CONTRIBUTING.md) covers the full setup — install the system packages it lists, then `just setup` bootstraps the Rust toolchain, dev tools, frontend deps, and hooks in one step — plus the dev/HMR flow and the WebKitGTK Wayland note. Packaging and release mechanics live in [`packaging/README.md`](./packaging/README.md).
 
 ## Documentation
