@@ -1,6 +1,16 @@
 _default:
     @just --list
 
+# One-time contributor setup after installing system packages (see README /
+# CONTRIBUTING). Pins the Rust toolchain, installs cargo dev tools + frontend
+# deps, and wires up the git hooks. Idempotent — safe to re-run.
+setup:
+    rustup default stable
+    cargo install --locked cargo-deny
+    npm --prefix ui ci
+    pre-commit install
+    pre-commit install --hook-type pre-push
+
 # Build the Svelte frontend bundle into ui/dist (consumed by the GUI).
 ui-build:
     npm --prefix ui run build

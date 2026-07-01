@@ -188,7 +188,7 @@ npm --prefix ui ci && npm --prefix ui run build
 cargo build --release -p superpanels-gui
 ```
 
-Contributing (extra tooling — `pre-commit`, `typos`, `cargo-deny` — plus the dev/HMR flow and the WebKitGTK Wayland note) is covered in [CONTRIBUTING.md](./CONTRIBUTING.md). Packaging and release mechanics live in [`packaging/README.md`](./packaging/README.md).
+Contributing needs extra tooling (`pre-commit`, `typos`, `cargo-deny`) and git hooks. [CONTRIBUTING.md](./CONTRIBUTING.md) covers the full setup — install the system packages it lists, then `just setup` bootstraps the Rust toolchain, dev tools, frontend deps, and hooks in one step — plus the dev/HMR flow and the WebKitGTK Wayland note. Packaging and release mechanics live in [`packaging/README.md`](./packaging/README.md).
 
 ## Documentation
 
