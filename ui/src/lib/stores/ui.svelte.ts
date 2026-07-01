@@ -46,7 +46,7 @@ function load(): Persisted {
   const fallback: Persisted = {
     theme: 'dark',
     accent: DEFAULT_ACCENT,
-    scale: 'compact',
+    scale: 'comfortable',
     dimsAlways: true,
     followSystemAccent: false,
     windowBlur: true,
