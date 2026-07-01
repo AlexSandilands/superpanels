@@ -59,32 +59,32 @@ Optional but recommended:
 sudo pacman -S --needed rustup nodejs npm just pre-commit typos \
   base-devel curl wget file openssl librsvg webkit2gtk-4.1
 
-# 2. Rust toolchain (rust-toolchain.toml pins the rest — rustfmt, clippy).
-rustup default stable
-
-# 3. Cargo-installed dev tools (--locked required — see note above).
-cargo install --locked cargo-deny
-#   optional but recommended:
-# cargo install --locked cargo-nextest cargo-watch cargo-machete
-
-# 4. Frontend deps.
-npm --prefix ui ci
+# 2. Rust toolchain, cargo dev tools, frontend deps, and git hooks — one shot.
+#    Idempotent; safe to re-run.
+just setup
 ```
 
-Run step 3 onward only after step 2 — `cargo` doesn't exist until `rustup default stable` completes.
-
-After installing tools, install the git hooks once per clone:
-
-```sh
-pre-commit install                      # installs pre-commit hooks
-pre-commit install --hook-type pre-push # installs the slower pre-push hooks
-```
-
-Verify everything works:
+After that, `just build` works. Verify the setup:
 
 ```sh
 pre-commit run --all-files
 cargo check --workspace --all-features
+```
+
+**What `just setup` does**, if you'd rather run the steps by hand or need to debug a failure. Order matters — `cargo` doesn't exist until `rustup default stable` completes:
+
+```sh
+rustup default stable                    # Rust toolchain (rust-toolchain.toml pins rustfmt/clippy)
+cargo install --locked cargo-deny        # dep-policy tool (--locked required — see note above)
+npm --prefix ui ci                       # frontend deps
+pre-commit install                       # fast commit hooks
+pre-commit install --hook-type pre-push  # slower pre-push hooks
+```
+
+Optional but recommended dev tools:
+
+```sh
+cargo install --locked cargo-nextest cargo-watch cargo-machete
 ```
 
 ---
