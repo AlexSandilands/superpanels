@@ -35,6 +35,15 @@ ignore = [
     # Other transitive unmaintained crates with no upstream fix path.
     "RUSTSEC-2024-0370",  # proc-macro-error — via tauri-macros / older proc-macro deps
     "RUSTSEC-2025-0057",  # fxhash — transitive
+    # quick-xml DoS advisories (fixed in >=0.41.0). Every reachable path is
+    # already on 0.41 (plist/tauri chain bumped, tauri-winrt-notification 0.7.3
+    # dropped its old copy). The lone holdout is wayland-scanner 0.31.10, which
+    # pins quick-xml ^0.39 and has no newer release — a build-time proc-macro
+    # parsing the trusted, bundled Wayland protocol XML (not attacker input, and
+    # a plain Reader, which -0195 notes is unaffected). Drop these when
+    # wayland-rs releases a wayland-scanner on quick-xml >=0.41.
+    "RUSTSEC-2026-0194",  # quick-xml quadratic duplicate-attribute check
+    "RUSTSEC-2026-0195",  # quick-xml unbounded NsReader namespace allocation
 ]
 
 [licenses]
