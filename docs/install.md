@@ -5,6 +5,7 @@ Every method installs the same build; pick the one that fits your distro. Each s
 - [Install script (any glibc Linux)](#install-script-any-glibc-linux)
 - [Arch / CachyOS: pacman repo](#arch--cachyos-pacman-repo)
 - [Native bundles (.deb / .rpm / .AppImage)](#native-bundles-deb--rpm--appimage)
+- [Troubleshooting](#troubleshooting)
 - [From source](#from-source)
 
 ## Runtime dependencies
@@ -130,6 +131,20 @@ To turn it off, toggle **Autostart on login** off in the GUI (Settings → Gener
 That override lives in your home, so a package-manager removal (`pacman -R`, `apt/dnf remove`) can't clean it — it survives an uninstall. Harmless on its own, but if you later **reinstall and autostart unexpectedly stays off**, delete `~/.config/autostart/superpanels.desktop` to clear the stale override. (`install.sh --uninstall` removes it for you.)
 
 (The `.deb`/`.rpm` bundles don't set up autostart; enable it from the GUI toggle if you want it.)
+
+## Troubleshooting
+
+**Laggy webview UI, or the GUI crashes on launch with `Gdk-Message: Error 71`**
+
+The GUI auto-detects NVIDIA-on-Wayland and applies a WebKitGTK DMABUF-renderer
+workaround only there (it's off elsewhere, so Intel/AMD keep GPU acceleration).
+Override it if detection gets your setup wrong:
+
+- Force it **on** (if you hit the crash): `WEBKIT_DISABLE_DMABUF_RENDERER=1 superpanels-gui`
+- Force it **off** (NVIDIA driver no longer crashes, want acceleration back):
+  `env -u WEBKIT_DISABLE_DMABUF_RENDERER superpanels-gui`
+
+An explicit setting always wins over auto-detection.
 
 ## From source
 

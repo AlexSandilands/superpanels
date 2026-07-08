@@ -20,7 +20,10 @@ const ENV_VAR: &str = "WEBKIT_DISABLE_DMABUF_RENDERER";
 pub(crate) fn apply() {
     // An explicit setting in either direction is the escape hatch, and it also
     // breaks the post-re-exec loop: the child inherits the `1` we set below, so
-    // this returns immediately the second time through.
+    // this returns immediately the second time through. Whether `=0` re-enables
+    // DMABUF is WebKitGTK's call — some versions gate on the var's presence, not
+    // its value — but honouring the user's setting untouched is the contract
+    // either way (to force acceleration back on, unset the var rather than `=0`).
     if std::env::var_os(ENV_VAR).is_some() {
         return;
     }
