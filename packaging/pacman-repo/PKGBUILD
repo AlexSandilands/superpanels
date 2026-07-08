@@ -13,6 +13,10 @@ license=('MIT' 'Apache-2.0')
 depends=('webkit2gtk-4.1' 'gtk3' 'libayatana-appindicator')
 provides=("superpanels=$pkgver")
 conflicts=('superpanels')
+# These are prebuilt, already-stripped release binaries — makepkg must not
+# re-strip them or split a -debug package (the container's makepkg.conf enables
+# both), which would otherwise land a bogus superpanels-bin-debug in the repo.
+options=('!strip' '!debug')
 source=("$url/releases/download/v$pkgver/superpanels-$pkgver-x86_64-linux.tar.gz")
 sha256sums=('1fab99a9c6c1c427dddf84f8f010580165cbc53145992acbdc272ac49495019a')
 

@@ -68,6 +68,12 @@ if ! git clone --depth 1 --branch gh-pages "$REMOTE" "$PAGES_DIR" 2>/dev/null; t
   git -C "$PAGES_DIR" remote add origin "$REMOTE"
 fi
 
+# repo-add runs as `builder` (below), but PAGES_DIR sits under a root-owned,
+# mode-0700 `mktemp -d`. Without this, builder can't traverse into the tree and
+# repo-add fails with "x86_64/ does not exist". The db dir itself is chowned to
+# builder further down; git stays root-owned for the clone/commit/push.
+chmod 0755 "$(dirname "$PAGES_DIR")" "$PAGES_DIR"
+
 touch "$PAGES_DIR/.nojekyll"
 as_builder gpg --export --armor "$KEYID" > "$PAGES_DIR/superpanels.gpg"
 mkdir -p "$PAGES_DIR/x86_64"
