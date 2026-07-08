@@ -52,13 +52,39 @@ curl -fsSL https://raw.githubusercontent.com/AlexSandilands/superpanels/main/ins
 
 To also delete your settings, slideshow state, and data, use `--purge` instead of `--uninstall`. If you installed with a custom `--prefix`, pass the same one when uninstalling.
 
-**Options** (after `| sh -s --`): `--version <v>` to pin a release, `--prerelease` to install the newest release including prereleases (`rc`/`beta`), `--prefix <dir>` to install somewhere else (e.g. `~/.local` for no sudo). The GUI needs two runtime libraries — **WebKitGTK 4.1** (renders the webview) and a **system-tray library** (provides the tray icon; the GUI won't start without it). The installer scans for both and prints the exact command for your distro if either is missing:
+**Options** (after `| sh -s --`): `--version <v>` to pin a release, `--prerelease` to install the newest release including prereleases (`rc`/`beta`), `--prefix <dir>` to install somewhere else (e.g. `~/.local` for no sudo). The GUI needs two runtime libraries — **WebKitGTK 4.1** (renders the webview) and a **system-tray library** (provides the tray icon; the GUI won't start without it). The installer scans for both, prints the exact command for your distro if either is missing, and offers to run it for you:
 
 | Distro | WebKitGTK | System tray |
 |---|---|---|
 | Arch / CachyOS | `webkit2gtk-4.1` | `libayatana-appindicator` |
 | Fedora / RHEL | `webkit2gtk4.1` | `libayatana-appindicator-gtk3` |
 | Debian / Ubuntu | `libwebkit2gtk-4.1-0` | `libayatana-appindicator3-1` |
+
+### Arch / CachyOS: pacman repo
+
+Alternatively, add the signed Superpanels package repo — dependencies resolve automatically and `pacman -Syu` picks up new releases like any other package. One-time key trust:
+
+```sh
+curl -fsSLo /tmp/superpanels.gpg https://alexsandilands.github.io/superpanels/superpanels.gpg
+sudo pacman-key --add /tmp/superpanels.gpg
+sudo pacman-key --lsign-key <signing-key-id>
+```
+
+then append to `/etc/pacman.conf`:
+
+```ini
+[superpanels]
+SigLevel = Required DatabaseOptional
+Server = https://alexsandilands.github.io/superpanels/$arch
+```
+
+and install:
+
+```sh
+sudo pacman -Syu superpanels-bin
+```
+
+The repo carries stable releases only (prereleases go through `install.sh --prerelease`); details in [`packaging/README.md`](./packaging/README.md).
 
 Prefer to build it yourself? See [Building from source](#building-from-source).
 

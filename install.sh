@@ -313,26 +313,82 @@ install_cmd() { # <family> <pkgs>
   esac
 }
 
-check_runtime_deps() {
-  family="$(distro_family)"
-  missing_pkgs=""
-  missing_lines=""
-
+# Sets MISSING_PKGS / MISSING_LINES from a fresh library probe, so the check
+# can run again after a package install.
+probe_missing_deps() { # <family>
+  MISSING_PKGS=""
+  MISSING_LINES=""
   if ! lib_present libwebkit2gtk-4.1.so.0; then
-    p="$(pkg_name webkit "$family")"
-    missing_pkgs="${missing_pkgs:+$missing_pkgs }$p"
-    missing_lines="${missing_lines}  $p — renders the GUI's webview (required)
+    p="$(pkg_name webkit "$1")"
+    MISSING_PKGS="${MISSING_PKGS:+$MISSING_PKGS }$p"
+    MISSING_LINES="${MISSING_LINES}  $p — renders the GUI's webview (required)
 "
   fi
   if ! lib_present libayatana-appindicator3.so.1 libappindicator3.so.1; then
-    p="$(pkg_name appindicator "$family")"
-    missing_pkgs="${missing_pkgs:+$missing_pkgs }$p"
-    missing_lines="${missing_lines}  $p — provides the system-tray icon; the GUI won't start without it (required)
+    p="$(pkg_name appindicator "$1")"
+    MISSING_PKGS="${MISSING_PKGS:+$MISSING_PKGS }$p"
+    MISSING_LINES="${MISSING_LINES}  $p — provides the system-tray icon; the GUI won't start without it (required)
 "
   fi
+}
+
+# Under `curl … | sh` stdin is the pipe, so interactive prompts must go through
+# /dev/tty; when it can't be opened (CI, non-interactive shells) callers fall
+# back to print-only behaviour.
+tty_usable() { { : </dev/tty; } 2>/dev/null; }
+
+# run_priv gates on $PREFIX writability, which is the wrong test here: a
+# package install always needs root, even for a --prefix ~/.local install.
+run_pkg_install() { # <family> <pkg>...
+  family="$1"; shift
+  case "$family" in
+    arch)   set -- pacman -S --needed "$@";;
+    fedora) set -- dnf install "$@";;
+    debian) set -- apt install "$@";;
+    *)      return 1;;
+  esac
+  # stdin from /dev/tty so the package manager's own confirmation prompt (and
+  # sudo's password prompt) stay interactive under `curl … | sh`.
+  if [ "$(id -u)" -eq 0 ]; then
+    "$@" </dev/tty
+  elif have sudo; then
+    sudo "$@" </dev/tty
+  else
+    warn "no sudo available — run the command above as root, then re-run this script to re-check"
+    return 1
+  fi
+}
+
+offer_dep_install() { # <family>
+  # Unknown distro → no concrete command to offer; the printed hint is all we
+  # have. Never auto-run a package install without a TTY confirmation.
+  case "$1" in arch|fedora|debian) ;; *) return 0;; esac
+  tty_usable || return 0
+
+  printf 'install now? [Y/n] ' >&2
+  read -r ans </dev/tty || return 0
+  case "$ans" in [nN]*) return 0;; esac
+
+  # shellcheck disable=SC2086 # MISSING_PKGS is an intentionally split list
+  if ! run_pkg_install "$1" $MISSING_PKGS; then
+    warn "dependency install did not complete — the GUI may not start until it does"
+    return 0
+  fi
+
+  probe_missing_deps "$1"
+  if [ -z "$MISSING_PKGS" ]; then
+    printf '%s==> all GUI runtime dependencies satisfied%s\n' "$GREEN" "$GRESET"
+  else
+    warn "still missing after install: $MISSING_PKGS"
+  fi
+}
+
+check_runtime_deps() {
+  family="$(distro_family)"
+  probe_missing_deps "$family"
 
   echo
-  if [ -z "$missing_pkgs" ]; then
+  if [ -z "$MISSING_PKGS" ]; then
     printf '%s==> all GUI runtime dependencies satisfied%s\n' "$GREEN" "$GRESET"
     return
   fi
@@ -340,14 +396,16 @@ check_runtime_deps() {
   # Only the header carries the `warning:` label; the detail/command lines are
   # plain (still yellow on a TTY, still stderr) so the block reads as one notice.
   warn "the GUI needs these runtime libraries, which appear to be missing:"
-  printf '%s' "$missing_lines" | while IFS= read -r line; do
+  printf '%s' "$MISSING_LINES" | while IFS= read -r line; do
     [ -n "$line" ] && printf '%s%s%s\n' "$YELLOW" "$line" "$YRESET" >&2
   done
   printf '%sinstall them with:%s\n' "$YELLOW" "$YRESET" >&2
-  printf '%s  %s%s\n' "$YELLOW" "$(install_cmd "$family" "$missing_pkgs")" "$YRESET" >&2
+  printf '%s  %s%s\n' "$YELLOW" "$(install_cmd "$family" "$MISSING_PKGS")" "$YRESET" >&2
   if [ "$family" = arch ]; then
-    printf '%s  (or install the AUR package, which declares these: yay -S superpanels)%s\n' "$YELLOW" "$YRESET" >&2
+    printf '%s  (or add the signed pacman repo, whose package declares these — see the README'\''s Install section)%s\n' "$YELLOW" "$YRESET" >&2
   fi
+
+  offer_dep_install "$family"
 }
 
 do_install() {
