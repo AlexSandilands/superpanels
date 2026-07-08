@@ -125,7 +125,9 @@ For the AppImage, just delete the file.
 
 The install script and the pacman repo (and the source PKGBUILD) set Superpanels to **start in the tray on login by default** — it's a wallpaper manager, so it's meant to be running. The entry lives in `/etc/xdg/autostart/superpanels.desktop`, owned by the install, so removing Superpanels removes it too.
 
-To turn it off, toggle **Autostart on login** off in the GUI (Settings → General), or use your desktop's autostart settings. Disabling writes a small `~/.config/autostart/superpanels.desktop` override — the one file removal can leave behind, and only if you opted out.
+To turn it off, toggle **Autostart on login** off in the GUI (Settings → General), or use your desktop's autostart settings. Disabling writes a small `~/.config/autostart/superpanels.desktop` override.
+
+That override lives in your home, so a package-manager removal (`pacman -R`, `apt/dnf remove`) can't clean it — it survives an uninstall. Harmless on its own, but if you later **reinstall and autostart unexpectedly stays off**, delete `~/.config/autostart/superpanels.desktop` to clear the stale override. (`install.sh --uninstall` removes it for you.)
 
 (The `.deb`/`.rpm` bundles don't set up autostart; enable it from the GUI toggle if you want it.)
 

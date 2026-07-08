@@ -79,13 +79,29 @@ pub(crate) fn is_enabled() -> bool {
     user_path().is_ok_and(|p| effective_enabled(&p, system_present()))
 }
 
-/// Effective state: a user file wins (enabled unless it's a `Hidden` shadow);
-/// with no user file, the default is whether a system entry is present.
+/// Effective state: a user file wins (enabled unless it disables us); with no
+/// user file, the default is whether a system entry is present.
 fn effective_enabled(user_path: &Path, system_present: bool) -> bool {
     match fs::read_to_string(user_path) {
-        Ok(body) => !body.contains("Hidden=true"),
+        Ok(body) => !entry_disabled(&body),
         Err(_) => system_present,
     }
+}
+
+/// Whether a `.desktop` body marks the entry as off — `Hidden=true` (the XDG
+/// "treat as removed") or GNOME's `X-GNOME-Autostart-enabled=false`. Parsed
+/// leniently (trim + case-insensitive key and value) so an override written by
+/// any desktop's autostart UI is honoured, not just our exact byte sequence.
+fn entry_disabled(body: &str) -> bool {
+    body.lines().any(|line| {
+        let Some((key, value)) = line.split_once('=') else {
+            return false;
+        };
+        let (key, value) = (key.trim(), value.trim());
+        (key.eq_ignore_ascii_case("Hidden") && value.eq_ignore_ascii_case("true"))
+            || (key.eq_ignore_ascii_case("X-GNOME-Autostart-enabled")
+                && value.eq_ignore_ascii_case("false"))
+    })
 }
 
 pub(crate) fn set_enabled(enabled: bool) -> Result<(), IpcError> {
@@ -192,5 +208,25 @@ mod tests {
     fn autostart_entry_launches_in_tray_mode() {
         // Login startup must come up backgrounded (tray + daemon, no window).
         assert!(DESKTOP_BODY.contains("superpanels-gui --tray"));
+    }
+
+    #[test]
+    fn entry_disabled_honours_override_variants() {
+        // Our own shadow, and shapes another desktop's autostart UI might write.
+        assert!(entry_disabled(HIDDEN_BODY));
+        assert!(entry_disabled("[Desktop Entry]\nHidden=true\n"));
+        assert!(entry_disabled("[Desktop Entry]\nHidden=True\n"));
+        assert!(entry_disabled("[Desktop Entry]\nHidden = true \n"));
+        assert!(entry_disabled(
+            "[Desktop Entry]\nX-GNOME-Autostart-enabled=false\n"
+        ));
+    }
+
+    #[test]
+    fn entry_disabled_false_for_an_enabling_entry() {
+        assert!(!entry_disabled(DESKTOP_BODY));
+        assert!(!entry_disabled("[Desktop Entry]\nHidden=false\n"));
+        // A path that merely contains the word must not trip the parser.
+        assert!(!entry_disabled("Exec=/opt/Hidden=true/superpanels-gui\n"));
     }
 }
