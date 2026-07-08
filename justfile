@@ -31,14 +31,14 @@ daemon: build
     ./target/release/superpanels-daemon --foreground -v
 
 # Run the GUI (kills any existing daemon-less GUI instance first).
-# WEBKIT_DISABLE_DMABUF_RENDERER mirrors .cargo/config.toml; cargo's [env]
-# only applies to `cargo run`, not direct binary invocation.
+# The binary self-detects NVIDIA-on-Wayland and re-execs with
+# WEBKIT_DISABLE_DMABUF_RENDERER=1 when warranted (see crates/superpanels-gui/src/dmabuf.rs).
 gui: build
     -pkill -x superpanels-gui
-    WEBKIT_DISABLE_DMABUF_RENDERER=1 ./target/release/superpanels-gui
+    ./target/release/superpanels-gui
 
 # Run the GUI with Tauri devtools enabled (Ctrl+Shift+I / right-click →
-# Inspect). Debug build via `cargo run` so the [env] block applies.
+# Inspect) via a debug `cargo run` build.
 gui-dev: ui-build
     -pkill -x superpanels-gui
     cargo run -p superpanels-gui --features dev-tools

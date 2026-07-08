@@ -42,7 +42,8 @@ package() {
   install -Dm755 target/release/superpanels-gui     "$pkgdir/usr/bin/superpanels-gui"
   install -Dm755 target/release/superpanels-daemon  "$pkgdir/usr/bin/superpanels-daemon"
 
-  # The Exec= line bakes in WEBKIT_DISABLE_DMABUF_RENDERER=1 (see GitHub #8).
+  # The binary self-detects NVIDIA-on-Wayland and re-execs with the WebKitGTK
+  # DMABUF workaround when warranted, so Exec= is a plain launch (see #57 / #8).
   install -Dm644 packaging/superpanels-gui.desktop \
     "$pkgdir/usr/share/applications/superpanels-gui.desktop"
 

@@ -1,8 +1,0 @@
-# reason: WebKitGTK 2.46+ defaults to a DMABUF renderer that crashes on
-# Wayland under several common GPU/driver combinations (NVIDIA, recent Mesa
-# + Plasma 6), surfacing as `Gdk-Message: Error 71 (Protocol error)`.
-# Setting this env at the cargo layer means `cargo run` and `cargo test`
-# inherit it without users prefixing every invocation. The same workaround
-# is baked into the autostart .desktop file via crates/superpanels-gui/src/autostart.rs.
-[env]
-WEBKIT_DISABLE_DMABUF_RENDERER = "1"
