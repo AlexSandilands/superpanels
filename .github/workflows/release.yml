@@ -3,6 +3,13 @@ name: Release
 on:
   push:
     tags: ['v*']
+  # Re-run just the pacman-repo publish against an existing release — for
+  # testing the job or repairing the repo without cutting a new tag.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Existing release version to publish to the pacman repo (e.g. 0.2.0)'
+        required: true
 
 permissions:
   contents: write
@@ -14,6 +21,7 @@ concurrency:
 jobs:
   release:
     name: build & publish
+    if: github.event_name == 'push'
     # Build on the oldest supported runner for the widest glibc compatibility;
     # CI proper runs on 24.04. webkit2gtk-4.1 is available in 22.04 universe.
     runs-on: ubuntu-22.04
@@ -76,3 +84,40 @@ jobs:
           files: dist/*
           fail_on_unmatched_files: true
           generate_release_notes: true
+
+  pacman-repo:
+    name: publish pacman repo
+    # Stable tags only — rc/beta prereleases (any tag containing '-') stay off
+    # the repo by design; bleeding-edge testers use `install.sh --prerelease`.
+    # workflow_dispatch bypasses the tag gate to test or re-publish.
+    needs: release
+    if: >-
+      !cancelled() && (
+        (github.event_name == 'push' && needs.release.result == 'success' && !contains(github.ref_name, '-')) ||
+        github.event_name == 'workflow_dispatch'
+      )
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    permissions:
+      contents: write
+    steps:
+      - name: Install tooling
+        run: pacman -Syu --noconfirm git github-cli
+
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then v="$INPUT_VERSION"; else v="$GITHUB_REF_NAME"; fi
+          echo "version=${v#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build package and publish to gh-pages
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+          PACMAN_GPG_PRIVATE_KEY: ${{ secrets.PACMAN_GPG_PRIVATE_KEY }}
+          PACMAN_GPG_PASSPHRASE: ${{ secrets.PACMAN_GPG_PASSPHRASE }}
+        run: packaging/pacman-repo/publish.sh

@@ -12,6 +12,7 @@ distribution work (AUR auto-push, COPR, apt repo, crates.io, Flatpak, signing,
 | `assemble-release.sh` | Collect built binaries + Tauri bundles into `dist/` as the release artefacts. |
 | `superpanels-gui.desktop` | Canonical menu entry. `Exec=` bakes in the WebKitGTK DMABUF workaround (GitHub #8). Must keep `Icon=`/`StartupWMClass=`/filename as `superpanels-gui` — the Wayland `app_id` resolves the taskbar icon by matching it (see `crates/superpanels-gui/src/desktop_entry.rs`). |
 | `aur-superpanels/` | The single `superpanels` AUR package (CLI + daemon + GUI). |
+| `pacman-repo/` | `superpanels-bin` PKGBUILD (repackages the release tarball) + `publish.sh`, the CI script that signs it and publishes the self-hosted pacman repo (below). |
 
 The native `.deb`/`.rpm`/`.AppImage` get their menu entry from
 `../crates/superpanels-gui/desktop-entry.hbs` (wired via `desktopTemplate` in
@@ -22,16 +23,19 @@ behaves like a dev launch. Keep it to the variables Tauri exposes — `categorie
 
 ## What a release publishes (and what it doesn't)
 
-`release.yml` does exactly one thing on a `v*` tag: it builds the artefacts and
-attaches them to a **GitHub Release**. That is the whole automated surface — the
-pipeline does **no** package-repository publishing and **no** AUR push.
+`release.yml` does two things on a `v*` tag: the `release` job builds the artefacts
+and attaches them to a **GitHub Release**, and — on stable (non-prerelease) tags
+only — the `pacman-repo` job packages that release into the self-hosted
+[pacman repo](#self-hosted-pacman-repo-superpanels-bin). There is still **no** AUR
+push and no dnf/apt repository.
 
 | Channel | Automated on tag? | What a user actually runs |
 |---|---|---|
 | `curl … /install.sh \| sh` | ✅ yes | installs immediately from the release tarball |
+| `pacman -S superpanels-bin` (self-hosted repo) | ✅ stable tags only | one-time repo + key setup (root README §Install), then normal `pacman -Syu` upgrades |
 | `makepkg -si` (in `aur-superpanels/`) | n/a — always in the repo | builds from source, installs a `pacman`-tracked package; no AUR needed (below) |
 | `.deb` / `.rpm` / `.AppImage` | ⚠️ built & attached, **not** in any repo | download the file, then `sudo dnf install ./…rpm` / `sudo apt install ./…deb` |
-| `yay -S superpanels` (AUR) | ❌ no | works only after a **manual** push to the AUR remote (below) |
+| `yay -S superpanels` (AUR) | ❌ no | works only after a **manual** push to the AUR remote (below; registrations currently locked — see issue #46) |
 | `dnf install superpanels` / `apt install superpanels` | ❌ no | needs a hosted repo (Fedora COPR / apt PPA) — not built yet |
 | `cargo install superpanels` | ❌ no | needs crates.io metadata + publish — not done yet |
 
@@ -65,10 +69,13 @@ manifest as checked in.
    `CHANGELOG.md` has the new version's notes.
 2. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 3. `release.yml` builds on the tag and publishes the GitHub release with the
-   universal tarball, the `.deb`/`.rpm`/`.AppImage`, and `SHA256SUMS`.
+   universal tarball, the `.deb`/`.rpm`/`.AppImage`, and `SHA256SUMS`. On a
+   stable tag (no `-` in it), the `pacman-repo` job then publishes
+   `superpanels-bin` to the self-hosted pacman repo automatically.
 
-That produces a **GitHub Release only** (see the table above). It does **not** push
-to the AUR or to any `dnf`/`apt` repository; the AUR step below is manual.
+That produces a GitHub Release plus, for stable tags, a pacman-repo update (see
+the table above). It does **not** push to the AUR or to any `dnf`/`apt`
+repository; the AUR step below is manual.
 
 `install.sh` (repo root) always pulls the latest release's universal tarball, so it
 needs no per-release change.
@@ -115,6 +122,73 @@ nodejs npm)` since it builds the frontend then the workspace and installs files 
 hand (no Tauri bundler). It also sets `options=('!lto')` — the bundled `rusqlite`
 `sqlite3.c` must stay a plain object rather than a GCC-LTO one (see Known
 constraints).
+
+## Self-hosted pacman repo (`superpanels-bin`)
+
+A signed pacman repository served by **GitHub Pages** from the **`gh-pages`
+branch** (Pages is configured as "deploy from branch", not an Actions deploy —
+the branch *is* the repo state, so each publish is an incremental commit and the
+history doubles as an audit log). Users set it up once (root README §Install)
+and get dependency-resolved installs plus normal `-Syu` upgrades.
+
+Layout on `gh-pages`:
+
+```
+superpanels.gpg                  # ASCII-armored public signing key (stable URL)
+x86_64/
+  superpanels.db / .files        # repo-add output — real files, not symlinks
+  superpanels.db.tar.gz / …      #   (Pages serves git symlinks as text files)
+  superpanels-bin-<ver>-<rel>-x86_64.pkg.tar.zst  + .sig
+```
+
+### How a release lands there
+
+The `pacman-repo` job in `release.yml` (`needs: release`, `container:
+archlinux:base-devel`) runs `pacman-repo/publish.sh`, which:
+
+1. creates a `builder` user (makepkg refuses to run as root) and imports the
+   signing key into its keyring with loopback pinentry (no prompts in CI);
+2. downloads the just-published universal tarball with `gh release download`
+   and verifies it against the release's `SHA256SUMS`;
+3. stamps `pkgver`/`sha256sums` into a copy of `pacman-repo/PKGBUILD` and runs
+   `makepkg --nodeps --sign` (no compile — it repackages the tarball, so the
+   `!lto` concern from the source PKGBUILD doesn't apply, and runtime deps
+   don't need to exist in the container);
+4. checks out `gh-pages` (creating it on first run), copies in the package +
+   signature and the exported public key, **prunes to the current + previous
+   package version**, rebuilds the db from scratch with `repo-add --sign`
+   (idempotent on re-runs), replaces the `.db`/`.files` symlinks with real
+   copies, and commits + pushes.
+
+**Prereleases never publish here** — the job skips any tag containing `-`
+(`v1.2.3-rc.1` etc.); bleeding-edge testers use `install.sh --prerelease`. A
+separate `[superpanels-testing]` repo is possible later if wanted.
+
+### One-time setup (repo owner)
+
+- Generate the signing key (no expiry, sign-only):
+  `gpg --quick-gen-key "Superpanels Release Signing <profile.alex@proton.me>" ed25519 sign never`
+- Add Actions secrets: `PACMAN_GPG_PRIVATE_KEY` (ASCII-armored secret-key
+  export) and `PACMAN_GPG_PASSPHRASE` (only if the key has one).
+- Enable GitHub Pages: repo Settings → Pages → deploy from branch `gh-pages`,
+  root. (The branch appears after the first publish run.)
+- Replace the `<signing-key-id>` placeholder in the root README's
+  `pacman-key --lsign-key` line with the real key fingerprint.
+
+### Testing / re-publishing
+
+Stable-tag-only means an rc tag can't exercise this job. Instead, run the
+**workflow_dispatch** on `release.yml` with an existing release version (a
+throwaway draft release works too) — it runs just the `pacman-repo` job against
+that release's assets. Re-running for an already-published version is safe: the
+db is rebuilt, not appended.
+
+### Relationship to the AUR
+
+`pacman-repo/PKGBUILD` is deliberately AUR-shaped (`provides`/`conflicts` on
+`superpanels`, same `depends` as `aur-superpanels/`). When AUR registrations
+reopen (locked as of mid-2026 — issue #46), it becomes the `superpanels-bin`
+AUR submission nearly as-is.
 
 ## crates.io (CLI escape hatch — not yet published)
 

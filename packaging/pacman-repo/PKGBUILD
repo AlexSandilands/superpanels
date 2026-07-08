@@ -1,0 +1,40 @@
+# Maintainer: Alex Sandilands <profile.alex@proton.me>
+# Repackages the universal release tarball (no compile, so makepkg.conf LTO —
+# the CachyOS default — can't bite here; see ../README.md §Known constraints).
+# CI (release.yml `pacman-repo` job) stamps pkgver/sha256sums per release, so
+# the committed values only pin the latest release for local `makepkg` runs.
+pkgname=superpanels-bin
+pkgver=0.2.0
+pkgrel=1
+pkgdesc="Bezel-aware multi-monitor wallpaper manager (CLI, daemon, and GUI) — prebuilt binaries"
+arch=('x86_64')
+url="https://github.com/AlexSandilands/superpanels"
+license=('MIT' 'Apache-2.0')
+depends=('webkit2gtk-4.1' 'gtk3' 'libayatana-appindicator')
+provides=("superpanels=$pkgver")
+conflicts=('superpanels')
+source=("$url/releases/download/v$pkgver/superpanels-$pkgver-x86_64-linux.tar.gz")
+sha256sums=('1fab99a9c6c1c427dddf84f8f010580165cbc53145992acbdc272ac49495019a')
+
+package() {
+  cd "superpanels-$pkgver-x86_64-linux"
+
+  install -Dm755 bin/superpanels        "$pkgdir/usr/bin/superpanels"
+  install -Dm755 bin/superpanels-gui    "$pkgdir/usr/bin/superpanels-gui"
+  install -Dm755 bin/superpanels-daemon "$pkgdir/usr/bin/superpanels-daemon"
+
+  # The tarball's .desktop bakes in WEBKIT_DISABLE_DMABUF_RENDERER=1 (#8).
+  install -Dm644 share/applications/superpanels-gui.desktop \
+    "$pkgdir/usr/share/applications/superpanels-gui.desktop"
+
+  for size in 32x32 128x128 256x256; do
+    install -Dm644 "share/icons/hicolor/$size/apps/superpanels-gui.png" \
+      "$pkgdir/usr/share/icons/hicolor/$size/apps/superpanels-gui.png"
+  done
+
+  install -Dm644 share/doc/superpanels/README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+  install -Dm644 share/doc/superpanels/LICENSE-MIT \
+    "$pkgdir/usr/share/licenses/$pkgname/LICENSE-MIT"
+  install -Dm644 share/doc/superpanels/LICENSE-APACHE \
+    "$pkgdir/usr/share/licenses/$pkgname/LICENSE-APACHE"
+}
