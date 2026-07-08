@@ -84,6 +84,16 @@ and install:
 sudo pacman -Syu superpanels-bin
 ```
 
+To reverse it — remove the package, untrust the key, and drop the cached repo db:
+
+```sh
+sudo pacman -Rns superpanels-bin                                   # remove the package (and now-unused deps)
+sudo pacman-key --delete BC01ACB0DF880D61793D7C44094918A9D106F9DC  # untrust the signing key
+sudo rm -f /var/lib/pacman/sync/superpanels.db*                    # forget the cached repo db
+```
+
+Then delete the `[superpanels]` section from `/etc/pacman.conf` and run `sudo pacman -Sy`.
+
 The repo carries stable releases only (prereleases go through `install.sh --prerelease`); details in [`packaging/README.md`](./packaging/README.md).
 
 Prefer to build it yourself? See [Building from source](#building-from-source).
