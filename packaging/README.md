@@ -172,8 +172,10 @@ separate `[superpanels-testing]` repo is possible later if wanted.
   export) and `PACMAN_GPG_PASSPHRASE` (only if the key has one).
 - Enable GitHub Pages: repo Settings → Pages → deploy from branch `gh-pages`,
   root. (The branch appears after the first publish run.)
-- Replace the `<signing-key-id>` placeholder in the root README's
-  `pacman-key --lsign-key` line with the real key fingerprint.
+- Put the key's full fingerprint in the root README's `pacman-key --lsign-key`
+  line so users can trust it. The live key is
+  `BC01ACB0DF880D61793D7C44094918A9D106F9DC` (ed25519, `Superpanels Release
+  Signing <profile.alex@proton.me>`); re-keying means updating that line.
 
 ### Testing / re-publishing
 

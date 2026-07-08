@@ -67,7 +67,7 @@ Alternatively, add the signed Superpanels package repo — dependencies resolve 
 ```sh
 curl -fsSLo /tmp/superpanels.gpg https://alexsandilands.github.io/superpanels/superpanels.gpg
 sudo pacman-key --add /tmp/superpanels.gpg
-sudo pacman-key --lsign-key <signing-key-id>
+sudo pacman-key --lsign-key BC01ACB0DF880D61793D7C44094918A9D106F9DC
 ```
 
 then append to `/etc/pacman.conf`:
