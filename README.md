@@ -38,55 +38,15 @@ Primary target is Arch / CachyOS on KDE Wayland — and **KDE is the only deskto
 
 ## Install
 
-The install script pulls the latest release, drops the CLI, daemon, and GUI into place, and registers the app icon — on any glibc Linux distro.
+The quickest path — the install script pulls the latest release (CLI, daemon, and GUI) onto any glibc Linux distro and registers the app icon:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/AlexSandilands/superpanels/main/install.sh | sh
 ```
 
-Uninstall the same way. This stops the daemon and tray, then removes the binaries, the app-menu and autostart entries, and the icons. Your config under `~/.config/superpanels` is left untouched:
+Uninstall the same way with `--uninstall` (append `-s -- --uninstall`). On **Arch / CachyOS** you can instead add the signed **pacman repo** for automatic dependency resolution and `pacman -Syu` upgrades; native **`.deb` / `.rpm` / `.AppImage`** bundles are on the [releases page](https://github.com/AlexSandilands/superpanels/releases/latest); or [build from source](#building-from-source).
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/AlexSandilands/superpanels/main/install.sh | sh -s -- --uninstall
-```
-
-To also delete your settings, slideshow state, and data, use `--purge` instead of `--uninstall`. If you installed with a custom `--prefix`, pass the same one when uninstalling.
-
-**Options** (after `| sh -s --`): `--version <v>` to pin a release, `--prerelease` to install the newest release including prereleases (`rc`/`beta`), `--prefix <dir>` to install somewhere else (e.g. `~/.local` for no sudo). The GUI needs two runtime libraries — **WebKitGTK 4.1** (renders the webview) and a **system-tray library** (provides the tray icon; the GUI won't start without it). The installer scans for both, prints the exact command for your distro if either is missing, and offers to run it for you:
-
-| Distro | WebKitGTK | System tray |
-|---|---|---|
-| Arch / CachyOS | `webkit2gtk-4.1` | `libayatana-appindicator` |
-| Fedora / RHEL | `webkit2gtk4.1` | `libayatana-appindicator-gtk3` |
-| Debian / Ubuntu | `libwebkit2gtk-4.1-0` | `libayatana-appindicator3-1` |
-
-### Arch / CachyOS: pacman repo
-
-Alternatively, add the signed Superpanels package repo — dependencies resolve automatically and `pacman -Syu` picks up new releases like any other package. One-time key trust:
-
-```sh
-curl -fsSLo /tmp/superpanels.gpg https://alexsandilands.github.io/superpanels/superpanels.gpg
-sudo pacman-key --add /tmp/superpanels.gpg
-sudo pacman-key --lsign-key BC01ACB0DF880D61793D7C44094918A9D106F9DC
-```
-
-then append to `/etc/pacman.conf`:
-
-```ini
-[superpanels]
-SigLevel = Required DatabaseOptional
-Server = https://alexsandilands.github.io/superpanels/$arch
-```
-
-and install:
-
-```sh
-sudo pacman -Syu superpanels-bin
-```
-
-The repo carries stable releases only (prereleases go through `install.sh --prerelease`); details in [`packaging/README.md`](./packaging/README.md).
-
-Prefer to build it yourself? See [Building from source](#building-from-source).
+**Full instructions — install-script options, the pacman repo, native bundles, and uninstall for each — are in [`docs/install.md`](./docs/install.md).**
 
 ## Using it
 
@@ -232,6 +192,7 @@ Contributing needs extra tooling (`pre-commit`, `typos`, `cargo-deny`) and git h
 
 | Read this when | Doc |
 |---|---|
+| You're installing or removing it | [`docs/install.md`](./docs/install.md) |
 | You want the layout / monitor-gap math | [`docs/reference/layout-math.md`](./docs/reference/layout-math.md) |
 | You're touching display detection | [`docs/reference/displays.md`](./docs/reference/displays.md) |
 | You're touching a backend | [`docs/reference/backends.md`](./docs/reference/backends.md) |
