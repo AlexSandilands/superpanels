@@ -44,7 +44,10 @@ cp packaging/pacman-repo/PKGBUILD "$BUILD_DIR/"
 echo "==> downloading $TARBALL from release v$VERSION"
 gh release download "v$VERSION" --repo "$GITHUB_REPOSITORY" --dir "$BUILD_DIR" \
   --pattern "$TARBALL" --pattern SHA256SUMS
-(cd "$BUILD_DIR" && grep -- "$TARBALL" SHA256SUMS | sha256sum -c -)
+# Exact filename match on the last field: a substring/regex grep would also
+# match a same-prefixed asset (e.g. "$TARBALL.sig") and fail sha256sum -c on the
+# file we never downloaded. awk preserves the line verbatim for sha256sum -c.
+(cd "$BUILD_DIR" && awk -v f="$TARBALL" '$NF == f' SHA256SUMS | sha256sum -c -)
 
 SHA256="$(sha256sum "$BUILD_DIR/$TARBALL" | awk '{print $1}')"
 sed -i "s/^pkgver=.*/pkgver=$VERSION/" "$BUILD_DIR/PKGBUILD"

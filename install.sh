@@ -306,7 +306,7 @@ pkg_name() { # <dep> <family>
 
 install_cmd() { # <family> <pkgs>
   case "$1" in
-    arch)   echo "sudo pacman -S --needed $2";;
+    arch)   echo "sudo pacman -Syu --needed $2";;
     fedora) echo "sudo dnf install $2";;
     debian) echo "sudo apt install $2";;
     *)      echo "install with your package manager: $2";;
@@ -342,7 +342,11 @@ tty_usable() { { : </dev/tty; } 2>/dev/null; }
 run_pkg_install() { # <family> <pkg>...
   family="$1"; shift
   case "$family" in
-    arch)   set -- pacman -S --needed "$@";;
+    # -Syu, not -S/-Sy: installing against a stale sync db is a partial upgrade
+    # (Arch wiki warns it can break the system, or just fail "target not found").
+    # Since we now run this for the user, do the supported full refresh+upgrade;
+    # pacman still lists the transaction and asks to confirm on /dev/tty.
+    arch)   set -- pacman -Syu --needed "$@";;
     fedora) set -- dnf install "$@";;
     debian) set -- apt install "$@";;
     *)      return 1;;
