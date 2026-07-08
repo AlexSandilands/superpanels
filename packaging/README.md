@@ -213,7 +213,8 @@ AUR submission nearly as-is.
   `WEBKIT_DISABLE_DMABUF_RENDERER=1` workaround stays until upstream fixes it (#8).
   It is duplicated, in lockstep, across the dev launchers (`.cargo/config.toml`,
   `justfile`), the runtime-written entries (`autostart.rs`, `desktop_entry.rs`), and
-  the packaged launchers (`superpanels-gui.desktop`, `desktop-entry.hbs`). Collapsing
+  the packaged launchers (`superpanels-gui.desktop`, `superpanels-autostart.desktop`,
+  `desktop-entry.hbs`). Collapsing
   these — plus the `[Desktop Entry]` body and the icon-size→hicolor mapping — onto a
   single generated source is tracked as a follow-up.
 - **makepkg LTO breaks the bundled sqlite link.** `rusqlite`'s bundled `sqlite3.c`,

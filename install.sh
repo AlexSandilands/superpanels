@@ -99,6 +99,27 @@ run_priv() {
   fi
 }
 
+# The GUI's login-autostart entry (tray on login, on by default). A system
+# install owns it in /etc/xdg/autostart so `pacman`-style clean removal is
+# matched here; a userland ($HOME) prefix can't write there, so it goes in the
+# user's ~/.config/autostart instead. Both are removed by --uninstall.
+SYSTEM_AUTOSTART="/etc/xdg/autostart/superpanels.desktop"
+install_autostart_entry() { # <src-file>
+  # Releases before this feature don't ship the file; skip rather than fail
+  # (install.sh comes from main but installs the latest published tarball).
+  [ -f "$1" ] || return 0
+  case "$PREFIX" in
+    "$HOME"/*)
+      dest="$(xdg_config_home)/autostart/superpanels.desktop"
+      mkdir -p "$(dirname "$dest")"
+      install -m644 "$1" "$dest"
+      ;;
+    *)
+      run_priv install -Dm644 "$1" "$SYSTEM_AUTOSTART"
+      ;;
+  esac
+}
+
 fetch() { # <url> <outfile>
   if have curl; then curl -fsSL "$1" -o "$2"
   elif have wget; then wget -qO "$2" "$1"
@@ -203,6 +224,12 @@ do_uninstall() {
   for s in $ICON_SIZES; do
     rm_priv "$PREFIX/share/icons/hicolor/$s/apps/superpanels-gui.png"
   done
+  # System autostart entry, only for a system install (mirrors where install put
+  # it). A userland install's entry lives in ~/.config/autostart, removed below.
+  case "$PREFIX" in
+    "$HOME"/*) : ;;
+    *) rm_priv "$SYSTEM_AUTOSTART" ;;
+  esac
 
   # The GUI self-registers these into the user's XDG dirs at runtime; without
   # removing them the app lingers in the launcher and re-autostarts on login.
@@ -475,6 +502,7 @@ do_install() {
     run_priv install -Dm644 "$src/share/doc/superpanels/$d" \
       "$PREFIX/share/doc/superpanels/$d"
   done
+  install_autostart_entry "$src/share/superpanels/autostart/superpanels.desktop"
   refresh_caches
 
   say "installed Superpanels $VERSION — run 'superpanels-gui' or 'superpanels --help'"
