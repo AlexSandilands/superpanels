@@ -2,7 +2,7 @@
 Type=Application
 Name=Superpanels
 Comment=Bezel-aware multi-monitor wallpaper manager
-Exec=env WEBKIT_DISABLE_DMABUF_RENDERER=1 superpanels-gui --tray
+Exec=superpanels-gui --tray
 Icon=superpanels-gui
 Categories=Graphics;Utility;
 Terminal=false

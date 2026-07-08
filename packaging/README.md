@@ -10,16 +10,17 @@ distribution work (AUR auto-push, COPR, apt repo, crates.io, Flatpak, signing,
 |---|---|
 | `set-version.sh` | Stamp a release version into every manifest + `tauri.conf.json`. |
 | `assemble-release.sh` | Collect built binaries + Tauri bundles into `dist/` as the release artefacts. |
-| `superpanels-gui.desktop` | Canonical menu entry. `Exec=` bakes in the WebKitGTK DMABUF workaround (GitHub #8). Must keep `Icon=`/`StartupWMClass=`/filename as `superpanels-gui` — the Wayland `app_id` resolves the taskbar icon by matching it (see `crates/superpanels-gui/src/desktop_entry.rs`). |
+| `superpanels-gui.desktop` | Canonical menu entry. `Exec=` is a plain launch — the binary self-detects NVIDIA-on-Wayland and re-execs with the WebKitGTK DMABUF workaround when warranted (see `crates/superpanels-gui/src/dmabuf.rs`, GitHub #57). Must keep `Icon=`/`StartupWMClass=`/filename as `superpanels-gui` — the Wayland `app_id` resolves the taskbar icon by matching it (see `crates/superpanels-gui/src/desktop_entry.rs`). |
 | `aur-superpanels/` | The single `superpanels` AUR package (CLI + daemon + GUI). |
 | `pacman-repo/` | `superpanels-bin` PKGBUILD (repackages the release tarball) + `publish.sh`, the CI script that signs it and publishes the self-hosted pacman repo (below). |
 
 The native `.deb`/`.rpm`/`.AppImage` get their menu entry from
 `../crates/superpanels-gui/desktop-entry.hbs` (wired via `desktopTemplate` in
-`tauri.conf.json`). It mirrors Tauri's default template but injects the same
-`WEBKIT_DISABLE_DMABUF_RENDERER=1` Exec prefix (#8), so a package-manager launch
-behaves like a dev launch. Keep it to the variables Tauri exposes — `categories`,
-`comment`, `exec`, `icon`, `name` — or the bundle build fails to render it.
+`tauri.conf.json`). It mirrors Tauri's default template; `Exec=` is a plain
+launch, since the binary self-applies the WebKitGTK DMABUF workaround when
+warranted (see `../crates/superpanels-gui/src/dmabuf.rs`, #57). Keep it to the
+variables Tauri exposes — `categories`, `comment`, `exec`, `icon`, `name` — or
+the bundle build fails to render it.
 
 ## What a release publishes (and what it doesn't)
 
@@ -211,12 +212,12 @@ AUR submission nearly as-is.
   containers need `glibc >= 2.17`.
 - **WebKitGTK DMABUF crash** on Wayland + NVIDIA + Plasma 6 — the
   `WEBKIT_DISABLE_DMABUF_RENDERER=1` workaround stays until upstream fixes it (#8).
-  It is duplicated, in lockstep, across the dev launchers (`.cargo/config.toml`,
-  `justfile`), the runtime-written entries (`autostart.rs`, `desktop_entry.rs`), and
-  the packaged launchers (`superpanels-gui.desktop`, `superpanels-autostart.desktop`,
-  `desktop-entry.hbs`). Collapsing
-  these — plus the `[Desktop Entry]` body and the icon-size→hicolor mapping — onto a
-  single generated source is tracked as a follow-up.
+  It is no longer baked into any launcher: the binary self-detects
+  NVIDIA-on-Wayland very early in startup and re-execs itself with the env set
+  (`crates/superpanels-gui/src/dmabuf.rs`, #57), so non-NVIDIA GPUs keep DMABUF
+  acceleration and an explicit `WEBKIT_DISABLE_DMABUF_RENDERER` (either value)
+  always wins. This is the single source of truth — the previous lockstep
+  duplication across launchers is gone.
 - **makepkg LTO breaks the bundled sqlite link.** `rusqlite`'s bundled `sqlite3.c`,
   compiled under makepkg's `lto` option, becomes a GCC-GIMPLE (fat-LTO) object whose
   `sqlite3_*` symbols `rust-lld` can't resolve — the daemon link fails with

@@ -15,6 +15,7 @@ pub(crate) mod autostart;
 pub(crate) mod bridge;
 pub(crate) mod commands;
 pub(crate) mod desktop_entry;
+pub(crate) mod dmabuf;
 pub(crate) mod errors;
 pub(crate) mod state;
 pub(crate) mod tray;
@@ -29,6 +30,8 @@ use crate::state::AppState;
 /// Entry point. Spawns the Tauri runtime; never returns under normal use.
 pub fn run() {
     init_tracing();
+    // Re-exec (if warranted) before any thread spawns or the webview inits.
+    dmabuf::apply();
     let start_hidden = wants_tray_mode(std::env::args().skip(1));
     build_app(start_hidden).run(handle_event);
 }

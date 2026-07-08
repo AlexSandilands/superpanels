@@ -18,19 +18,18 @@ use crate::errors::IpcError;
 
 const FILE_NAME: &str = "superpanels.desktop";
 
-// reason: `env WEBKIT_DISABLE_DMABUF_RENDERER=1` works around a WebKitGTK
-// crash on Wayland (`Gdk-Message: Error 71`) seen on common KDE Plasma 6
-// + Mesa/NVIDIA stacks. Mirrored in `.cargo/config.toml`, the justfile,
-// `desktop_entry.rs`, and `packaging/superpanels-autostart.desktop`.
-//
 // `--tray` keeps login startup in the background: it installs the tray and
 // starts the daemon without popping the window. The app-menu entry
 // (`desktop_entry.rs`) deliberately omits it so a manual launch opens the GUI.
+//
+// The WebKitGTK DMABUF workaround is no longer an `env` prefix here — the
+// binary self-detects NVIDIA-on-Wayland and re-execs with it set. See
+// `dmabuf.rs` and GitHub #57.
 const DESKTOP_BODY: &str = "[Desktop Entry]\n\
 Type=Application\n\
 Name=Superpanels\n\
 Comment=Bezel-aware multi-monitor wallpaper manager\n\
-Exec=env WEBKIT_DISABLE_DMABUF_RENDERER=1 superpanels-gui --tray\n\
+Exec=superpanels-gui --tray\n\
 Icon=superpanels-gui\n\
 Categories=Graphics;Utility;\n\
 Terminal=false\n\
@@ -151,8 +150,10 @@ mod tests {
         let path = tmp.path().join("autostart").join(FILE_NAME);
         set_enabled_at(&path, false, true).unwrap();
         let body = fs::read_to_string(&path).unwrap();
-        assert!(body.contains("superpanels-gui --tray"));
-        assert!(body.contains("WEBKIT_DISABLE_DMABUF_RENDERER=1"));
+        assert!(body.contains("Exec=superpanels-gui --tray"));
+        // The DMABUF workaround moved into the binary (GitHub #57): no `env`
+        // prefix here, else non-NVIDIA autostart loses DMABUF acceleration.
+        assert!(!body.contains("WEBKIT_DISABLE_DMABUF_RENDERER"));
         assert!(effective_enabled(&path, false));
     }
 

@@ -77,16 +77,16 @@ pub(crate) fn install_at(data_dir: &Path, exec: &str) -> Result<(), IpcError> {
     Ok(())
 }
 
-// reason: `env WEBKIT_DISABLE_DMABUF_RENDERER=1` mirrors the WebKitGTK
-// Wayland crash workaround documented in `docs/followups.md` (also set in
-// `.cargo/config.toml`, the justfile, and `autostart.rs`).
+// The WebKitGTK DMABUF workaround is no longer baked into `Exec=` — the binary
+// self-detects NVIDIA-on-Wayland and re-execs with the env set. See `dmabuf.rs`
+// and GitHub #57.
 fn desktop_body(exec: &str) -> String {
     format!(
         "[Desktop Entry]\n\
          Type=Application\n\
          Name=Superpanels\n\
          Comment=Bezel-aware multi-monitor wallpaper manager\n\
-         Exec=env WEBKIT_DISABLE_DMABUF_RENDERER=1 {exec}\n\
+         Exec={exec}\n\
          Icon={APP_ID}\n\
          Categories=Graphics;Utility;\n\
          Terminal=false\n\
@@ -215,10 +215,13 @@ mod tests {
     }
 
     #[test]
-    fn desktop_body_includes_webkit_dmabuf_workaround() {
-        // Same invariant as `autostart.rs` — see docs/followups.md before
-        // removing.
-        assert!(desktop_body("x").contains("WEBKIT_DISABLE_DMABUF_RENDERER=1"));
+    fn desktop_body_execs_the_binary_directly() {
+        // The DMABUF workaround now lives in the binary (`dmabuf.rs`, GitHub
+        // #57), not the launcher: `Exec=` must invoke the binary with no `env`
+        // prefix so non-NVIDIA GPUs keep DMABUF acceleration.
+        let body = desktop_body("/usr/bin/superpanels-gui");
+        assert!(body.contains("Exec=/usr/bin/superpanels-gui\n"));
+        assert!(!body.contains("WEBKIT_DISABLE_DMABUF_RENDERER"));
     }
 
     #[test]
