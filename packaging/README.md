@@ -32,7 +32,7 @@ push and no dnf/apt repository.
 | Channel | Automated on tag? | What a user actually runs |
 |---|---|---|
 | `curl … /install.sh \| sh` | ✅ yes | installs immediately from the release tarball |
-| `pacman -S superpanels-bin` (self-hosted repo) | ✅ stable tags only | one-time repo + key setup (root README §Install), then normal `pacman -Syu` upgrades |
+| `pacman -S superpanels-bin` (self-hosted repo) | ✅ stable tags only | one-time repo + key setup ([`docs/install.md`](../docs/install.md)), then normal `pacman -Syu` upgrades |
 | `makepkg -si` (in `aur-superpanels/`) | n/a — always in the repo | builds from source, installs a `pacman`-tracked package; no AUR needed (below) |
 | `.deb` / `.rpm` / `.AppImage` | ⚠️ built & attached, **not** in any repo | download the file, then `sudo dnf install ./…rpm` / `sudo apt install ./…deb` |
 | `yay -S superpanels` (AUR) | ❌ no | works only after a **manual** push to the AUR remote (below; registrations currently locked — see issue #46) |
@@ -128,7 +128,7 @@ constraints).
 A signed pacman repository served by **GitHub Pages** from the **`gh-pages`
 branch** (Pages is configured as "deploy from branch", not an Actions deploy —
 the branch *is* the repo state, so each publish is an incremental commit and the
-history doubles as an audit log). Users set it up once (root README §Install)
+history doubles as an audit log). Users set it up once ([`docs/install.md`](../docs/install.md))
 and get dependency-resolved installs plus normal `-Syu` upgrades.
 
 Layout on `gh-pages`:
