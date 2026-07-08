@@ -28,6 +28,7 @@ mkdir -p \
   "$stage/share/icons/hicolor/32x32/apps" \
   "$stage/share/icons/hicolor/128x128/apps" \
   "$stage/share/icons/hicolor/256x256/apps" \
+  "$stage/share/superpanels/autostart" \
   "$stage/share/doc/superpanels"
 
 for bin in superpanels superpanels-gui superpanels-daemon; do
@@ -36,6 +37,13 @@ done
 
 install -m644 "$ROOT/packaging/superpanels-gui.desktop" \
   "$stage/share/applications/superpanels-gui.desktop"
+
+# System autostart entry. Not prefix-relative (its home is /etc/xdg/autostart),
+# so it's staged under share/ for the installers to place: install.sh copies it
+# to /etc/xdg/autostart (or ~/.config/autostart for a userland prefix), and the
+# pacman-repo PKGBUILD installs it to /etc/xdg/autostart.
+install -m644 "$ROOT/packaging/superpanels-autostart.desktop" \
+  "$stage/share/superpanels/autostart/superpanels.desktop"
 
 # Transparent icon variants match what the GUI installs at runtime for the
 # Wayland taskbar (see crates/superpanels-gui/src/desktop_entry.rs).

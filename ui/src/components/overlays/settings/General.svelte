@@ -41,7 +41,7 @@
 </script>
 
 <SectionHeader title="General" sub="App behaviour and notifications." />
-<SettingRow label="Autostart on login" sub="Writes ~/.config/autostart/superpanels.desktop">
+<SettingRow label="Autostart on login" sub="Start Superpanels in the tray when you log in">
   <Toggle value={autostart} onChange={setAutostart} />
 </SettingRow>
 <SettingRow

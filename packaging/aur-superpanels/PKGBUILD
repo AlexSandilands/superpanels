@@ -46,6 +46,11 @@ package() {
   install -Dm644 packaging/superpanels-gui.desktop \
     "$pkgdir/usr/share/applications/superpanels-gui.desktop"
 
+  # System autostart entry (tray on login, on by default). Owned by the package
+  # so removal is clean; users opt out via a ~/.config/autostart Hidden shadow.
+  install -Dm644 packaging/superpanels-autostart.desktop \
+    "$pkgdir/etc/xdg/autostart/superpanels.desktop"
+
   install -Dm644 crates/superpanels-gui/icons/32x32-transparent.png \
     "$pkgdir/usr/share/icons/hicolor/32x32/apps/superpanels-gui.png"
   install -Dm644 crates/superpanels-gui/icons/128x128-transparent.png \

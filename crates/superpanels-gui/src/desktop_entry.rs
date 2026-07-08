@@ -9,6 +9,7 @@
 //! including a packaged one until the user installs system-wide — shows the
 //! generic Wayland gear.
 
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -30,8 +31,34 @@ const ICONS: [(&str, &[u8]); 3] = [
 
 /// Install (or refresh) the desktop entry and icons for the current binary.
 /// Rewrites only on content change, so repeat launches are no-ops.
+///
+/// No-op when a packaged/system install already provides the entry (pacman,
+/// `.deb`/`.rpm`, or `install.sh` to a system prefix). Those own their files
+/// under `/usr` and clean them on removal; a copy of ours in `$XDG_DATA_HOME`
+/// would linger in the launcher after the package is uninstalled, which the
+/// package manager can't reach.
 pub(crate) fn install() -> Result<(), IpcError> {
+    if system_entry_present() {
+        return Ok(());
+    }
     install_at(&data_dir()?, &exec_value())
+}
+
+/// Whether a `<app_id>.desktop` already exists in a system application dir
+/// (`$XDG_DATA_DIRS/applications`, default `/usr/local/share` + `/usr/share`).
+fn system_entry_present() -> bool {
+    let dirs = std::env::var_os("XDG_DATA_DIRS")
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| OsString::from("/usr/local/share:/usr/share"));
+    system_entry_present_in(&dirs)
+}
+
+fn system_entry_present_in(data_dirs: &OsStr) -> bool {
+    std::env::split_paths(data_dirs).any(|dir| {
+        dir.join("applications")
+            .join(format!("{APP_ID}.desktop"))
+            .exists()
+    })
 }
 
 pub(crate) fn install_at(data_dir: &Path, exec: &str) -> Result<(), IpcError> {
@@ -149,6 +176,32 @@ mod tests {
         let first = fs::read(&desktop).unwrap();
         install_at(tmp.path(), "superpanels-gui").unwrap();
         assert_eq!(fs::read(&desktop).unwrap(), first);
+    }
+
+    #[test]
+    fn system_entry_present_detects_a_packaged_entry() {
+        let tmp = tempdir().unwrap();
+        let apps = tmp.path().join("applications");
+        fs::create_dir_all(&apps).unwrap();
+        // Absent until a "packaged" entry lands in the system dir.
+        assert!(!system_entry_present_in(tmp.path().as_os_str()));
+        fs::write(apps.join(format!("{APP_ID}.desktop")), b"x").unwrap();
+        assert!(system_entry_present_in(tmp.path().as_os_str()));
+    }
+
+    #[test]
+    fn system_entry_present_scans_every_data_dir() {
+        let a = tempdir().unwrap();
+        let b = tempdir().unwrap();
+        fs::create_dir_all(b.path().join("applications")).unwrap();
+        fs::write(
+            b.path().join(format!("applications/{APP_ID}.desktop")),
+            b"x",
+        )
+        .unwrap();
+        // Entry only in the second of the colon-joined dirs must still be found.
+        let joined = std::env::join_paths([a.path(), b.path()]).unwrap();
+        assert!(system_entry_present_in(&joined));
     }
 
     #[test]

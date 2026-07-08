@@ -121,6 +121,16 @@ sudo dnf remove superpanels      # Fedora / RHEL
 
 For the AppImage, just delete the file.
 
+## Autostart on login
+
+The install script and the pacman repo (and the source PKGBUILD) set Superpanels to **start in the tray on login by default** — it's a wallpaper manager, so it's meant to be running. The entry lives in `/etc/xdg/autostart/superpanels.desktop`, owned by the install, so removing Superpanels removes it too.
+
+To turn it off, toggle **Autostart on login** off in the GUI (Settings → General), or use your desktop's autostart settings. Disabling writes a small `~/.config/autostart/superpanels.desktop` override.
+
+That override lives in your home, so a package-manager removal (`pacman -R`, `apt/dnf remove`) can't clean it — it survives an uninstall. Harmless on its own, but if you later **reinstall and autostart unexpectedly stays off**, delete `~/.config/autostart/superpanels.desktop` to clear the stale override. (`install.sh --uninstall` removes it for you.)
+
+(The `.deb`/`.rpm` bundles don't set up autostart; enable it from the GUI toggle if you want it.)
+
 ## From source
 
 See [Building from source](../README.md#building-from-source) in the README — a plain `cargo build`, or the bundled PKGBUILD (`makepkg -si`) for a `pacman`-tracked package on Arch that upgrades and uninstalls cleanly. Packaging and release mechanics live in [`packaging/README.md`](../packaging/README.md).

@@ -31,6 +31,11 @@ package() {
   install -Dm644 share/applications/superpanels-gui.desktop \
     "$pkgdir/usr/share/applications/superpanels-gui.desktop"
 
+  # System autostart entry (tray on login, on by default). Staged under
+  # share/ in the tarball, installed to its real home here.
+  install -Dm644 share/superpanels/autostart/superpanels.desktop \
+    "$pkgdir/etc/xdg/autostart/superpanels.desktop"
+
   for size in 32x32 128x128 256x256; do
     install -Dm644 "share/icons/hicolor/$size/apps/superpanels-gui.png" \
       "$pkgdir/usr/share/icons/hicolor/$size/apps/superpanels-gui.png"
