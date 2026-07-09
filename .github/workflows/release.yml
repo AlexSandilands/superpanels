@@ -41,6 +41,13 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Shared with the cache-warm workflow (also ubuntu-22.04). Tag refs can
+          # only restore caches saved on the same ref or the default branch, so
+          # release builds read the entry that main's warming run wrote. Never
+          # write here: a tag-scoped entry is invisible to the next tag. See #67.
+          shared-key: release
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - uses: actions/setup-node@v4
         with:
