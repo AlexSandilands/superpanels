@@ -75,7 +75,7 @@ jobs:
       - name: Build CLI + daemon
         run: cargo build --release -p superpanels-cli -p superpanels-daemon
 
-      - name: Build GUI + Linux bundles (.deb/.rpm/.AppImage)
+      - name: Build GUI + Linux bundles (.deb/.rpm)
         working-directory: crates/superpanels-gui
         # The frontend is already built by the step above; skip Tauri's
         # beforeBuildCommand (its `../../ui` resolves wrong under the CLI's

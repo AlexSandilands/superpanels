@@ -5,7 +5,7 @@
 #
 # Installs all three binaries (superpanels, superpanels-gui, superpanels-daemon)
 # plus the desktop entry and icons from a GitHub release. Works on any glibc
-# Linux distro; native .deb/.rpm/.AppImage are also published for users who
+# Linux distro; native .deb/.rpm are also published for users who
 # prefer their package manager.
 #
 # Options (pass after `| sh -s --`, or when running the file directly):

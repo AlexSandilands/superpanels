@@ -44,7 +44,7 @@ The quickest path — the install script pulls the latest release (CLI, daemon, 
 curl -fsSL https://raw.githubusercontent.com/AlexSandilands/superpanels/main/install.sh | sh
 ```
 
-Uninstall the same way with `--uninstall` (append `-s -- --uninstall`). On **Arch / CachyOS** you can instead add the signed **pacman repo** for automatic dependency resolution and `pacman -Syu` upgrades; native **`.deb` / `.rpm` / `.AppImage`** bundles are on the [releases page](https://github.com/AlexSandilands/superpanels/releases/latest); or [build from source](#building-from-source).
+Uninstall the same way with `--uninstall` (append `-s -- --uninstall`). On **Arch / CachyOS** you can instead add the signed **pacman repo** for automatic dependency resolution and `pacman -Syu` upgrades; native **`.deb` / `.rpm`** bundles are on the [releases page](https://github.com/AlexSandilands/superpanels/releases/latest); or [build from source](#building-from-source).
 
 **Full instructions — install-script options, the pacman repo, native bundles, and uninstall for each — are in [`docs/install.md`](./docs/install.md).**
 

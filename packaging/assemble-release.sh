@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Collect built binaries and Tauri bundles into dist/ as the release artefacts:
 # a universal tarball carrying all three binaries + desktop entry + icons, the
-# GUI .deb/.rpm/.AppImage (if `cargo tauri build` ran), and a SHA256SUMS file.
+# GUI .deb/.rpm (if `cargo tauri build` ran), and a SHA256SUMS file.
 #
 # Usage: packaging/assemble-release.sh <version> [arch]   # arch defaults x86_64
 #
@@ -70,7 +70,6 @@ debarch=amd64
 [ "$ARCH" = aarch64 ] && debarch=arm64
 copy_bundle "$TARGET/bundle/deb"      '*.deb'      "superpanels-gui_${VERSION}_${debarch}.deb"
 copy_bundle "$TARGET/bundle/rpm"      '*.rpm'      "superpanels-gui-${VERSION}.${ARCH}.rpm"
-copy_bundle "$TARGET/bundle/appimage" '*.AppImage' "superpanels-gui_${VERSION}_${ARCH}.AppImage"
 
 # Checksums over the published assets only (glob excludes SHA256SUMS itself).
 ( cd "$DIST" && sha256sum superpanels-* > SHA256SUMS )
