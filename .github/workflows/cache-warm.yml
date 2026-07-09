@@ -62,8 +62,15 @@ jobs:
           npm run build
 
       - name: Compile release dependency graph
-        # Same crates the Release job compiles (cli + daemon via cargo build, gui
-        # via `cargo tauri build`'s compile phase). rust-cache excludes our own
-        # workspace crates, so only their dependencies land in the cache — which
-        # is the point. Skips the Tauri bundler; bundling caches nothing.
-        run: cargo build --release -p superpanels-cli -p superpanels-daemon -p superpanels-gui
+        # Mirror the Release job's two compile phases exactly, or the cache
+        # misses: tauri-cli passes `--features tauri/custom-protocol` during
+        # `cargo tauri build` (unconditional in build_options, interface/rust.rs
+        # — verified against tauri-cli 2.11.4), and resolver-v2 feature
+        # unification means one combined invocation would fingerprint shared
+        # deps differently than the release job's split ones. rust-cache
+        # excludes our own workspace crates, so only the dependencies land in
+        # the cache — which is the point. Skips the Tauri bundler; bundling
+        # caches nothing.
+        run: |
+          cargo build --release -p superpanels-cli -p superpanels-daemon
+          cargo build --release -p superpanels-gui --features tauri/custom-protocol
