@@ -1035,6 +1035,7 @@
       profiles={profileStore.profiles}
       activeName={profileStore.activeName}
       slideshowPaused={slideshowController.state?.paused ?? false}
+      slideshowCanPrev={slideshowController.canPrev}
       onSwitch={(p) => {
         trayOpen = false;
         guardedDiscard(`Switch to '${p.name}'`, () => pickProfile(p));

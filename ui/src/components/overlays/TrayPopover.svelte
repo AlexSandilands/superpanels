@@ -10,6 +10,7 @@
     profiles: Profile[];
     activeName: string | null;
     slideshowPaused: boolean;
+    slideshowCanPrev: boolean;
     onSwitch: (p: Profile) => void;
     onPrev: () => void;
     onNext: () => void;
@@ -23,6 +24,7 @@
     profiles,
     activeName,
     slideshowPaused,
+    slideshowCanPrev,
     onSwitch,
     onPrev,
     onNext,
@@ -114,7 +116,7 @@
   </div>
 
   <div class="divider" style:margin="4px 0"></div>
-  <button class="row" onclick={onPrev}>
+  <button class="row" disabled={!slideshowCanPrev} onclick={onPrev}>
     <span style:width="14px" style:color="var(--text-3)" style:font-size="11px">◀</span>
     <span>Previous wallpaper</span>
   </button>
@@ -156,8 +158,11 @@
     text-align: left;
     font-size: 12px;
   }
-  .row:hover {
+  .row:hover:not(:disabled) {
     background: var(--panel-2);
+  }
+  .row:disabled {
+    opacity: 0.4;
   }
   .row-danger {
     color: var(--danger);

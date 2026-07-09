@@ -4,6 +4,7 @@
 // trigger transport without prop-drilling.
 
 import {
+  canStepBack,
   refreshRuntime,
   slideshowGoto as runGoto,
   slideshowNext as runNext,
@@ -22,6 +23,9 @@ async function refresh(): Promise<void> {
 export const slideshowController = {
   get state() {
     return state;
+  },
+  get canPrev() {
+    return canStepBack(state);
   },
   refresh,
   async next() {

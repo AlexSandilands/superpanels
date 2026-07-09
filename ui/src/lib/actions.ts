@@ -3,7 +3,7 @@
 // toasts; they don't return error state because callers just `void` them.
 
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { api, errorMessage, type Profile } from '$lib/api';
+import { api, errorMessage, isIpcError, type Profile } from '$lib/api';
 import { buildPreviewMonitors } from '$lib/canvas/preview-layout';
 import { canvasView, type MonitorOverride } from '$lib/stores/canvas-view.svelte';
 import { canvasLayers } from '$lib/stores/canvas-layers.svelte';
@@ -175,8 +175,17 @@ export type SlideshowState = {
   currentPath: string | null;
   /** Seconds until the next automatic advance, as of `fetchedAt`. */
   remainingSecs: number | null;
+  /** Distinct images stepped through so far, current image included. */
+  historyLen: number;
   fetchedAt: number;
 } | null;
+
+/** Prev pops history — nothing to pop back to until it holds at least the
+ *  current image plus one prior. Shared by every Prev entry point so the
+ *  disabled state and the transport gate agree. */
+export function canStepBack(state: SlideshowState): boolean {
+  return state !== null && state.historyLen >= 2;
+}
 
 export async function refreshRuntime(): Promise<SlideshowState | undefined> {
   try {
@@ -190,6 +199,7 @@ export async function refreshRuntime(): Promise<SlideshowState | undefined> {
         total: s.slideshow.pool_len ?? s.slideshow.history_len + 1,
         currentPath: s.slideshow.current_path ?? null,
         remainingSecs: s.slideshow.remaining_secs ?? null,
+        historyLen: s.slideshow.history_len,
         fetchedAt: Date.now(),
       };
     }
@@ -208,10 +218,17 @@ export async function slideshowNext(): Promise<void> {
   }
 }
 
+// Mirrors the daemon's rejection text (`cmd_slideshow_prev` in
+// crates/superpanels-daemon/src/server/slideshow.rs) so a poll/click race —
+// the UI's Prev gate goes stale between the last poll and the click — stays
+// silent instead of surfacing a "nothing is wrong" error toast.
+const NO_HISTORY_ERROR = 'no previous image in history';
+
 export async function slideshowPrev(): Promise<void> {
   try {
     await api.slideshowPrev();
   } catch (err) {
+    if (isIpcError(err) && err.kind === 'Daemon' && err.message === NO_HISTORY_ERROR) return;
     toast.error('Slideshow prev failed', errorMessage(err));
   }
 }
