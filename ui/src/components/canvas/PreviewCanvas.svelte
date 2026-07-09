@@ -30,6 +30,7 @@
   import CanvasSpanImage from './CanvasSpanImage.svelte';
   import CanvasImageLayers from './CanvasImageLayers.svelte';
   import DimensionLines from './DimensionLines.svelte';
+  import LayerContextMenu from './LayerContextMenu.svelte';
 
   type Props = {
     monitors: Monitor[];
@@ -92,6 +93,7 @@
   // otherwise silently change overlap winners and dirty the profile.
   let pendingRaise: { id: string; sx: number; sy: number } | null = null;
   const CLICK_SLOP_PX = 4;
+  let layerMenu = $state<{ id: string; x: number; y: number } | null>(null);
 
   const previewMonitors = $derived(buildPreviewMonitors(monitors, canvasView.overrides));
 
@@ -387,6 +389,24 @@
     canvasView.setZoom(canvasView.zoom * (1 + -ev.deltaY * 0.001));
   }
 
+  // Z-order menu is only meaningful for composite layers, not the monitor
+  // grid or the single-image span path.
+  function onContextMenu(ev: MouseEvent) {
+    if (!compositeMode || !imagesInteractive) return;
+    const hit = hitAt(ev.clientX, ev.clientY);
+    const id =
+      hit.type === 'layer' ||
+      hit.type === 'layer-resize' ||
+      hit.type === 'layer-remove' ||
+      hit.type === 'layer-snap'
+        ? hit.id
+        : null;
+    if (!id) return;
+    ev.preventDefault();
+    canvasView.setSelectedLayerId(id);
+    layerMenu = { id, x: ev.clientX, y: ev.clientY };
+  }
+
   const dimLines = $derived.by(() => {
     const showAlways = ui.dimsAlways;
     if (!showAlways && !dragController.drag && !canvasView.hoverId && !canvasView.selectId)
@@ -460,6 +480,7 @@
     tip = null;
   }}
   onwheel={onWheel}
+  oncontextmenu={onContextMenu}
   ondrop={handleDrop}
   ondragover={handleDragOver}
   ondragleave={() => (dropHover = null)}
@@ -525,3 +546,12 @@
     </div>
   {/if}
 </div>
+
+{#if layerMenu}
+  <LayerContextMenu
+    layerId={layerMenu.id}
+    x={layerMenu.x}
+    y={layerMenu.y}
+    onClose={() => (layerMenu = null)}
+  />
+{/if}

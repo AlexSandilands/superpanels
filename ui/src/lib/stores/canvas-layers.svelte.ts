@@ -113,6 +113,35 @@ export const canvasLayers = {
     layers = [...layers.slice(0, idx), ...layers.slice(idx + 1), layer];
   },
 
+  /** Swap `id` with the layer directly above it in the stack. */
+  bringForward(id: string): void {
+    const idx = layers.findIndex((l) => l.id === id);
+    if (idx < 0 || idx === layers.length - 1) return;
+    const current = layers[idx];
+    const above = layers[idx + 1];
+    if (!current || !above) return;
+    layers = [...layers.slice(0, idx), above, current, ...layers.slice(idx + 2)];
+  },
+
+  /** Swap `id` with the layer directly below it in the stack. */
+  sendBackward(id: string): void {
+    const idx = layers.findIndex((l) => l.id === id);
+    if (idx <= 0) return;
+    const current = layers[idx];
+    const below = layers[idx - 1];
+    if (!current || !below) return;
+    layers = [...layers.slice(0, idx - 1), current, below, ...layers.slice(idx + 1)];
+  },
+
+  /** Drop `id` to the bottom of the stack. */
+  sendToBack(id: string): void {
+    const idx = layers.findIndex((l) => l.id === id);
+    if (idx <= 0) return;
+    const layer = layers[idx];
+    if (!layer) return;
+    layers = [layer, ...layers.slice(0, idx), ...layers.slice(idx + 1)];
+  },
+
   /** Replace the stack from a profile's authored layers (transforms come from
    *  the persisted rects; urls load async). */
   setFromLayers(input: StandardLayer[]): void {
