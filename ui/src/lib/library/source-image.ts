@@ -29,16 +29,24 @@ export const PREVIEW_MAX_EDGE = 512;
  *  caps any request at 2048. */
 export const CANVAS_MAX_EDGE = 1536;
 
-// Entries are no longer uniformly sized — a 1536px canvas render retains
-// several times what a 512px swatch does — so the cache is bounded by retained
-// bytes rather than by a count. A count would let a burst of cheap 512px
-// inserts (the profile manager opening) evict the expensive canvas renders that
-// cost ~155 ms each to rebuild.
+// Entries are not uniformly sized — a 1536px canvas render retains several
+// times what a 512px swatch does — so two bounds apply and whichever binds
+// first wins.
+//
+// In the ordinary case the count is the operative limit: 32 typical canvas
+// renders (~683 KiB of base64 each) come to ~21 MiB, inside the byte budget.
+// The byte budget is the guard against pathological entries — 32 incompressible
+// 2048px sources would otherwise retain ~137 MiB.
+/** Ceiling on retained `data:` URL bytes. Guards against outsized entries. */
 export const CACHE_MAX_BYTES = 24 * 1024 * 1024;
-/** Floor so one incompressible image can't evict everything behind it. */
-export const CACHE_MIN_ENTRIES = 4;
-/** Backstop bounding entries still in flight, whose size isn't known yet. */
+/** The ordinary limit, and a bound on in-flight entries whose size isn't known yet. */
 const MAX_ENTRIES = 32;
+/**
+ * Floor so a few outsized images can't evict everything behind them. Sized to
+ * hold a whole canvas: layer count is unbounded, but a profile with more than
+ * this many layers can still thrash under byte pressure.
+ */
+export const CACHE_MIN_ENTRIES = 8;
 
 const cache = new Map<string, Entry>();
 
@@ -54,7 +62,10 @@ export async function loadSourceImage(
 ): Promise<SourceImage> {
   const key = keyFor(path, maxEdge);
   const existing = cache.get(key);
-  if (existing) return existing.promise;
+  if (existing) {
+    touch(key, existing);
+    return existing.promise;
+  }
   const promise = fetchAndDecode(path, maxEdge);
   const entry: Entry = { promise, loaded: null, bytes: 0 };
   cache.set(key, entry);
@@ -66,7 +77,11 @@ export async function loadSourceImage(
       prune();
     },
     () => {
-      cache.delete(key);
+      // Only evict our own entry. `prune()` can drop an in-flight entry (its
+      // `bytes` are zero until it settles), after which a re-request installs
+      // a fresh one under the same key — and this rejection must not take the
+      // replacement down with it.
+      if (cache.get(key) === entry) cache.delete(key);
     },
   );
   prune();
@@ -77,7 +92,19 @@ export function peekSourceImage(
   path: string,
   maxEdge: number = PREVIEW_MAX_EDGE,
 ): SourceImage | null {
-  return cache.get(keyFor(path, maxEdge))?.loaded ?? null;
+  const key = keyFor(path, maxEdge);
+  const entry = cache.get(key);
+  if (!entry) return null;
+  touch(key, entry);
+  return entry.loaded;
+}
+
+// Re-insert at the tail so `prune()` sees least-recently-*used* order rather
+// than insertion order. The canvas peeks its layers on every re-render, so this
+// keeps them ahead of swatches loaded once and never read again.
+function touch(key: string, entry: Entry): void {
+  cache.delete(key);
+  cache.set(key, entry);
 }
 
 async function fetchAndDecode(path: string, maxEdge: number): Promise<SourceImage> {
@@ -101,7 +128,7 @@ function retainedBytes(): number {
   return total;
 }
 
-// Evicts oldest-inserted first (Map preserves insertion order).
+// Evicts least-recently-used first (`touch` keeps Map order = LRU order).
 function prune(): void {
   let bytes = retainedBytes();
   for (const [key, entry] of cache) {

@@ -15,8 +15,6 @@ use tracing::warn;
 
 use crate::state::DaemonState;
 
-use superpanels_core::config::THUMBNAIL_MIN_EDGE;
-
 /// Force a synchronous rescan of every configured root, persist the result
 /// into the library DB, and refresh the in-memory cache. Returns the post-
 /// rescan entry count so the GUI can surface "scanned N images" feedback.
@@ -59,7 +57,7 @@ pub(crate) async fn cmd_library_thumbnail(
         let guard = state.lock().await;
         (
             guard.config.library.roots.clone(),
-            guard.config.library.thumbnail_size.max(THUMBNAIL_MIN_EDGE),
+            guard.config.library.thumbnail_size,
         )
     };
 

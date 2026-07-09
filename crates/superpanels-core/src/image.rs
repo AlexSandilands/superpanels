@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use image::{DynamicImage, ImageReader, imageops};
 use thiserror::Error;
 
+use crate::config::THUMBNAIL_MIN_EDGE;
 use crate::layout::{CropSpec, Rect};
 
 mod temp;
@@ -101,8 +102,9 @@ impl Resample {
 }
 
 /// Decode `path` then downscale so the longest edge is at most `max_edge`
-/// pixels. Used by the thumbnail IPC commands to keep payloads small. The
-/// decode is gated by the default memory budget.
+/// pixels, which is floored at [`THUMBNAIL_MIN_EDGE`] so a misconfigured
+/// `thumbnail_size = 0` can't reach `resize`. The decode is gated by the
+/// default memory budget.
 ///
 /// A source already within the box is returned at its native size —
 /// `DynamicImage::resize` would otherwise *upscale* it to fill the box, paying
@@ -112,11 +114,12 @@ pub fn load_thumbnail(
     max_edge: u32,
     quality: Resample,
 ) -> Result<DynamicImage, ImageError> {
+    let edge = max_edge.max(THUMBNAIL_MIN_EDGE);
     let img = load(path)?;
-    if img.width() <= max_edge && img.height() <= max_edge {
+    if img.width() <= edge && img.height() <= edge {
         return Ok(img);
     }
-    Ok(img.resize(max_edge, max_edge, quality.filter()))
+    Ok(img.resize(edge, edge, quality.filter()))
 }
 
 /// Encode `img` as PNG bytes for an IPC payload. In-memory counterpart to
@@ -440,7 +443,7 @@ mod tests {
 
     #[test]
     fn load_thumbnail_bounds_longest_edge_and_keeps_aspect() {
-        // Arrange — 100x50 source, 40px cap on the long edge. A high-frequency
+        // Arrange — 100x50 source, 80px cap on the long edge. A high-frequency
         // checkerboard, not a solid fill: the two filters agree pixel-for-pixel
         // on a flat image, so a solid fixture couldn't tell them apart.
         let dir = tempdir().unwrap();
@@ -452,14 +455,31 @@ mod tests {
         let path = write_png(dir.path(), "in.png", &DynamicImage::ImageRgba8(src));
 
         // Act
-        let fast = load_thumbnail(&path, 40, Resample::Fast).unwrap();
-        let high = load_thumbnail(&path, 40, Resample::High).unwrap();
+        let fast = load_thumbnail(&path, 80, Resample::Fast).unwrap();
+        let high = load_thumbnail(&path, 80, Resample::High).unwrap();
 
         // Assert — both filters agree on geometry, and the quality knob is
         // really wired to the resample: Lanczos3 output differs from Triangle.
-        assert_eq!((fast.width(), fast.height()), (40, 20));
-        assert_eq!((high.width(), high.height()), (40, 20));
+        assert_eq!((fast.width(), fast.height()), (80, 40));
+        assert_eq!((high.width(), high.height()), (80, 40));
         assert_ne!(fast.to_rgba8().into_raw(), high.to_rgba8().into_raw());
+    }
+
+    #[test]
+    fn load_thumbnail_floors_a_degenerate_max_edge() {
+        // A `thumbnail_size = 0` config once had to be clamped by every caller
+        // in turn; the floor now lives here so a fourth caller can't forget it.
+        let dir = tempdir().unwrap();
+        let path = write_png(dir.path(), "in.png", &solid_image(400, 400, [7, 7, 7, 255]));
+
+        // Act
+        let out = load_thumbnail(&path, 0, Resample::Fast).unwrap();
+
+        // Assert
+        assert_eq!(
+            (out.width(), out.height()),
+            (THUMBNAIL_MIN_EDGE, THUMBNAIL_MIN_EDGE)
+        );
     }
 
     #[test]
