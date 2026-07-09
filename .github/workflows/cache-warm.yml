@@ -1,0 +1,76 @@
+name: Warm release cache
+
+# Populates the default-branch Rust cache scope that tagged Release builds read.
+# Actions caches only restore from the current ref and the default branch, so an
+# entry saved on a tag ref is invisible to later tags — warming on main is the
+# only way a Release run starts warm. Kept in its own workflow so release.yml's
+# tag-only triggers and contents:write permission stay untouched.
+#
+# Must stay on ubuntu-22.04 and share `shared-key: release` with release.yml's
+# build job: the cache retains compiled build scripts / proc-macro .so files, and
+# 24.04's glibc 2.39 artefacts won't run on 22.04's 2.35 (why release pins the
+# older runner). Do NOT share a key with the ubuntu-24.04 CI jobs. See issue #67.
+
+on:
+  push:
+    branches: [main]
+  # Manual trigger to prime the cache before cutting a tag.
+  workflow_dispatch:
+
+# Read-only: this job publishes nothing, it only writes the Actions cache.
+permissions:
+  contents: read
+
+concurrency:
+  group: cache-warm-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  warm:
+    name: warm rust cache
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      # The gui crate needs ui/dist to exist for tauri::generate_context!.
+      - name: Build frontend bundle
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build
+
+      - name: Compile release dependency graph
+        # Mirror the Release job's two compile phases exactly, or the cache
+        # misses: tauri-cli passes `--features tauri/custom-protocol` during
+        # `cargo tauri build` (unconditional in build_options, interface/rust.rs
+        # — verified against tauri-cli 2.11.4), and resolver-v2 feature
+        # unification means one combined invocation would fingerprint shared
+        # deps differently than the release job's split ones. rust-cache
+        # excludes our own workspace crates, so only the dependencies land in
+        # the cache — which is the point. Skips the Tauri bundler; bundling
+        # caches nothing.
+        run: |
+          cargo build --release -p superpanels-cli -p superpanels-daemon
+          cargo build --release -p superpanels-gui --features tauri/custom-protocol

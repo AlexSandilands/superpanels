@@ -4,7 +4,7 @@ Every method installs the same build; pick the one that fits your distro. Each s
 
 - [Install script (any glibc Linux)](#install-script-any-glibc-linux)
 - [Arch / CachyOS: pacman repo](#arch--cachyos-pacman-repo)
-- [Native bundles (.deb / .rpm / .AppImage)](#native-bundles-deb--rpm--appimage)
+- [Native bundles (.deb / .rpm)](#native-bundles-deb--rpm)
 - [Troubleshooting](#troubleshooting)
 - [From source](#from-source)
 
@@ -86,7 +86,7 @@ sudo rm -f /var/lib/pacman/sync/superpanels.db*                    # forget the 
 
 Then delete the `[superpanels]` section from `/etc/pacman.conf` and run `sudo pacman -Sy`.
 
-## Native bundles (.deb / .rpm / .AppImage)
+## Native bundles (.deb / .rpm)
 
 Each release attaches GUI bundles for users who prefer their native package manager. They're **plain files on the [releases page](https://github.com/AlexSandilands/superpanels/releases/latest)**, not a hosted repo — download the file and install it locally. They bundle the **GUI only** (Tauri's design); for the CLI and daemon, use the install script or build from source.
 
@@ -104,13 +104,6 @@ sudo apt install ./superpanels-gui_<ver>_amd64.deb
 sudo dnf install ./superpanels-gui-<ver>.x86_64.rpm
 ```
 
-**AppImage** — no install step; make it executable and run:
-
-```sh
-chmod +x superpanels-gui_<ver>_x86_64.AppImage
-./superpanels-gui_<ver>_x86_64.AppImage
-```
-
 ### Uninstall
 
 The `.deb` and `.rpm` install a package named **`superpanels`**:
@@ -119,8 +112,6 @@ The `.deb` and `.rpm` install a package named **`superpanels`**:
 sudo apt remove superpanels      # Debian / Ubuntu
 sudo dnf remove superpanels      # Fedora / RHEL
 ```
-
-For the AppImage, just delete the file.
 
 ## Autostart on login
 

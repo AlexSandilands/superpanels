@@ -14,7 +14,7 @@ distribution work (AUR auto-push, COPR, apt repo, crates.io, Flatpak, signing,
 | `aur-superpanels/` | The single `superpanels` AUR package (CLI + daemon + GUI). |
 | `pacman-repo/` | `superpanels-bin` PKGBUILD (repackages the release tarball) + `publish.sh`, the CI script that signs it and publishes the self-hosted pacman repo (below). |
 
-The native `.deb`/`.rpm`/`.AppImage` get their menu entry from
+The native `.deb`/`.rpm` get their menu entry from
 `../crates/superpanels-gui/desktop-entry.hbs` (wired via `desktopTemplate` in
 `tauri.conf.json`). It mirrors Tauri's default template; `Exec=` is a plain
 launch, since the binary self-applies the WebKitGTK DMABUF workaround when
@@ -35,7 +35,7 @@ push and no dnf/apt repository.
 | `curl … /install.sh \| sh` | ✅ yes | installs immediately from the release tarball |
 | `pacman -S superpanels-bin` (self-hosted repo) | ✅ stable tags only | one-time repo + key setup ([`docs/install.md`](../docs/install.md)), then normal `pacman -Syu` upgrades |
 | `makepkg -si` (in `aur-superpanels/`) | n/a — always in the repo | builds from source, installs a `pacman`-tracked package; no AUR needed (below) |
-| `.deb` / `.rpm` / `.AppImage` | ⚠️ built & attached, **not** in any repo | download the file, then `sudo dnf install ./…rpm` / `sudo apt install ./…deb` |
+| `.deb` / `.rpm` | ⚠️ built & attached, **not** in any repo | download the file, then `sudo dnf install ./…rpm` / `sudo apt install ./…deb` |
 | `yay -S superpanels` (AUR) | ❌ no | works only after a **manual** push to the AUR remote (below; registrations currently locked — see issue #46) |
 | `dnf install superpanels` / `apt install superpanels` | ❌ no | needs a hosted repo (Fedora COPR / apt PPA) — not built yet |
 | `cargo install superpanels` | ❌ no | needs crates.io metadata + publish — not done yet |
@@ -51,9 +51,9 @@ The release artefacts are:
 - `superpanels-<ver>-x86_64-linux.tar.gz` — the **universal bundle**: all three
   binaries + `superpanels-gui.desktop` + hicolor icons + licences. This is what
   `install.sh` pulls, so it's the only artefact carrying the CLI and daemon.
-- `superpanels-gui_<ver>_amd64.deb`, `superpanels-gui-<ver>.x86_64.rpm`,
-  `superpanels-gui_<ver>_x86_64.AppImage` — the Tauri GUI bundles (GUI-only by
-  Tauri's design), for users who prefer their native package manager.
+- `superpanels-gui_<ver>_amd64.deb`, `superpanels-gui-<ver>.x86_64.rpm` — the
+  Tauri GUI bundles (GUI-only by Tauri's design), for users who prefer their
+  native package manager.
 - `SHA256SUMS` over all of the above.
 
 ## Versioning
@@ -70,7 +70,7 @@ manifest as checked in.
    `CHANGELOG.md` has the new version's notes.
 2. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 3. `release.yml` builds on the tag and publishes the GitHub release with the
-   universal tarball, the `.deb`/`.rpm`/`.AppImage`, and `SHA256SUMS`. On a
+   universal tarball, the `.deb`/`.rpm`, and `SHA256SUMS`. On a
    stable tag (no `-` in it), the `pacman-repo` job then publishes
    `superpanels-bin` to the self-hosted pacman repo automatically.
 
@@ -82,7 +82,7 @@ repository; the AUR step below is manual.
 needs no per-release change.
 
 > **Tip:** shake the pipeline out with a `vX.Y.Z-rc.1` pre-release tag before the
-> real tag — the live Tauri bundle / AppImage build isn't exercised by PR CI.
+> real tag — the live Tauri bundle build isn't exercised by PR CI.
 
 ## Build & install from source with `makepkg`
 
