@@ -17,6 +17,7 @@ pub(crate) mod commands;
 pub(crate) mod desktop_entry;
 pub(crate) mod dmabuf;
 pub(crate) mod errors;
+pub(crate) mod resize_borders;
 pub(crate) mod state;
 pub(crate) mod tray;
 pub(crate) mod window_state;
@@ -85,8 +86,11 @@ fn setup_app(
     crate::window_state::restore(app);
     // The window defaults to hidden (`visible: false`); a normal launch opts
     // into showing it, tray-only autostart leaves it hidden.
-    if !start_hidden {
-        if let Some(window) = app.get_webview_window("main") {
+    if let Some(window) = app.get_webview_window("main") {
+        if let Err(e) = crate::resize_borders::install(&window) {
+            tracing::warn!(error = %e, "resize borders not installed; window may not resize");
+        }
+        if !start_hidden {
             let _ = window.show();
             let _ = window.set_focus();
         }

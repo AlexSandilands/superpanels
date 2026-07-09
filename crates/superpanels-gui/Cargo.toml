@@ -43,5 +43,10 @@ tracing                    = { workspace = true }
 tracing-subscriber         = { workspace = true }
 ts-rs                      = { workspace = true }
 
+# GTK is already in the tree via tauri; we take a direct handle on it to install
+# the undecorated window's resize borders (see `resize_borders.rs`).
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = { version = "0.18", features = ["v3_24"] }
+
 [dev-dependencies]
 tempfile = { workspace = true }

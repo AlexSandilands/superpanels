@@ -86,6 +86,7 @@
   import ModeHint from './components/chrome/ModeHint.svelte';
   import MonitorGapDock from './components/chrome/MonitorGapDock.svelte';
   import MonitorInspector from './components/chrome/MonitorInspector.svelte';
+  import ResizeGrips from './components/chrome/ResizeGrips.svelte';
   import SourceDock from './components/chrome/SourceDock.svelte';
   import TitleBar from './components/chrome/TitleBar.svelte';
   import Toast from './components/widgets/Toast.svelte';
@@ -1079,6 +1080,8 @@
   {/if}
 
   <Toast />
+
+  <ResizeGrips />
 </div>
 
 <style>
