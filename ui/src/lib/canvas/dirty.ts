@@ -9,7 +9,7 @@ import type { ImageTransform } from '$lib/stores/image-transform.svelte';
 import type { Profile } from '$lib/api';
 import type { ImageRectMm } from '$lib/types/ImageRectMm';
 import type { MonitorPlacement } from '$lib/types/MonitorPlacement';
-import type { StandardLayer } from '$lib/types/profile-helpers';
+import { isStandardBody, type StandardLayer } from '$lib/types/profile-helpers';
 import { coverImageRect, type PreviewMonitor } from './preview-layout';
 
 const POSITION_TOLERANCE_MM = 0.5;
@@ -71,6 +71,38 @@ export function liveLayersDirty(live: CanvasLayer[], persisted: StandardLayer[])
     if (!p || p.path !== l.path) return true;
     return rectDirty(l.transform, p.image_rect_mm);
   });
+}
+
+/** Quantised to the tolerance the diffs above use, so a sub-tolerance nudge
+ *  doesn't read as a change. */
+function quantise(mm: number): number {
+  return Math.round(mm / POSITION_TOLERANCE_MM);
+}
+
+function quantiseTransform(t: ImageTransform): number[] {
+  return [quantise(t.offsetMmX), quantise(t.offsetMmY), quantise(t.widthMm), quantise(t.heightMm)];
+}
+
+/** A digest of everything an Apply pushes to the desktop: the draft's
+ *  non-canvas fields, plus the live monitor placements and image geometry
+ *  substituted in for the draft's persisted copies. Two equal fingerprints
+ *  mean the desktop already shows this canvas, which is what Apply's own
+ *  dirty state keys on — [`canvasOverridesDirty`] and friends can't stand in,
+ *  because they diff against the *saved* profile and Apply never saves. */
+export function canvasFingerprint(
+  draft: Profile | null,
+  overrides: Record<string, MonitorOverride>,
+  layers: CanvasLayer[],
+  transform: ImageTransform,
+): string {
+  if (!draft) return '';
+  const placements = Object.entries(overrides)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([id, o]) => [id, quantise(o.xMm), quantise(o.yMm)]);
+  const body = isStandardBody(draft.body)
+    ? { type: 'standard', layers: layers.map((l) => [l.path, quantiseTransform(l.transform)]) }
+    : { ...draft.body, image_rect_mm: quantiseTransform(transform) };
+  return JSON.stringify([draft.name, draft.backend_override, placements, body]);
 }
 
 /** [`rectDirty`] against the cover-fit rect for `naturalDims` over

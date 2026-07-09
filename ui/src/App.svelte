@@ -3,6 +3,7 @@
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import type { Profile } from '$lib/api';
   import { takeDraggedImagePath } from '$lib/canvas/image-drag';
+  import { appliedCanvas } from '$lib/stores/applied.svelte';
   import { canvasView } from '$lib/stores/canvas-view.svelte';
   import { canvasLayers } from '$lib/stores/canvas-layers.svelte';
   import { daemonStatus } from '$lib/stores/daemon-status.svelte';
@@ -468,6 +469,12 @@
   const canSave = $derived(Boolean(profileStore.activeName) && !profileStore.saving);
   const canRevert = $derived(canvasDirty && Boolean(profileStore.activeName));
 
+  // Apply's dirty state is narrower than Save's: an applied-but-unsaved canvas
+  // is already on the desktop, so Apply fades while Save stays lit. A
+  // daemon-driven slideshow advance reseeds the transform without diverging
+  // from what the daemon itself painted, hence the `canvasDirty` gate.
+  const applyDirty = $derived(canvasDirty && appliedCanvas.diverged);
+
   // Confirm-discard modal (§4e.11.5). When the user initiates an action
   // that would silently drop unsaved canvas state, hold the action in
   // `pendingDiscard` and surface the modal. Cancel keeps the canvas;
@@ -864,6 +871,7 @@
     {canSave}
     {canRevert}
     {canvasDirty}
+    {applyDirty}
     onApply={() => void applyDraftProfile()}
     onSave={() => void saveActiveProfile()}
     onSaveAsNew={() => (saveDialogOpen = true)}

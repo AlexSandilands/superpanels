@@ -21,6 +21,7 @@
     canSave: boolean;
     canRevert: boolean;
     canvasDirty: boolean;
+    applyDirty: boolean;
     onApply: () => void;
     onSave: () => void;
     onSaveAsNew: () => void;
@@ -41,6 +42,7 @@
     canSave,
     canRevert,
     canvasDirty,
+    applyDirty,
     onApply,
     onSave,
     onSaveAsNew,
@@ -135,7 +137,7 @@
   const applyTitle = $derived(
     !canApply
       ? 'Cannot apply while the draft is unnamed or saving'
-      : canvasDirty
+      : applyDirty
         ? 'Apply (Enter)'
         : 'Re-apply current profile (Enter)',
   );
@@ -276,7 +278,7 @@
          re-asserting after an external change); only !canApply disables. -->
     <button
       class="btn"
-      class:primary={canvasDirty}
+      class:primary={applyDirty}
       disabled={!canApply}
       onclick={onApply}
       title={applyTitle}
@@ -285,9 +287,9 @@
       <span
         class="kbd"
         style:margin-left="4px"
-        style:background={canvasDirty ? 'oklch(0 0 0 / 0.18)' : null}
-        style:border-color={canvasDirty ? 'oklch(0 0 0 / 0.2)' : null}
-        style:color={canvasDirty ? 'oklch(0.18 0.01 250)' : null}
+        style:background={applyDirty ? 'oklch(0 0 0 / 0.18)' : null}
+        style:border-color={applyDirty ? 'oklch(0 0 0 / 0.2)' : null}
+        style:color={applyDirty ? 'oklch(0.18 0.01 250)' : null}
       >
         ↵
       </span>

@@ -5,6 +5,7 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { api, errorMessage, type Profile } from '$lib/api';
 import { buildPreviewMonitors } from '$lib/canvas/preview-layout';
+import { appliedCanvas } from '$lib/stores/applied.svelte';
 import { canvasView, type MonitorOverride } from '$lib/stores/canvas-view.svelte';
 import { canvasLayers } from '$lib/stores/canvas-layers.svelte';
 import { imageTransform } from '$lib/stores/image-transform.svelte';
@@ -103,6 +104,7 @@ export async function applyDraftProfile(): Promise<void> {
     const t0 = performance.now();
     const r = await api.applyCanvas(refreshed, profileStore.activeName);
     const elapsed = recordAndToast(r, t0);
+    appliedCanvas.mark();
     toast.success(`Applied '${refreshed.name}'`, `${r.backend ?? 'backend'} · ${elapsed} ms`);
     void profileStore.refresh();
     void slideshowController.refresh();
