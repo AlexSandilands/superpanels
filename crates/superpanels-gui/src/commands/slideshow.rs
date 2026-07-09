@@ -48,3 +48,16 @@ pub(crate) async fn slideshow_pause(
     }
     bridge::call_off_main("slideshow_pause", params, state.config_path()).await
 }
+
+#[tauri::command]
+pub(crate) async fn slideshow_pool(
+    profile: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Value, IpcError> {
+    bridge::call_off_main(
+        "slideshow_pool",
+        json!({ "profile": profile }),
+        state.config_path(),
+    )
+    .await
+}

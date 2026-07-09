@@ -1,4 +1,4 @@
-//! Slideshow next/prev/goto/pause IPC handlers.
+//! Slideshow next/prev/goto/pause/pool IPC handlers.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -155,6 +155,38 @@ pub(super) async fn cmd_slideshow_prev(state: Arc<Mutex<DaemonState>>) -> IpcRes
         Ok(Err(e)) => IpcResponse::failure(e.to_string()),
         Err(e) => IpcResponse::failure(format!("task panic: {e}")),
     }
+}
+
+/// Resolved image pool for a named slideshow profile — the same paths
+/// `apply_profile` / `slideshow_next` would draw from. Used by the GUI's
+/// quick-jump grid so it can show folder sources outside the library index
+/// without re-implementing the daemon's recursive/sort/filter rules.
+/// An empty or unresolvable set is not an error: it just yields `[]`.
+pub(super) async fn cmd_slideshow_pool(
+    req: IpcRequest,
+    state: Arc<Mutex<DaemonState>>,
+) -> IpcResponse {
+    let Some(name) = req
+        .params
+        .get("profile")
+        .and_then(serde_json::Value::as_str)
+    else {
+        return IpcResponse::failure("params.profile (string) required");
+    };
+    let images = {
+        let guard = state.lock().await;
+        let Some(profile) = guard.config.profiles.iter().find(|p| p.name == name) else {
+            return IpcResponse::failure(format!("profile '{name}' not found"));
+        };
+        match &profile.body {
+            ProfileBody::Slideshow(slideshow) => slideshow.source.images.clone(),
+            ProfileBody::Standard(_) => {
+                return IpcResponse::failure(format!("profile '{name}' has no slideshow source"));
+            }
+        }
+    };
+    let pool = resolve_pool(&state, &images).await.unwrap_or_default();
+    IpcResponse::success(json!(pool))
 }
 
 pub(super) async fn cmd_slideshow_pause(

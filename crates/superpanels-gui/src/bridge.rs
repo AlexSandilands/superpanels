@@ -18,11 +18,17 @@ pub(crate) type CallResult = Result<Value, IpcError>;
 
 /// Whether a given method should be attempted in-process when no daemon is up.
 /// Slideshow control commands genuinely need daemon state and have no useful
-/// in-process fallback.
+/// in-process fallback. `slideshow_pool` reuses the daemon's cached library +
+/// scan resolution; re-implementing that client-side would diverge from its
+/// recursive/sort/filter rules, so it has no in-process fallback either.
 fn has_in_process_fallback(method: &str) -> bool {
     !matches!(
         method,
-        "slideshow_next" | "slideshow_prev" | "slideshow_goto" | "slideshow_pause"
+        "slideshow_next"
+            | "slideshow_prev"
+            | "slideshow_goto"
+            | "slideshow_pause"
+            | "slideshow_pool"
     )
 }
 
@@ -90,6 +96,7 @@ mod tests {
         assert!(!has_in_process_fallback("slideshow_prev"));
         assert!(!has_in_process_fallback("slideshow_goto"));
         assert!(!has_in_process_fallback("slideshow_pause"));
+        assert!(!has_in_process_fallback("slideshow_pool"));
     }
 
     #[test]

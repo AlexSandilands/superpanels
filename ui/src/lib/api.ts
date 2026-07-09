@@ -148,6 +148,10 @@ export const api = {
   slideshowGoto: (path: string) => call<AppliedReport>('slideshow_goto', { path }),
   slideshowPause: (paused?: boolean) =>
     call<{ paused: boolean }>('slideshow_pause', paused === undefined ? {} : { paused }),
+  // Daemon-resolved pool for a slideshow profile — includes folders outside
+  // the library index. Requires a running daemon, like the other slideshow_*
+  // methods; callers fall back to a library-only view on `DaemonUnreachable`.
+  slideshowPool: (profile: string) => call<string[]>('slideshow_pool', { profile }),
   getConfig: () => call<unknown>('get_config'),
   saveConfig: (config: unknown) => call<void>('save_config', { config }),
   openConfigFile: () => call<void>('open_config_file'),

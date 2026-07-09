@@ -120,6 +120,7 @@ async fn dispatch(
         "slideshow_prev" => slideshow::cmd_slideshow_prev(state).await,
         "slideshow_goto" => slideshow::cmd_slideshow_goto(req, state, timer_tx).await,
         "slideshow_pause" => slideshow::cmd_slideshow_pause(req, state).await,
+        "slideshow_pool" => slideshow::cmd_slideshow_pool(req, state).await,
         "redetect" => apply::cmd_redetect(state).await,
         "wait_for_monitor_change" => apply::cmd_wait_for_monitor_change(state).await,
         "current_state" => apply::cmd_current_state(state).await,
@@ -509,6 +510,124 @@ mod tests {
         .await;
         assert!(!resp.is_ok());
         assert!(resp.error.unwrap().contains("missing 'path' param"));
+    }
+
+    #[tokio::test]
+    async fn slideshow_pool_returns_resolved_paths_for_named_profile() {
+        let dir = tempdir().unwrap();
+        let a = dir.path().join("a.png");
+        write_dummy_image(&a);
+        let mut config = Config::default();
+        config.profiles.push(slideshow_profile("p", dir.path()));
+        let state = make_state_arc(DaemonState::for_tests(config));
+
+        let resp = dispatch_for_tests(
+            IpcRequest {
+                v: PROTOCOL_VERSION,
+                method: "slideshow_pool".to_owned(),
+                params: json!({"profile": "p"}),
+            },
+            state,
+            timer_pair(),
+        )
+        .await;
+
+        assert!(resp.is_ok(), "got: {:?}", resp.error);
+        let arr = resp.result.unwrap();
+        assert_eq!(arr, json!([a.to_string_lossy()]));
+    }
+
+    #[tokio::test]
+    async fn slideshow_pool_returns_empty_array_for_empty_folder() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.profiles.push(slideshow_profile("p", dir.path()));
+        let state = make_state_arc(DaemonState::for_tests(config));
+
+        let resp = dispatch_for_tests(
+            IpcRequest {
+                v: PROTOCOL_VERSION,
+                method: "slideshow_pool".to_owned(),
+                params: json!({"profile": "p"}),
+            },
+            state,
+            timer_pair(),
+        )
+        .await;
+
+        assert!(resp.is_ok(), "got: {:?}", resp.error);
+        assert_eq!(resp.result.unwrap(), json!([]));
+    }
+
+    #[tokio::test]
+    async fn slideshow_pool_errors_when_profile_not_found() {
+        let state = make_state_arc(DaemonState::for_tests(Config::default()));
+        let resp = dispatch_for_tests(
+            IpcRequest {
+                v: PROTOCOL_VERSION,
+                method: "slideshow_pool".to_owned(),
+                params: json!({"profile": "ghost"}),
+            },
+            state,
+            timer_pair(),
+        )
+        .await;
+        assert!(!resp.is_ok());
+        assert!(resp.error.unwrap().contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn slideshow_pool_errors_for_standard_profile() {
+        let mut config = Config::default();
+        let now = superpanels_core::config::now_timestamp();
+        config.profiles.push(Profile {
+            name: "std".to_owned(),
+            body: ProfileBody::Standard(StandardProfile {
+                layers: vec![StandardLayer {
+                    path: PathBuf::from("/img.png"),
+                    image_rect_mm: ImageRectMm::default(),
+                }],
+            }),
+            monitor_state: HashMap::new(),
+            topology: TopologyFingerprint(String::new()),
+            description: None,
+            created_at: now,
+            updated_at: now,
+            last_applied_at: None,
+            backend_override: None,
+        });
+        let state = make_state_arc(DaemonState::for_tests(config));
+
+        let resp = dispatch_for_tests(
+            IpcRequest {
+                v: PROTOCOL_VERSION,
+                method: "slideshow_pool".to_owned(),
+                params: json!({"profile": "std"}),
+            },
+            state,
+            timer_pair(),
+        )
+        .await;
+
+        assert!(!resp.is_ok());
+        assert!(resp.error.unwrap().contains("no slideshow source"));
+    }
+
+    #[tokio::test]
+    async fn slideshow_pool_requires_profile_param() {
+        let state = make_state_arc(DaemonState::for_tests(Config::default()));
+        let resp = dispatch_for_tests(
+            IpcRequest {
+                v: PROTOCOL_VERSION,
+                method: "slideshow_pool".to_owned(),
+                params: json!({}),
+            },
+            state,
+            timer_pair(),
+        )
+        .await;
+        assert!(!resp.is_ok());
+        assert!(resp.error.unwrap().contains("params.profile"));
     }
 
     #[tokio::test]
