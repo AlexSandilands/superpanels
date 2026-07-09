@@ -21,6 +21,7 @@ use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
 mod apply;
+mod daemonize;
 mod display_watch;
 mod pool;
 mod schedule;
@@ -72,7 +73,11 @@ fn main() -> ExitCode {
 
     // In background mode, re-exec ourselves with `--foreground` and exit.
     if !cli.foreground {
-        if let Err(e) = daemonize(&cli) {
+        // Init tracing in the parent too: its stderr is still the launching
+        // terminal (only the detached child's stdio is nulled), so the
+        // "started" line and any setsid-missing warning actually reach the user.
+        init_tracing(cli.verbose, cli.quiet);
+        if let Err(e) = daemonize::daemonize(&cli) {
             eprintln!("error: could not start daemon in background: {e:#}");
             return ExitCode::from(1);
         }
@@ -373,32 +378,6 @@ fn choose_initial_profile(
             .map(|r| r.active_profile.clone())
             .filter(|name| config.profiles.iter().any(|p| p.name == *name))
     })
-}
-
-/// Re-exec the daemon in the foreground via a child process.
-fn daemonize(cli: &Cli) -> Result<()> {
-    let exe = std::env::current_exe().context("resolving current executable")?;
-    let mut cmd = std::process::Command::new(&exe);
-    cmd.arg("--foreground");
-    if let Some(sock) = &cli.socket {
-        cmd.arg("--socket").arg(sock);
-    }
-    if let Some(cfg) = &cli.config {
-        cmd.arg("--config").arg(cfg);
-    }
-    for _ in 0..cli.verbose {
-        cmd.arg("-v");
-    }
-    if cli.quiet {
-        cmd.arg("--quiet");
-    }
-    cmd.stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .context("spawning background daemon process")?;
-    info!(socket = ?cli.socket, "daemon started in background");
-    Ok(())
 }
 
 fn init_tracing(verbose: u8, quiet: bool) {
