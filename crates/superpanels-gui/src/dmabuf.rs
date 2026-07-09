@@ -43,12 +43,24 @@ struct Facts {
 impl Facts {
     fn probe() -> Self {
         Self {
-            wayland: env_eq_ignore_case("XDG_SESSION_TYPE", "wayland"),
+            wayland: wayland_session(
+                std::env::var("XDG_SESSION_TYPE").ok().as_deref(),
+                std::env::var("WAYLAND_DISPLAY").ok().as_deref(),
+            ),
             glx_vendor_nvidia: env_contains_ignore_case("__GLX_VENDOR_LIBRARY_NAME", "nvidia"),
             nvidia_dev_node: Path::new("/dev/nvidiactl").exists()
                 || Path::new("/dev/nvidia0").exists(),
         }
     }
+}
+
+/// `XDG_SESSION_TYPE` alone is not enough: an `/etc/xdg/autostart` process
+/// inherits a thinner environment than a login shell and may not have it, which
+/// silently skipped the workaround and crashed the webview on first render.
+/// `WAYLAND_DISPLAY` survives that. See GitHub #76.
+fn wayland_session(session_type: Option<&str>, wayland_display: Option<&str>) -> bool {
+    session_type.is_some_and(|v| v.eq_ignore_ascii_case("wayland"))
+        || wayland_display.is_some_and(|v| !v.is_empty())
 }
 
 /// Warranted only on Wayland with a sign NVIDIA is the active GL stack. A
@@ -85,10 +97,6 @@ fn reexec_with_workaround() {
 #[cfg(not(target_os = "linux"))]
 fn reexec_with_workaround() {}
 
-fn env_eq_ignore_case(key: &str, want: &str) -> bool {
-    std::env::var(key).is_ok_and(|v| v.eq_ignore_ascii_case(want))
-}
-
 fn env_contains_ignore_case(key: &str, needle: &str) -> bool {
     std::env::var(key).is_ok_and(|v| v.to_ascii_lowercase().contains(needle))
 }
@@ -120,5 +128,29 @@ mod tests {
     #[test]
     fn not_warranted_on_wayland_without_any_nvidia_signal() {
         assert!(!warranted(&facts(true, false, false)));
+    }
+
+    #[test]
+    fn session_type_wayland_is_a_wayland_signal() {
+        assert!(wayland_session(Some("wayland"), None));
+        assert!(wayland_session(Some("Wayland"), None));
+    }
+
+    #[test]
+    fn wayland_display_alone_is_a_wayland_signal() {
+        // The autostart case: `/etc/xdg/autostart` does not pass through
+        // `XDG_SESSION_TYPE`, but `WAYLAND_DISPLAY` is present. See GitHub #76.
+        assert!(wayland_session(None, Some("wayland-0")));
+    }
+
+    #[test]
+    fn empty_wayland_display_is_not_a_wayland_signal() {
+        assert!(!wayland_session(None, Some("")));
+    }
+
+    #[test]
+    fn no_wayland_signal_when_neither_is_set() {
+        assert!(!wayland_session(None, None));
+        assert!(!wayland_session(Some("x11"), None));
     }
 }
