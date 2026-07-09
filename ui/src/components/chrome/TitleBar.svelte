@@ -153,7 +153,13 @@
       .catch(() => {});
   }}
 >
-  <div class="flex items-center" style:gap="8px" style:margin-right="6px" data-drag-region>
+  <div
+    class="flex items-center"
+    style:gap="8px"
+    style:margin-right="6px"
+    style:align-self="stretch"
+    data-drag-region
+  >
     <Icon name="logo" size={20} />
     <span style:font-weight="600" style:font-size="13px" style:letter-spacing="-0.01em"
       >Superpanels</span
@@ -197,7 +203,10 @@
     {/if}
   </div>
 
-  <div style:flex="1" data-drag-region></div>
+  <!-- `align-self: stretch` is load-bearing: an empty `flex: 1` child of an
+       `align-items: center` row measures 0 px tall, and a zero-height drag
+       region is no drag region at all. -->
+  <div style:flex="1" style:align-self="stretch" data-drag-region></div>
 
   <div class="flex items-center" style:gap="8px">
     <span class="chip" title={daemonDotTitle}>
