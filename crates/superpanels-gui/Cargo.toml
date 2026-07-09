@@ -43,5 +43,12 @@ tracing                    = { workspace = true }
 tracing-subscriber         = { workspace = true }
 ts-rs                      = { workspace = true }
 
+# GTK is already in the tree via tauri; we take a direct handle on it to install
+# the undecorated window's move + resize handling (see `window_chrome.rs`). Its
+# version is pinned in the workspace table so a tauri bump can't silently land a
+# second gtk in the graph.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = { workspace = true }
+
 [dev-dependencies]
 tempfile = { workspace = true }

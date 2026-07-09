@@ -315,8 +315,22 @@
     if (stageEl) stageEl.setPointerCapture(ev.pointerId);
   }
 
+  // A gesture the browser never completes — the compositor stole the pointer
+  // grab for a window resize, or the pointer left the surface with the button
+  // still logically down — must not leave the image glued to the cursor.
+  function cancelDrag() {
+    if (!dragController.drag) return;
+    pendingSelect = null;
+    pendingRaise = null;
+    dragController.end();
+  }
+
   function onPointerMove(ev: PointerEvent) {
     if (!stageEl) return;
+    if (dragController.drag && ev.buttons === 0) {
+      cancelDrag();
+      return;
+    }
     const r = stageEl.getBoundingClientRect();
     const px = ev.clientX - r.left;
     const py = ev.clientY - r.top;
@@ -365,7 +379,7 @@
     // A bare click on a layer leaves the stack order untouched.
     pendingRaise = null;
     dragController.end();
-    if (stageEl) stageEl.releasePointerCapture(ev.pointerId);
+    if (stageEl?.hasPointerCapture(ev.pointerId)) stageEl.releasePointerCapture(ev.pointerId);
   }
 
   function onWheel(ev: WheelEvent) {
@@ -438,7 +452,8 @@
   onpointerdown={onPointerDown}
   onpointermove={onPointerMove}
   onpointerup={onPointerUp}
-  onpointercancel={onPointerUp}
+  onpointercancel={cancelDrag}
+  onlostpointercapture={cancelDrag}
   onpointerleave={() => {
     canvasView.setHoverId(null);
     hoverLayerId = null;

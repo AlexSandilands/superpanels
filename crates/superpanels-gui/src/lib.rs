@@ -19,6 +19,7 @@ pub(crate) mod dmabuf;
 pub(crate) mod errors;
 pub(crate) mod state;
 pub(crate) mod tray;
+pub(crate) mod window_chrome;
 pub(crate) mod window_state;
 
 use std::sync::Arc;
@@ -78,6 +79,7 @@ fn on_second_instance(app: &tauri::AppHandle, argv: Vec<String>, _cwd: String) {
 fn setup_app(
     app: &mut tauri::App,
     state: &Arc<AppState>,
+    drag_regions: &crate::window_chrome::DragRegions,
     start_hidden: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::Manager;
@@ -85,8 +87,11 @@ fn setup_app(
     crate::window_state::restore(app);
     // The window defaults to hidden (`visible: false`); a normal launch opts
     // into showing it, tray-only autostart leaves it hidden.
-    if !start_hidden {
-        if let Some(window) = app.get_webview_window("main") {
+    if let Some(window) = app.get_webview_window("main") {
+        if let Err(e) = crate::window_chrome::install(&window, drag_regions) {
+            tracing::warn!(error = %e, "window chrome not installed; the window may not move or resize");
+        }
+        if !start_hidden {
             let _ = window.show();
             let _ = window.set_focus();
         }
@@ -133,6 +138,7 @@ fn spawn_named(name: &str, work: impl FnOnce() + Send + 'static) {
 
 fn build_app(start_hidden: bool) -> tauri::App {
     let state = Arc::new(AppState::new());
+    let drag_regions = crate::window_chrome::DragRegions::default();
 
     let builder = tauri::Builder::default()
         // Single-instance must be registered first so a second launch routes
@@ -143,7 +149,8 @@ fn build_app(start_hidden: bool) -> tauri::App {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .manage(Arc::clone(&state))
-        .setup(move |app| setup_app(app, &state, start_hidden))
+        .manage(drag_regions.clone())
+        .setup(move |app| setup_app(app, &state, &drag_regions, start_hidden))
         .on_window_event(on_window_event)
         .invoke_handler(tauri::generate_handler![
             commands::monitors::detect_monitors,
@@ -183,6 +190,8 @@ fn build_app(start_hidden: bool) -> tauri::App {
             commands::tray::get_tray_icon_style,
             commands::daemon::daemon_status,
             commands::daemon::start_daemon,
+            commands::window::set_drag_regions,
+            commands::window::resize_bands,
         ]);
 
     builder
