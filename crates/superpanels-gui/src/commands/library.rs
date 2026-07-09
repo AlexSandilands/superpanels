@@ -9,6 +9,8 @@ use std::sync::Arc;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use superpanels_core::config::{DEFAULT_THUMBNAIL_SIZE, THUMBNAIL_MIN_EDGE};
+use superpanels_core::image::Resample;
 use tracing::warn;
 use ts_rs::TS;
 
@@ -72,7 +74,7 @@ pub(crate) async fn library_thumbnail(
             Ok(v) => Ok(v),
             Err(e) if should_fall_back_to_local_render(&e) => {
                 warn!(error = %e, "library_thumbnail daemon unreachable; falling back to local render");
-                render_local_thumbnail(&p)
+                render_local_thumbnail(&p, DEFAULT_THUMBNAIL_SIZE, Resample::Fast)
             }
             Err(e) => Err(e),
         }
@@ -90,23 +92,45 @@ fn should_fall_back_to_local_render(err: &IpcError) -> bool {
     matches!(err, IpcError::DaemonUnreachable(_))
 }
 
+/// Upper bound on `source_thumbnail`'s caller-chosen `max_edge`. The frontend
+/// asks for a bigger edge on the preview canvas than in a grid tile, but the
+/// value sizes a resample buffer and a base64 IPC payload, so it is clamped
+/// rather than trusted: 2048px is ~9 MiB of base64 for an incompressible
+/// source. `THUMBNAIL_MIN_EDGE` is the lower bound.
+const SOURCE_THUMBNAIL_MAX_EDGE: u32 = 2048;
+
 #[tauri::command]
-pub(crate) async fn source_thumbnail(path: String) -> Result<Value, IpcError> {
+pub(crate) async fn source_thumbnail(
+    path: String,
+    max_edge: Option<u32>,
+) -> Result<Value, IpcError> {
     let p = PathBuf::from(&path);
     if !p.is_absolute() {
         return Err(IpcError::invalid("source thumbnail path must be absolute"));
     }
-    run_off_main(move || render_local_thumbnail(&p)).await
+    let edge = clamp_source_edge(max_edge);
+    run_off_main(move || render_local_thumbnail(&p, edge, Resample::High)).await
 }
 
-fn render_local_thumbnail(path: &std::path::Path) -> Result<Value, IpcError> {
-    // Matches `LibraryConfig::thumbnail_size`'s default; the canvas preview
-    // doesn't have config in scope so the constant is hard-coded here.
-    const THUMBNAIL_MAX_EDGE: u32 = 512;
+/// Neither this path nor the `library_thumbnail` fallback has a `Config` in
+/// scope, so an omitted `max_edge` resolves to the serde default rather than to
+/// the user's `thumbnail_size`. A configured daemon may render a grid tile at a
+/// different edge than the fallback does; the tile scales the result to its own
+/// box either way.
+fn clamp_source_edge(requested: Option<u32>) -> u32 {
+    requested
+        .unwrap_or(DEFAULT_THUMBNAIL_SIZE)
+        .clamp(THUMBNAIL_MIN_EDGE, SOURCE_THUMBNAIL_MAX_EDGE)
+}
 
+fn render_local_thumbnail(
+    path: &std::path::Path,
+    max_edge: u32,
+    quality: Resample,
+) -> Result<Value, IpcError> {
     let canonical = std::fs::canonicalize(path)
         .map_err(|e| IpcError::invalid(format!("rejecting path '{}': {e}", path.display())))?;
-    let img = superpanels_core::image::load_thumbnail(&canonical, THUMBNAIL_MAX_EDGE)
+    let img = superpanels_core::image::load_thumbnail(&canonical, max_edge, quality)
         .map_err(|e| IpcError::Image(e.to_string()))?;
     let bytes =
         superpanels_core::image::encode_png(&img).map_err(|e| IpcError::Image(e.to_string()))?;
@@ -166,7 +190,8 @@ mod tests {
         let img = image::RgbImage::from_pixel(64, 48, image::Rgb([255, 128, 64]));
         img.save(&path).expect("write fixture png");
 
-        let value = render_local_thumbnail(&path).expect("render local thumbnail");
+        let value = render_local_thumbnail(&path, DEFAULT_THUMBNAIL_SIZE, Resample::Fast)
+            .expect("render local thumbnail");
         let data = value
             .get("data")
             .and_then(Value::as_str)
@@ -188,9 +213,40 @@ mod tests {
         // Mirrors `library_thumbnail`'s absolute-path requirement so the
         // Rust side can't be tricked into resolving against the daemon's
         // working directory.
-        let err = tauri::async_runtime::block_on(source_thumbnail("relative/path.png".to_owned()))
-            .unwrap_err();
+        let err =
+            tauri::async_runtime::block_on(source_thumbnail("relative/path.png".to_owned(), None))
+                .unwrap_err();
         assert!(matches!(err, IpcError::InvalidArgument(_)));
+    }
+
+    #[test]
+    fn clamp_source_edge_bounds_a_webview_supplied_max_edge() {
+        // The frontend picks the edge, so a hostile or buggy webview must not
+        // be able to drive an unbounded decode/encode. Omitting it falls back
+        // to the grid-sized default rather than the maximum.
+        assert_eq!(clamp_source_edge(None), DEFAULT_THUMBNAIL_SIZE);
+        assert_eq!(clamp_source_edge(Some(1536)), 1536);
+        assert_eq!(clamp_source_edge(Some(0)), THUMBNAIL_MIN_EDGE);
+        assert_eq!(clamp_source_edge(Some(u32::MAX)), SOURCE_THUMBNAIL_MAX_EDGE);
+    }
+
+    #[test]
+    fn render_local_thumbnail_downscales_to_the_requested_edge() {
+        // The canvas asks for a bigger edge than the grid; a source larger
+        // than the cap must come back bounded by it, aspect preserved.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wide.png");
+        image::RgbImage::from_pixel(400, 200, image::Rgb([9, 9, 9]))
+            .save(&path)
+            .expect("write fixture png");
+
+        let value = render_local_thumbnail(&path, 100, Resample::High).expect("render");
+        let data = value.get("data").and_then(Value::as_str).expect("data");
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(data)
+            .expect("base64 decodes");
+        let img = image::load_from_memory(&bytes).expect("decode png");
+        assert_eq!((img.width(), img.height()), (100, 50));
     }
 
     #[test]

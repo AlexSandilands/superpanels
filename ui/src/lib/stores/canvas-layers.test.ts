@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 vi.mock('$lib/library/source-image', () => ({
+  CANVAS_MAX_EDGE: 1536,
   peekSourceImage: () => null,
   loadSourceImage: (path: string) =>
     Promise.resolve({ url: `data:url/${path}`, naturalW: 1920, naturalH: 1080 }),

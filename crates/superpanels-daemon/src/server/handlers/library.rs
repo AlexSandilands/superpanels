@@ -15,11 +15,6 @@ use tracing::warn;
 
 use crate::state::DaemonState;
 
-/// Hard floor on the thumbnail edge so a misconfigured `thumbnail_size = 0`
-/// doesn't crash `image::resize`. Production default is whatever
-/// `LibraryConfig::thumbnail_size` resolves to.
-const THUMBNAIL_MIN_EDGE: u32 = 64;
-
 /// Force a synchronous rescan of every configured root, persist the result
 /// into the library DB, and refresh the in-memory cache. Returns the post-
 /// rescan entry count so the GUI can surface "scanned N images" feedback.
@@ -62,7 +57,7 @@ pub(crate) async fn cmd_library_thumbnail(
         let guard = state.lock().await;
         (
             guard.config.library.roots.clone(),
-            guard.config.library.thumbnail_size.max(THUMBNAIL_MIN_EDGE),
+            guard.config.library.thumbnail_size,
         )
     };
 
@@ -271,7 +266,12 @@ pub(crate) fn canonicalise_inside_roots(
 }
 
 fn render_thumbnail(path: &Path, edge: u32) -> Result<(Vec<u8>, &'static str), String> {
-    let img = superpanels_core::image::load_thumbnail(path, edge).map_err(|e| e.to_string())?;
+    let img = superpanels_core::image::load_thumbnail(
+        path,
+        edge,
+        superpanels_core::image::Resample::Fast,
+    )
+    .map_err(|e| e.to_string())?;
     let bytes = superpanels_core::image::encode_png(&img).map_err(|e| e.to_string())?;
     Ok((bytes, "image/png"))
 }

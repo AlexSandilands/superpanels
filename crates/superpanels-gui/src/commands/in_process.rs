@@ -16,9 +16,6 @@ use superpanels_core::library::{LibraryFilter as CoreLibraryFilter, apply_librar
 use crate::bridge::{CallResult, ok_payload, ok_unit};
 use crate::errors::IpcError;
 
-/// Floor when `LibraryConfig::thumbnail_size` is misconfigured.
-const THUMBNAIL_MIN_EDGE: u32 = 64;
-
 pub(crate) fn dispatch(method: &str, params: &Value, config_path: Option<&Path>) -> CallResult {
     match method {
         "detect_monitors" | "redetect" => detect_monitors(config_path),
@@ -245,10 +242,14 @@ fn library_thumbnail(params: &Value, config_path: Option<&Path>) -> CallResult {
         .and_then(Value::as_str)
         .ok_or_else(|| IpcError::invalid("params.path required"))?;
     let cfg = load_config(config_path)?;
-    let edge = cfg.library.thumbnail_size.max(THUMBNAIL_MIN_EDGE);
+    let edge = cfg.library.thumbnail_size;
     let canonical = canonicalise_inside_roots(Path::new(path), &cfg.library.roots)?;
-    let img = superpanels_core::image::load_thumbnail(&canonical, edge)
-        .map_err(|e| IpcError::Image(e.to_string()))?;
+    let img = superpanels_core::image::load_thumbnail(
+        &canonical,
+        edge,
+        superpanels_core::image::Resample::Fast,
+    )
+    .map_err(|e| IpcError::Image(e.to_string()))?;
     let bytes =
         superpanels_core::image::encode_png(&img).map_err(|e| IpcError::Image(e.to_string()))?;
     let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);

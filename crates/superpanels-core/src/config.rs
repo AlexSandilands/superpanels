@@ -119,8 +119,19 @@ fn default_recursive() -> bool {
     true
 }
 
+/// Longest thumbnail edge when `thumbnail_size` is absent from the config.
+///
+/// Note this is *not* the value the shipped config template writes — see
+/// `config/default.rs`, which sets a smaller `thumbnail_size`. This is the
+/// fallback for a config that omits the key entirely.
+pub const DEFAULT_THUMBNAIL_SIZE: u32 = 512;
+
+/// Floor applied to `LibraryConfig::thumbnail_size` at every render site, so a
+/// misconfigured `thumbnail_size = 0` can't reach `image::resize`.
+pub const THUMBNAIL_MIN_EDGE: u32 = 64;
+
 fn default_thumbnail_size() -> u32 {
-    512
+    DEFAULT_THUMBNAIL_SIZE
 }
 
 fn default_auto_scan() -> bool {
