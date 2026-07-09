@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import type { Profile } from '$lib/api';
   import { takeDraggedImagePath } from '$lib/canvas/image-drag';
@@ -469,11 +469,14 @@
   const canSave = $derived(Boolean(profileStore.activeName) && !profileStore.saving);
   const canRevert = $derived(canvasDirty && Boolean(profileStore.activeName));
 
-  // Apply's dirty state is narrower than Save's: an applied-but-unsaved canvas
-  // is already on the desktop, so Apply fades while Save stays lit. A
-  // daemon-driven slideshow advance reseeds the transform without diverging
-  // from what the daemon itself painted, hence the `canvasDirty` gate.
-  const applyDirty = $derived(canvasDirty && appliedCanvas.diverged);
+  // Apply keys on the last canvas known to be painted (`appliedCanvas`), not
+  // the saved profile: Apply paints without saving and Save persists without
+  // painting, so `canvasDirty` is wrong in both directions here (an
+  // applied-but-unsaved canvas is save-dirty yet on the desktop; a saved-over
+  // or reverted canvas is save-clean yet stale on the desktop). Until a first
+  // paint is recorded — cold-start seed still pending — fall back to the
+  // save-style diff.
+  const applyDirty = $derived(appliedCanvas.known ? appliedCanvas.diverged : canvasDirty);
 
   // Confirm-discard modal (§4e.11.5). When the user initiates an action
   // that would silently drop unsaved canvas state, hold the action in
@@ -546,14 +549,19 @@
       const snapshot = preemption.consumeSnapshot();
       const prev = sentinel;
       if (snapshot !== null) {
+        // The desktop now shows the schedule's profile while the canvas keeps
+        // the dirty edits — whatever baseline we recorded is stale.
+        appliedCanvas.invalidate();
         toast.info(`Schedule switched to '${seen ?? 'unknown'}'`, {
           detail: `Unsaved changes to '${prev}' were discarded`,
           action: {
             label: 'Undo',
             onClick: () => {
+              const fp = appliedCanvas.capture();
               void api
                 .applyCanvas(snapshot, prev)
                 .then(() => {
+                  appliedCanvas.mark(fp);
                   toast.success(`Restored canvas for '${prev}'`);
                 })
                 .catch((err) => {
@@ -564,11 +572,13 @@
         });
       } else if (seen !== null && profileStore.selectedName !== seen) {
         // Clean canvas, external active swap (schedule fire) — pull the
-        // canvas across so it reflects what's now on the desktop.
+        // canvas across so it reflects what's now on the desktop, and record
+        // that as the Apply baseline.
         const next = profileStore.profiles.find((p) => p.name === seen);
         if (next) {
           profileStore.select(seen);
           applyMonitorStateToCanvas(next);
+          untrack(() => appliedCanvas.mark(appliedCanvas.capture()));
         }
       }
     }
@@ -686,6 +696,12 @@
     if (canvasSeeded || !active) return;
     canvasSeeded = true;
     applyMonitorStateToCanvas(active);
+    // The daemon (re-)applied this profile itself, so the freshly-seeded
+    // canvas is what the desktop shows — record it as the Apply baseline.
+    // A slideshow's image transform seeds later, async — `follow` moves the
+    // baseline with it. Untracked so the fingerprint's store reads don't
+    // re-trigger this effect on every canvas edit.
+    untrack(() => appliedCanvas.mark(appliedCanvas.capture()));
   });
 
   onMount(() => {

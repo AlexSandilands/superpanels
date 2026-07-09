@@ -136,7 +136,7 @@
 
   const applyTitle = $derived(
     !canApply
-      ? 'Cannot apply while the draft is unnamed or saving'
+      ? 'Cannot apply without a named draft, or while a save is in flight'
       : applyDirty
         ? 'Apply (Enter)'
         : 'Re-apply current profile (Enter)',

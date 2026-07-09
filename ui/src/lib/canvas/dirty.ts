@@ -73,8 +73,9 @@ export function liveLayersDirty(live: CanvasLayer[], persisted: StandardLayer[])
   });
 }
 
-/** Quantised to the tolerance the diffs above use, so a sub-tolerance nudge
- *  doesn't read as a change. */
+/** Bucketed to the tolerance the diffs above use. Coarser than `rectDirty`'s
+ *  abs-diff: a sub-tolerance nudge across a bucket edge still registers,
+ *  erring toward re-lighting Apply rather than missing a change. */
 function quantise(mm: number): number {
   return Math.round(mm / POSITION_TOLERANCE_MM);
 }

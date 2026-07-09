@@ -99,12 +99,13 @@ export async function applyDraftProfile(): Promise<void> {
   syncDraftFromCanvas();
   const refreshed = profileStore.draft;
   if (!refreshed) return;
+  const fp = appliedCanvas.capture();
   preemption.claimSwitchTo(profileStore.activeName);
   try {
     const t0 = performance.now();
     const r = await api.applyCanvas(refreshed, profileStore.activeName);
     const elapsed = recordAndToast(r, t0);
-    appliedCanvas.mark();
+    appliedCanvas.mark(fp);
     toast.success(`Applied '${refreshed.name}'`, `${r.backend ?? 'backend'} · ${elapsed} ms`);
     void profileStore.refresh();
     void slideshowController.refresh();
@@ -153,10 +154,16 @@ export function revertCanvasToActive(): void {
 export async function switchAndApply(p: Profile): Promise<void> {
   profileStore.select(p.name);
   applyMonitorStateToCanvas(p);
+  // Captured after the canvas is seeded from `p`, so the baseline is the
+  // canvas as it mirrors the profile being painted. A slideshow's image
+  // transform seeds later, async — `appliedCanvas.follow` moves the
+  // baseline with it.
+  const fp = appliedCanvas.capture();
   preemption.claimSwitchTo(p.name);
   try {
     const t0 = performance.now();
     const r = await api.applyProfile(p.name);
+    appliedCanvas.mark(fp);
     recordAndToast(r, t0);
     toast.success(`Switched to ${p.name}`);
     void profileStore.refresh();
