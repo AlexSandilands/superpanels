@@ -93,6 +93,12 @@
   .jump-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
+    /* Once the popover hits its max-height this grid gets a definite height, and
+       WebKit then divides it across the implicit `auto` rows instead of sizing
+       them from the cells' aspect-ratio — rows collapse and the cells overlap.
+       Pinning the rows to their content contribution keeps the ratio and lets
+       the overflow scroll instead. */
+    grid-auto-rows: min-content;
     gap: 6px;
     overflow-y: auto;
     padding-right: 2px;
