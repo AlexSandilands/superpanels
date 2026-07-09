@@ -180,6 +180,7 @@ fn build_app(start_hidden: bool) -> tauri::App {
             commands::slideshow::slideshow_prev,
             commands::slideshow::slideshow_goto,
             commands::slideshow::slideshow_pause,
+            commands::slideshow::slideshow_pool,
             commands::config::get_config,
             commands::config::save_config,
             commands::config::open_config_file,
