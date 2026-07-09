@@ -816,6 +816,20 @@
   });
   const backendName = $derived(runtime.last?.backend ?? 'auto-detect');
 
+  // Anything that paints over the titlebar suppresses its drag regions — a
+  // press on a modal backdrop must reach the modal, not move the window.
+  const overlayOpen = $derived(
+    libraryOpen ||
+      settingsOpen ||
+      trayOpen ||
+      saveDialogOpen ||
+      profileManagerOpen ||
+      dragOverlay ||
+      pendingDiscard !== null ||
+      pendingCanvasDrop !== null ||
+      uniformWarning !== null,
+  );
+
   const someMissingMm = $derived(
     monitorStore.monitors.length > 0 && monitorStore.monitors.some((m) => !m.physical_size_mm),
   );
@@ -844,6 +858,7 @@
     profiles={profileStore.profiles}
     activeName={profileStore.activeName}
     {backendName}
+    {overlayOpen}
     {canApply}
     canSaveAsNew={true}
     {canSave}

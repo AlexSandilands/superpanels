@@ -7,11 +7,15 @@
   import WindowMenu from './WindowMenu.svelte';
   import { runtime } from '$lib/stores/runtime.svelte';
   import { daemonStatus } from '$lib/stores/daemon-status.svelte';
+  import { createDragRegionPublisher, measureDragRegions } from '$lib/window-drag';
 
   type Props = {
     profiles: Profile[];
     activeName: string | null;
     backendName: string;
+    /** An overlay covers the bar — publish no drag regions, or a click on the
+     *  overlay's backdrop would move the window instead of reaching it. */
+    overlayOpen: boolean;
     canApply: boolean;
     canSaveAsNew: boolean;
     canSave: boolean;
@@ -31,6 +35,7 @@
     profiles,
     activeName,
     backendName,
+    overlayOpen,
     canApply,
     canSaveAsNew,
     canSave,
@@ -53,6 +58,8 @@
   let winMenu = $state<{ x: number; y: number } | null>(null);
   let isMaximized = $state(false);
   let alwaysOnTop = $state(false);
+  let barEl: HTMLDivElement | undefined = $state();
+  let resizeTick = $state(0);
 
   $effect(() => {
     const id = window.setInterval(() => (nowMs = Date.now()), 1000);
@@ -71,10 +78,23 @@
     void w.isMaximized().then((v) => (isMaximized = v));
     const unlisten = w.onResized(() => {
       void w.isMaximized().then((v) => (isMaximized = v));
+      resizeTick += 1;
     });
     return () => {
       void unlisten.then((fn) => fn());
     };
+  });
+
+  // The window move is started natively from the GTK button press, so Rust
+  // needs to know which parts of the bar drag it. Re-measure on the clock tick
+  // (its text reflows the right-hand cluster, shifting the spacer) and on every
+  // window resize; the publisher drops unchanged sets.
+  const publishDragRegions = createDragRegionPublisher();
+  $effect(() => {
+    void nowMs;
+    void resizeTick;
+    const blocked = overlayOpen || menuOpen || winMenu !== null;
+    publishDragRegions(blocked || !barEl ? [] : measureDragRegions(barEl));
   });
 
   function onTitlebarContextMenu(e: MouseEvent) {
@@ -83,6 +103,9 @@
     winMenu = { x: e.clientX, y: e.clientY };
   }
 
+  // Fallback only: a press inside a published drag region is swallowed by the
+  // GTK handler and never reaches the DOM. This still runs when the native
+  // install failed, or before the first regions land.
   function onTitlebarMouseDown(e: MouseEvent) {
     if (e.button !== 0) return;
     if (e.detail >= 2) return; // let dblclick fire for maximize-toggle
@@ -111,6 +134,7 @@
 </script>
 
 <div
+  bind:this={barEl}
   class="absolute left-0 right-0 top-0 z-10 flex items-center"
   style:height="40px"
   style:padding="0 12px"
@@ -129,7 +153,7 @@
       .catch(() => {});
   }}
 >
-  <div class="flex items-center" style:gap="8px" style:margin-right="6px">
+  <div class="flex items-center" style:gap="8px" style:margin-right="6px" data-drag-region>
     <Icon name="logo" size={20} />
     <span style:font-weight="600" style:font-size="13px" style:letter-spacing="-0.01em"
       >Superpanels</span
@@ -173,7 +197,7 @@
     {/if}
   </div>
 
-  <div style:flex="1"></div>
+  <div style:flex="1" data-drag-region></div>
 
   <div class="flex items-center" style:gap="8px">
     <span class="chip" title={daemonDotTitle}>

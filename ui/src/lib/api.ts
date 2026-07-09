@@ -158,7 +158,11 @@ export const api = {
   getTrayIconStyle: () => call<{ style: TrayIconStyle }>('get_tray_icon_style'),
   daemonStatus: () => call<{ connected: boolean }>('daemon_status'),
   startDaemon: () => call<{ exe: string | null }>('start_daemon'),
+  setDragRegions: (regions: DragRect[]) => call<void>('set_drag_regions', { regions }),
 };
+
+/** Window-relative rectangle, in CSS pixels, that drags the window when pressed. */
+export type DragRect = { x: number; y: number; w: number; h: number };
 
 export type ApiError = IpcError;
 
