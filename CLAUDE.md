@@ -25,21 +25,11 @@ Deferred work, known workarounds, and "we'll do this later" items are tracked as
 
 **Confirm before logging.** Never create, edit, or close a GitHub issue without explicit confirmation from the user first — show the proposed title and body and wait for a go-ahead. The user will ask you to log follow-ups there; treat that as the trigger, not a standing licence to file issues unprompted.
 
-## MCP context tools — required for impact analysis
+## Impact analysis before you change shared code
 
-At session start, confirm the `jcodemunch` and `jdocmunch` MCP servers are connected (they appear in the deferred-tools list). When available, they are the **default** for repo context — they return targeted slices instead of whole files, keeping the working set small.
+Find every caller before you change a signature, not after. This matters most for anything public in `crates/superpanels-core` — its callers live in cli/daemon/gui, so a change that compiles in core can still break three binaries.
 
-- **`jcodemunch`** — code: structure, symbols, references, importers, call hierarchies, blast radius.
-- **`jdocmunch`** — docs in `docs/`: search by topic, "is this already documented?", and finding which docs need updating after a code change.
-
-**MCP is required (not optional) before any change that:**
-- modifies the body or signature of a function/method called from outside its file → run `find_references` / `get_call_hierarchy` to confirm every caller is fine;
-- spans multiple files, or you're unsure how many it spans → run `get_blast_radius` or `find_importers`;
-- touches a public type, trait, module re-export, or anything in `crates/superpanels-core` → its callers live in cli/daemon/gui and `grep` won't catch them all reliably.
-
-**`grep` / `Read` is fine for:** reading a known path, a single-string lookup with a single expected hit (e.g. "where is `const TIMEOUT` defined"), or quick existence checks.
-
-**Don't rationalise that a query is "too narrow."** If you've run 2+ greps to triangulate a symbol or its callers, you should have started with `jcodemunch`. The cost of an MCP call is much lower than the cost of missing a caller and shipping a broken change.
+Search the whole workspace, not just the crate you're in, and search for the bare symbol name as well as qualified paths — re-exports mean callers won't always name the defining module.
 
 ## Stack
 
