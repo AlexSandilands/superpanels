@@ -95,6 +95,64 @@ describe('canvasLayers', () => {
     expect(canvasLayers.list.map((l) => l.path)).toEqual(['/b.png', '/c.png', '/a.png']);
   });
 
+  it('bringToFront_on_the_top_layer_is_a_no_op', () => {
+    canvasLayers.setFromLayers([layer('/a.png', 0), layer('/b.png', 0)]);
+    const topId = canvasLayers.list[1]?.id ?? '';
+    canvasLayers.bringToFront(topId);
+    expect(canvasLayers.list.map((l) => l.path)).toEqual(['/a.png', '/b.png']);
+  });
+
+  it('bringForward_swaps_a_layer_with_the_one_above_it', () => {
+    canvasLayers.setFromLayers([layer('/a.png', 0), layer('/b.png', 0), layer('/c.png', 0)]);
+    const aId = canvasLayers.list[0]?.id ?? '';
+    canvasLayers.bringForward(aId);
+    expect(canvasLayers.list.map((l) => l.path)).toEqual(['/b.png', '/a.png', '/c.png']);
+  });
+
+  it('bringForward_on_the_top_layer_is_a_no_op', () => {
+    canvasLayers.setFromLayers([layer('/a.png', 0), layer('/b.png', 0)]);
+    const topId = canvasLayers.list[1]?.id ?? '';
+    canvasLayers.bringForward(topId);
+    expect(canvasLayers.list.map((l) => l.path)).toEqual(['/a.png', '/b.png']);
+  });
+
+  it('sendBackward_swaps_a_layer_with_the_one_below_it', () => {
+    canvasLayers.setFromLayers([layer('/a.png', 0), layer('/b.png', 0), layer('/c.png', 0)]);
+    const cId = canvasLayers.list[2]?.id ?? '';
+    canvasLayers.sendBackward(cId);
+    expect(canvasLayers.list.map((l) => l.path)).toEqual(['/a.png', '/c.png', '/b.png']);
+  });
+
+  it('sendBackward_on_the_bottom_layer_is_a_no_op', () => {
+    canvasLayers.setFromLayers([layer('/a.png', 0), layer('/b.png', 0)]);
+    const bottomId = canvasLayers.list[0]?.id ?? '';
+    canvasLayers.sendBackward(bottomId);
+    expect(canvasLayers.list.map((l) => l.path)).toEqual(['/a.png', '/b.png']);
+  });
+
+  it('sendToBack_moves_a_layer_to_the_start', () => {
+    canvasLayers.setFromLayers([layer('/a.png', 0), layer('/b.png', 0), layer('/c.png', 0)]);
+    const cId = canvasLayers.list[2]?.id ?? '';
+    canvasLayers.sendToBack(cId);
+    expect(canvasLayers.list.map((l) => l.path)).toEqual(['/c.png', '/a.png', '/b.png']);
+  });
+
+  it('sendToBack_on_the_bottom_layer_is_a_no_op', () => {
+    canvasLayers.setFromLayers([layer('/a.png', 0), layer('/b.png', 0)]);
+    const bottomId = canvasLayers.list[0]?.id ?? '';
+    canvasLayers.sendToBack(bottomId);
+    expect(canvasLayers.list.map((l) => l.path)).toEqual(['/a.png', '/b.png']);
+  });
+
+  it('reorder_methods_ignore_an_unknown_id', () => {
+    canvasLayers.setFromLayers([layer('/a.png', 0), layer('/b.png', 0)]);
+    canvasLayers.bringForward('no-such-id');
+    canvasLayers.sendBackward('no-such-id');
+    canvasLayers.sendToBack('no-such-id');
+    canvasLayers.bringToFront('no-such-id');
+    expect(canvasLayers.list.map((l) => l.path)).toEqual(['/a.png', '/b.png']);
+  });
+
   it('patch_updates_one_layers_transform', () => {
     canvasLayers.setFromLayers([layer('/a.png', 0)]);
     const id = canvasLayers.list[0]?.id ?? '';
