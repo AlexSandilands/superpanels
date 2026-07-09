@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { SlideshowState } from '$lib/actions';
+  import { canStepBack, type SlideshowState } from '$lib/actions';
   import { dockStackBreakpoint } from '$lib/dock-breakpoints';
   import type { SlideshowConfig } from '$lib/types/SlideshowConfig';
   import Icon from '../widgets/Icon.svelte';
@@ -118,6 +118,7 @@
   );
 
   const shuffleOn = $derived(slideshowConfig?.sort === 'shuffle');
+  const canPrev = $derived(canStepBack(slideshow));
 
   function toggleShuffle() {
     if (!slideshowConfig) return;
@@ -176,7 +177,7 @@
     {#if slideshow}
       <div style:width="1px" style:height="28px" style:background="var(--line)"></div>
       <div class="flex items-center" style:gap="2px">
-        <button class="btn ghost icon sm" title="Previous (←)" onclick={onPrev}>
+        <button class="btn ghost icon sm" title="Previous (←)" disabled={!canPrev} onclick={onPrev}>
           <Icon name="prev" size={12} />
         </button>
         <button class="btn ghost icon sm" title="Pause/resume (Space)" onclick={onTogglePause}>

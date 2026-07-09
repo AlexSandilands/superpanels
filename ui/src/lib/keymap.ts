@@ -73,7 +73,9 @@ export function dispatchKey(e: KeyboardEvent, deps: KeymapDeps): void {
     return;
   }
   if (e.key === 'ArrowRight' && !modal) void slideshowController.next();
-  if (e.key === 'ArrowLeft' && !modal) void slideshowController.prev();
+  if (e.key === 'ArrowLeft' && !modal && slideshowController.canPrev) {
+    void slideshowController.prev();
+  }
   if (e.key.toLowerCase() === 'r' && !modal) resetTransform();
   if (e.key.toLowerCase() === 'd' && !modal) canvasView.toggleDim();
   if (e.key.toLowerCase() === 'm' && !modal) canvasView.toggleMode();
