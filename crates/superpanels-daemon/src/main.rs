@@ -446,7 +446,14 @@ fn find_in_path(bin: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
     std::env::split_paths(&path)
         .map(|dir| dir.join(bin))
-        .find(|candidate| candidate.is_file())
+        .find(|candidate| is_executable_file(candidate))
+}
+
+/// A non-executable `setsid` on `$PATH` must not be selected — spawning it
+/// would fail with no fallback to the `process_group(0)` path.
+fn is_executable_file(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
 }
 
 fn init_tracing(verbose: u8, quiet: bool) {
@@ -533,6 +540,32 @@ mod tests {
     #[test]
     fn find_in_path_returns_none_for_missing_binary() {
         assert!(find_in_path("definitely-not-a-real-binary-xyz-superpanels").is_none());
+    }
+
+    #[test]
+    fn non_executable_file_is_rejected() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("setsid");
+        std::fs::write(&file, b"not a binary").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(!is_executable_file(&file));
+    }
+
+    #[test]
+    fn executable_file_is_accepted() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("setsid");
+        std::fs::write(&file, b"#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(is_executable_file(&file));
+    }
+
+    #[test]
+    fn directory_is_rejected_even_with_exec_bit() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!is_executable_file(dir.path()));
     }
 
     fn resume(name: &str) -> ResumeState {
