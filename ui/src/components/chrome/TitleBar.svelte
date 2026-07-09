@@ -20,7 +20,8 @@
     canSaveAsNew: boolean;
     canSave: boolean;
     canRevert: boolean;
-    saveDirty: boolean;
+    canvasDirty: boolean;
+    applyDirty: boolean;
     onApply: () => void;
     onSave: () => void;
     onSaveAsNew: () => void;
@@ -40,7 +41,8 @@
     canSaveAsNew,
     canSave,
     canRevert,
-    saveDirty,
+    canvasDirty,
+    applyDirty,
     onApply,
     onSave,
     onSaveAsNew,
@@ -130,6 +132,14 @@
       : daemonStatus.connected
         ? 'Daemon connected'
         : 'Daemon not running',
+  );
+
+  const applyTitle = $derived(
+    !canApply
+      ? 'Cannot apply without a named draft, or while a save is in flight'
+      : applyDirty
+        ? 'Apply (Enter)'
+        : 'Re-apply current profile (Enter)',
   );
 </script>
 
@@ -236,11 +246,11 @@
     </button>
     <button
       class="btn ghost icon"
-      class:save-dirty={saveDirty}
+      class:save-dirty={canvasDirty}
       disabled={!canSave}
       onclick={onSave}
       title={canSave
-        ? saveDirty
+        ? canvasDirty
           ? `Save changes to '${activeName}' (Ctrl+S)`
           : `Save '${activeName}' (no changes)`
         : 'No active profile to save'}
@@ -264,14 +274,22 @@
       <Icon name="tray" />
     </button>
     <div style:width="1px" style:height="18px" style:background="var(--line)"></div>
-    <button class="btn primary" disabled={!canApply} onclick={onApply} title="Apply (Enter)">
+    <!-- A clean canvas keeps Apply clickable — re-applying is legal (e.g.
+         re-asserting after an external change); only !canApply disables. -->
+    <button
+      class="btn"
+      class:primary={applyDirty}
+      disabled={!canApply}
+      onclick={onApply}
+      title={applyTitle}
+    >
       <Icon name="check" size={13} /> Apply
       <span
         class="kbd"
         style:margin-left="4px"
-        style:background="oklch(0 0 0 / 0.18)"
-        style:border-color="oklch(0 0 0 / 0.2)"
-        style:color="oklch(0.18 0.01 250)"
+        style:background={applyDirty ? 'oklch(0 0 0 / 0.18)' : null}
+        style:border-color={applyDirty ? 'oklch(0 0 0 / 0.2)' : null}
+        style:color={applyDirty ? 'oklch(0.18 0.01 250)' : null}
       >
         ↵
       </span>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Profile } from '$lib/api';
 import {
+  canvasFingerprint,
   canvasOverridesDirty,
   coverRectDirty,
   liveLayersDirty,
@@ -9,7 +10,11 @@ import {
 } from './dirty';
 import type { PreviewMonitor } from './preview-layout';
 import type { CanvasLayer } from '$lib/stores/canvas-layers.svelte';
-import type { StandardLayer } from '$lib/types/profile-helpers';
+import {
+  defaultSlideshowConfig,
+  type SlideshowConfig,
+  type StandardLayer,
+} from '$lib/types/profile-helpers';
 
 type RectMm = { x: number; y: number; w: number; h: number };
 
@@ -174,5 +179,88 @@ describe('coverRectDirty (untuned slideshow image baseline)', () => {
   it('reports clean while natural dims are unknown', () => {
     const t = { offsetMmX: 0, offsetMmY: 0, widthMm: 600, heightMm: 340 };
     expect(coverRectDirty(t, [monitor], null)).toBe(false);
+  });
+});
+
+describe('canvasFingerprint', () => {
+  const transform = { offsetMmX: 0, offsetMmY: 0, widthMm: 1000, heightMm: 600 };
+  const overrides = { a: { xMm: 100, yMm: 200 } };
+  const layers = [liveLayer('/img.png', { x: 0, y: 0, w: 1000, h: 600 })];
+  const base = () => canvasFingerprint(profile({}), overrides, layers, transform);
+
+  it('matches itself for an unchanged canvas', () => {
+    expect(canvasFingerprint(profile({}), overrides, layers, transform)).toBe(base());
+  });
+
+  it('is stable across monitor-override key order', () => {
+    const forward = { a: { xMm: 1, yMm: 2 }, b: { xMm: 3, yMm: 4 } };
+    const reversed = { b: { xMm: 3, yMm: 4 }, a: { xMm: 1, yMm: 2 } };
+    const fp = canvasFingerprint(profile({}), forward, layers, transform);
+    expect(canvasFingerprint(profile({}), reversed, layers, transform)).toBe(fp);
+  });
+
+  it('changes when a monitor moves past the slop tolerance', () => {
+    const moved = { a: { xMm: 101, yMm: 200 } };
+    expect(canvasFingerprint(profile({}), moved, layers, transform)).not.toBe(base());
+  });
+
+  it('ignores a sub-tolerance monitor nudge', () => {
+    const nudged = { a: { xMm: 100.1, yMm: 200 } };
+    expect(canvasFingerprint(profile({}), nudged, layers, transform)).toBe(base());
+  });
+
+  it('changes when a layer is resized', () => {
+    const resized = [liveLayer('/img.png', { x: 0, y: 0, w: 1200, h: 600 })];
+    expect(canvasFingerprint(profile({}), overrides, resized, transform)).not.toBe(base());
+  });
+
+  it('changes when a layer is swapped for a different image', () => {
+    const swapped = [liveLayer('/other.png', { x: 0, y: 0, w: 1000, h: 600 })];
+    expect(canvasFingerprint(profile({}), overrides, swapped, transform)).not.toBe(base());
+  });
+
+  // `refresh()` rewrites these after every Apply; keying on them would leave
+  // Apply permanently lit.
+  it('ignores persisted fields the canvas does not push', () => {
+    const touched = profile({});
+    touched.last_applied_at = '2026-05-11T00:00:00Z';
+    touched.topology = 'topo-2';
+    touched.monitor_state = { a: { x_mm: 999, y_mm: 999 } };
+    expect(canvasFingerprint(touched, overrides, layers, transform)).toBe(base());
+  });
+
+  it('changes when a slideshow setting the daemon consumes is edited', () => {
+    const slideshow = (config: SlideshowConfig): Profile => ({
+      ...profile({}),
+      body: {
+        type: 'slideshow',
+        source: {
+          images: { sources: [{ type: 'folder', path: '/pics', recursive: false }] },
+          config,
+        },
+        image_rect_mm: { x_mm: 0, y_mm: 0, w_mm: 1000, h_mm: 600 },
+      },
+    });
+    const fp = canvasFingerprint(slideshow(defaultSlideshowConfig()), overrides, layers, transform);
+    const faster = slideshow({ ...defaultSlideshowConfig(), interval_secs: 30 });
+    expect(canvasFingerprint(faster, overrides, layers, transform)).not.toBe(fp);
+  });
+
+  it('tracks the live image rect for a slideshow body', () => {
+    const p: Profile = {
+      ...profile({}),
+      body: {
+        type: 'slideshow',
+        source: { images: { sources: [] }, config: defaultSlideshowConfig() },
+        image_rect_mm: { x_mm: 0, y_mm: 0, w_mm: 1000, h_mm: 600 },
+      },
+    };
+    const fp = canvasFingerprint(p, overrides, layers, transform);
+    const panned = { ...transform, offsetMmX: 50 };
+    expect(canvasFingerprint(p, overrides, layers, panned)).not.toBe(fp);
+  });
+
+  it('reads an absent draft as an empty fingerprint', () => {
+    expect(canvasFingerprint(null, overrides, layers, transform)).toBe('');
   });
 });

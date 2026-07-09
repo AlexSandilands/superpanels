@@ -4,6 +4,9 @@
 
 import { untrack } from 'svelte';
 import { errorMessage, type Monitor } from '$lib/api';
+// Cyclic with applied (it fingerprints `imageTransform.value`) — safe: both
+// modules only touch the other inside functions.
+import { appliedCanvas } from '$lib/stores/applied.svelte';
 import { canvasView, type MonitorOverride } from '$lib/stores/canvas-view.svelte';
 import { coverImageRect, defaultOverrides, type PreviewMonitor } from '$lib/canvas/preview-layout';
 import { CANVAS_MAX_EDGE, loadSourceImage, peekSourceImage } from '$lib/library/source-image';
@@ -96,17 +99,21 @@ export function useSourceImage(
     };
   });
 
+  // Seeds mirror what the daemon painted for `path`, so they ride
+  // `appliedCanvas.follow` — a canvas that matched the desktop keeps
+  // matching across an advance. Untracked: the fingerprint reads canvas
+  // stores that must not become dependencies of the calling effect.
   function maybeInitTransform(path: string, monitors: PreviewMonitor[]): void {
     if (initializedFor === path) return;
     const baseline = getBaselineTransform?.(path) ?? null;
     if (baseline) {
-      transform = baseline;
+      untrack(() => appliedCanvas.follow(() => (transform = baseline)));
       initializedFor = path;
       return;
     }
     if (!sourceState.naturalDims || monitors.length === 0) return;
     const aspect = sourceState.naturalDims.w / sourceState.naturalDims.h;
-    transform = coverImageRect(monitors, aspect);
+    untrack(() => appliedCanvas.follow(() => (transform = coverImageRect(monitors, aspect))));
     initializedFor = path;
   }
 }
@@ -128,11 +135,14 @@ export function followSlideshowLayout(
     lastPath = path;
     if (!path || !placements) return;
     untrack(() => {
-      const next = { ...canvasView.overrides };
-      for (const [id, p] of Object.entries(placements)) {
-        next[id] = { xMm: p.x_mm, yMm: p.y_mm };
-      }
-      canvasView.setOverrides(next);
+      // Same daemon-driven seed as `maybeInitTransform` — follow, don't drift.
+      appliedCanvas.follow(() => {
+        const next = { ...canvasView.overrides };
+        for (const [id, p] of Object.entries(placements)) {
+          next[id] = { xMm: p.x_mm, yMm: p.y_mm };
+        }
+        canvasView.setOverrides(next);
+      });
     });
   });
 }

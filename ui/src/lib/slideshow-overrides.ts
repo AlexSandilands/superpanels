@@ -4,6 +4,7 @@
 
 import { api, errorMessage, type Profile } from '$lib/api';
 import { applyMonitorStateToCanvas, persistSlideshowSource } from '$lib/actions';
+import { appliedCanvas } from '$lib/stores/applied.svelte';
 import { preemption } from '$lib/stores/preemption.svelte';
 import { profileStore } from '$lib/stores/profile.svelte';
 import { toast } from '$lib/stores/toast.svelte';
@@ -23,7 +24,7 @@ async function applyTransientImageLayout(
   draft: Profile,
   path: string,
   layout: CanvasLayout,
-): Promise<void> {
+): Promise<boolean> {
   const transient: Profile = {
     ...draft,
     body: {
@@ -35,9 +36,11 @@ async function applyTransientImageLayout(
   preemption.claimSwitchTo(profileStore.activeName);
   try {
     await api.applyCanvas(transient, profileStore.activeName);
+    return true;
   } catch (err) {
     preemption.cancelClaim(profileStore.activeName);
     toast.error('Apply failed', errorMessage(err));
+    return false;
   }
 }
 
@@ -54,7 +57,12 @@ export async function saveOverrideForImage(
   const ok = await persistSlideshowSource(name, { ...source, overrides });
   if (!ok) return;
   toast.success('Saved layout for this image', path.split('/').pop() ?? path);
-  await applyTransientImageLayout(draft, path, layout);
+  // The pushed layout IS the canvas's current tune, so a successful apply
+  // makes the canvas the Apply baseline. (The remove path below doesn't
+  // mark: there the canvas transform keeps the dropped tune while the
+  // desktop snaps back — genuinely diverged.)
+  const fp = appliedCanvas.capture();
+  if (await applyTransientImageLayout(draft, path, layout)) appliedCanvas.mark(fp);
 }
 
 /** Drop the per-image override for `path`. When that image is on screen
