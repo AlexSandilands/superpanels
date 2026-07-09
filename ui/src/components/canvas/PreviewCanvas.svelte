@@ -464,54 +464,70 @@
   ondragover={handleDragOver}
   ondragleave={() => (dropHover = null)}
 >
-  <CanvasGrid scale={layout.scale} ox={layout.ox} oy={layout.oy} />
+  <!-- Grid stays full-bleed: its pattern origin scrolls with the live pan so no
+       blank edge is exposed, hence it reads pan directly rather than riding the
+       translated wrapper. -->
+  <CanvasGrid
+    scale={layout.scale}
+    ox={layout.ox + dragController.panOffset.x}
+    oy={layout.oy + dragController.panOffset.y}
+  />
 
-  {#if compositeMode}
-    <CanvasImageLayers
-      layers={renderedLayers}
-      dragging={Boolean(dragController.drag)}
-      dim={canvasView.dim}
-      {monitorRects}
-    />
-  {:else if imageUrl}
-    <CanvasSpanImage
-      {imageUrl}
-      rect={imgRect}
-      dim={canvasView.dim}
-      dragging={Boolean(dragController.drag)}
-      {monitorRects}
-    />
-  {/if}
-
-  <CanvasMonitors monitors={renderedMonitors} flashing={isFlashing} />
-
-  <DimensionLines lines={dimLines} />
-
-  {#each dragController.guides as g, i (i)}
-    {#if g.kind === 'h'}
-      {@const p = mm2px(0, g.y)}
-      <div
-        class="pointer-events-none absolute"
-        style:left="0"
-        style:right="0"
-        style:top="{p.y}px"
-        style:height="1px"
-        style:background="var(--accent)"
-        style:opacity="0.7"
-      ></div>
-    {:else}
-      {@const p = mm2px(g.x, 0)}
-      <div
-        class="pointer-events-none absolute"
-        style:top="0"
-        style:bottom="0"
-        style:left="{p.x}px"
-        style:width="1px"
-        style:background="var(--accent)"
-        style:opacity="0.7"
-      ></div>
+  <!-- Pan translates this composited wrapper instead of reprojecting mm→px.
+       See issue #66 / docs/reference/layout-math.md — nothing about the
+       projection changes when you pan. -->
+  <div
+    class="absolute inset-0"
+    style:transform="translate3d({dragController.panOffset.x}px, {dragController.panOffset.y}px, 0)"
+    style:will-change="transform"
+  >
+    {#if compositeMode}
+      <CanvasImageLayers
+        layers={renderedLayers}
+        dragging={Boolean(dragController.drag)}
+        dim={canvasView.dim}
+        {monitorRects}
+      />
+    {:else if imageUrl}
+      <CanvasSpanImage
+        {imageUrl}
+        rect={imgRect}
+        dim={canvasView.dim}
+        dragging={Boolean(dragController.drag)}
+        {monitorRects}
+      />
     {/if}
-  {/each}
+
+    <CanvasMonitors monitors={renderedMonitors} flashing={isFlashing} />
+
+    <DimensionLines lines={dimLines} />
+
+    {#each dragController.guides as g, i (i)}
+      {#if g.kind === 'h'}
+        {@const p = mm2px(0, g.y)}
+        <div
+          class="pointer-events-none absolute"
+          style:left="0"
+          style:right="0"
+          style:top="{p.y}px"
+          style:height="1px"
+          style:background="var(--accent)"
+          style:opacity="0.7"
+        ></div>
+      {:else}
+        {@const p = mm2px(g.x, 0)}
+        <div
+          class="pointer-events-none absolute"
+          style:top="0"
+          style:bottom="0"
+          style:left="{p.x}px"
+          style:width="1px"
+          style:background="var(--accent)"
+          style:opacity="0.7"
+        ></div>
+      {/if}
+    {/each}
+  </div>
 
   {#if tip}
     <div class="tip" style:left="{tip.x}px" style:top="{tip.y}px">

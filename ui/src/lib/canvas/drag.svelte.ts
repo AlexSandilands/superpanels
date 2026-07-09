@@ -4,6 +4,7 @@
 
 import { canvasView } from '$lib/stores/canvas-view.svelte';
 import { monitorRect, type PreviewMonitor, type Rect } from '$lib/canvas/preview-layout';
+import { createRafCoalescer } from '$lib/canvas/raf-coalesce';
 import type { ImageTransform } from '$lib/stores/image-transform.svelte';
 
 export type Drag =
@@ -118,6 +119,20 @@ export function snapRectToMonitors(
   return { x: nx, y: ny, guides: out };
 }
 
+/** The only pointer fields a drag frame needs. Captured off the live
+ *  `PointerEvent` so a coalesced sample can outlive the event. */
+export type PointerSample = { clientX: number; clientY: number; altKey: boolean };
+
+/** Fold a live pan gesture's pixel offset back into the committed pan origin.
+ *  Pure so the pan-as-transform reconciliation is unit-testable. */
+export function panCommit(
+  startOx: number,
+  startOy: number,
+  offset: { x: number; y: number },
+): { x: number; y: number } {
+  return { x: startOx + offset.x, y: startOy + offset.y };
+}
+
 export type DragHandlers = {
   monitors: () => PreviewMonitor[];
   imageTransform: () => ImageTransform;
@@ -180,6 +195,70 @@ export function createDragController(handlers: DragHandlers) {
     return snapRectToMonitors(x, y, w, h, handlers.monitors(), 8 / handlers.scale());
   }
 
+  // Live pan translation in px. Kept out of `canvasView` so a pan gesture never
+  // rewrites the mm→px projection; `end()` folds it into the committed pan.
+  let panOffset = $state({ x: 0, y: 0 });
+
+  function applyMove(sample: PointerSample) {
+    if (!drag) return;
+    const dx = sample.clientX - drag.startX;
+    const scale = handlers.scale();
+    const dxMm = dx / scale;
+    const dy =
+      drag.kind === 'image-resize' || drag.kind === 'layer-resize'
+        ? 0
+        : sample.clientY - drag.startY;
+    const dyMm = dy / scale;
+
+    if (drag.kind === 'image') {
+      handlers.setImageTransform({
+        ...handlers.imageTransform(),
+        offsetMmX: drag.startMmX + dxMm,
+        offsetMmY: drag.startMmY + dyMm,
+      });
+    } else if (drag.kind === 'image-resize') {
+      const r = resizeRect(drag, dxMm);
+      handlers.setImageTransform({ ...handlers.imageTransform(), ...r });
+    } else if (drag.kind === 'layer-image') {
+      const t = handlers.getLayer?.(drag.id);
+      if (!t) return;
+      let nx = drag.startMmX + dxMm;
+      let ny = drag.startMmY + dyMm;
+      if (!sample.altKey) {
+        const snapped = snapRect(nx, ny, t.widthMm, t.heightMm);
+        nx = snapped.x;
+        ny = snapped.y;
+        guides = snapped.guides;
+      } else {
+        guides = [];
+      }
+      handlers.setLayerTransform?.(drag.id, { ...t, offsetMmX: nx, offsetMmY: ny });
+    } else if (drag.kind === 'layer-resize') {
+      const t = handlers.getLayer?.(drag.id);
+      if (!t) return;
+      handlers.setLayerTransform?.(drag.id, { ...t, ...resizeRect(drag, dxMm) });
+    } else if (drag.kind === 'monitor') {
+      let newX = drag.startMmX + dxMm;
+      let newY = drag.startMmY + dyMm;
+      if (!sample.altKey) {
+        const snapped = snap(drag.id, newX, newY);
+        newX = snapped.x;
+        newY = snapped.y;
+        guides = snapped.guides;
+      } else {
+        guides = [];
+      }
+      canvasView.override(drag.id, { xMm: newX, yMm: newY });
+    } else if (drag.kind === 'pan') {
+      // Translate a composited wrapper instead of reprojecting; committed on end.
+      panOffset = { x: dx, y: dy };
+    }
+  }
+
+  // High-rate pointers fire many events per frame; apply at most the newest one
+  // per animation frame so a drag redraws once per frame, not once per event.
+  const moves = createRafCoalescer<PointerSample>(applyMove);
+
   return {
     get drag() {
       return drag;
@@ -187,64 +266,28 @@ export function createDragController(handlers: DragHandlers) {
     get guides() {
       return guides;
     },
+    /** Live pan translation in px, `{ x: 0, y: 0 }` outside a pan gesture. */
+    get panOffset() {
+      return panOffset;
+    },
     begin(next: Drag) {
       drag = next;
     },
     end() {
+      // Deliver the final coalesced sample before teardown so the gesture ends
+      // exactly where the pointer did.
+      moves.flush();
+      if (drag?.kind === 'pan') {
+        const committed = panCommit(drag.startOx, drag.startOy, panOffset);
+        canvasView.setPan(committed.x, committed.y);
+        panOffset = { x: 0, y: 0 };
+      }
       drag = null;
       guides = [];
     },
     move(ev: PointerEvent) {
       if (!drag) return;
-      const dx = ev.clientX - drag.startX;
-      const scale = handlers.scale();
-      const dxMm = dx / scale;
-      const dy =
-        drag.kind === 'image-resize' || drag.kind === 'layer-resize' ? 0 : ev.clientY - drag.startY;
-      const dyMm = dy / scale;
-
-      if (drag.kind === 'image') {
-        handlers.setImageTransform({
-          ...handlers.imageTransform(),
-          offsetMmX: drag.startMmX + dxMm,
-          offsetMmY: drag.startMmY + dyMm,
-        });
-      } else if (drag.kind === 'image-resize') {
-        const r = resizeRect(drag, dxMm);
-        handlers.setImageTransform({ ...handlers.imageTransform(), ...r });
-      } else if (drag.kind === 'layer-image') {
-        const t = handlers.getLayer?.(drag.id);
-        if (!t) return;
-        let nx = drag.startMmX + dxMm;
-        let ny = drag.startMmY + dyMm;
-        if (!ev.altKey) {
-          const snapped = snapRect(nx, ny, t.widthMm, t.heightMm);
-          nx = snapped.x;
-          ny = snapped.y;
-          guides = snapped.guides;
-        } else {
-          guides = [];
-        }
-        handlers.setLayerTransform?.(drag.id, { ...t, offsetMmX: nx, offsetMmY: ny });
-      } else if (drag.kind === 'layer-resize') {
-        const t = handlers.getLayer?.(drag.id);
-        if (!t) return;
-        handlers.setLayerTransform?.(drag.id, { ...t, ...resizeRect(drag, dxMm) });
-      } else if (drag.kind === 'monitor') {
-        let newX = drag.startMmX + dxMm;
-        let newY = drag.startMmY + dyMm;
-        if (!ev.altKey) {
-          const snapped = snap(drag.id, newX, newY);
-          newX = snapped.x;
-          newY = snapped.y;
-          guides = snapped.guides;
-        } else {
-          guides = [];
-        }
-        canvasView.override(drag.id, { xMm: newX, yMm: newY });
-      } else if (drag.kind === 'pan') {
-        canvasView.setPan(drag.startOx + dx, drag.startOy + dy);
-      }
+      moves.push({ clientX: ev.clientX, clientY: ev.clientY, altKey: ev.altKey });
     },
   };
 }
