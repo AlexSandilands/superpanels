@@ -134,7 +134,7 @@
 
   const applyTitle = $derived(
     !canApply
-      ? 'Name the draft to apply'
+      ? 'Cannot apply while the draft is unnamed or saving'
       : canvasDirty
         ? 'Apply (Enter)'
         : 'Re-apply current profile (Enter)',
@@ -272,12 +272,8 @@
       <Icon name="tray" />
     </button>
     <div style:width="1px" style:height="18px" style:background="var(--line)"></div>
-    <!-- Fades from `.primary` to the plain secondary look when the canvas is
-         clean — background, border, and font-weight all shift, not just
-         colour — but stays clickable: re-applying a clean canvas is legal
-         (e.g. re-asserting after an external change). `disabled` still
-         applies for the unnamed-draft / mid-save case, so "clean" and
-         "disabled" never read the same (#65). -->
+    <!-- A clean canvas keeps Apply clickable — re-applying is legal (e.g.
+         re-asserting after an external change); only !canApply disables. -->
     <button
       class="btn"
       class:primary={canvasDirty}
