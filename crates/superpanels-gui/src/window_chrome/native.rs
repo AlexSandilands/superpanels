@@ -9,7 +9,9 @@ use gtk::glib::Propagation;
 use gtk::prelude::*;
 use tauri::WebviewWindow;
 
-use super::{DragRegions, ResizeEdge, bands, clamp_to_i32, hit_test};
+use super::{
+    DragRegions, PressAction, PressKind, ResizeEdge, bands, clamp_to_i32, hit_test, press_response,
+};
 
 /// How far the pointer must travel before a press in a drag region becomes a
 /// window move. Without it a bare click hands the compositor a grab it does
@@ -46,41 +48,41 @@ pub(crate) fn install(window: &WebviewWindow, regions: &DragRegions) -> anyhow::
         if event.button() != LEFT_BUTTON {
             return Propagation::Proceed;
         }
+        let Some(kind) = press_kind(event.event_type()) else {
+            return Propagation::Proceed;
+        };
         let (root_x, root_y) = event.root();
         let (x, y) = window_relative(&win, (root_x, root_y));
-        let stopped = match event.event_type() {
-            EventType::ButtonPress => {
-                if let Some(edge) = resize_edge(&win, x, y) {
-                    win.begin_resize_drag(
-                        to_gtk_edge(edge),
-                        1,
-                        clamp_to_i32(root_x),
-                        clamp_to_i32(root_y),
-                        event.time(),
-                    );
-                    true
-                } else if drag_regions.contains(x, y) {
-                    state.pending_move.set(Some((x, y)));
-                    true
-                } else {
-                    false
-                }
-            }
-            EventType::DoubleButtonPress if drag_regions.contains(x, y) => {
+        // Only a fresh press can begin a resize; a repeat arrives after the
+        // compositor already owns the pointer.
+        let resize = (kind == PressKind::Single)
+            .then(|| resize_edge(&win, x, y))
+            .flatten();
+        let response = press_response(kind, resize, drag_regions.contains(x, y));
+
+        match response.action {
+            PressAction::Resize(edge) => win.begin_resize_drag(
+                to_gtk_edge(edge),
+                1,
+                clamp_to_i32(root_x),
+                clamp_to_i32(root_y),
+                event.time(),
+            ),
+            PressAction::WatchForMove => state.pending_move.set(Some((x, y))),
+            PressAction::ToggleMaximize => {
                 state.pending_move.set(None);
                 if win.is_maximized() {
                     win.unmaximize();
                 } else {
                     win.maximize();
                 }
-                true
             }
-            _ => false,
-        };
-        // A press we let through owns its own release, so drop any flag left
-        // over from a gesture the compositor ended without one.
-        state.swallow_release.set(stopped);
-        if stopped {
+            PressAction::Ignore => {}
+        }
+        if let Some(swallow) = response.swallow_release {
+            state.swallow_release.set(swallow);
+        }
+        if response.stop {
             Propagation::Stop
         } else {
             Propagation::Proceed
@@ -120,6 +122,23 @@ pub(crate) fn install(window: &WebviewWindow, regions: &DragRegions) -> anyhow::
     });
 
     Ok(())
+}
+
+/// GDK's press event types, as the gesture machine sees them. A triple press
+/// is a `Repeat`, not "a press we let through" — mislabelling it drops the
+/// swallow flag its `ButtonPress` set and leaks a lone mouseup.
+fn press_kind(event_type: EventType) -> Option<PressKind> {
+    match event_type {
+        EventType::ButtonPress => Some(PressKind::Single),
+        EventType::DoubleButtonPress => Some(PressKind::Double),
+        EventType::TripleButtonPress => Some(PressKind::Repeat),
+        _ => None,
+    }
+}
+
+/// The GTK integer scale, which is what [`super::bands`] is defined against.
+pub(super) fn window_scale(window: &tauri::Window) -> i32 {
+    window.gtk_window().map_or(1, |w| w.scale_factor()).max(1)
 }
 
 /// Window-relative coordinates from a root-relative event position. Mirrors

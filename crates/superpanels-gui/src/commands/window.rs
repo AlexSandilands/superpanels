@@ -1,9 +1,19 @@
 //! Window-chrome `#[tauri::command]`s.
 
-use serde_json::{Value, json};
+use serde::Serialize;
 use tauri::State;
+use ts_rs::TS;
 
-use crate::window_chrome::{DragRegions, Rect, bands, clamp_to_i32};
+use crate::window_chrome::{DragRegions, Rect, bands, window_scale};
+
+/// Widths of the window's resize grab regions, in logical pixels. Exported so
+/// the frontend's cursor geometry can't drift from the backend's hit test.
+#[derive(Debug, Clone, Copy, Serialize, TS)]
+#[ts(export, export_to = "../../../ui/src/lib/types/")]
+pub(crate) struct ResizeBands {
+    pub(crate) edge: i32,
+    pub(crate) corner: i32,
+}
 
 /// Publish the window-relative rectangles that drag the window when pressed.
 /// Unlike every other command this one is synchronous: it takes a lock and
@@ -23,8 +33,7 @@ pub(crate) fn set_drag_regions(regions: Vec<Rect>, state: State<'_, DragRegions>
 // reason: `tauri::Window` is always passed by value into a command handler.
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
-pub(crate) fn resize_bands(window: tauri::Window) -> Value {
-    let scale = window.scale_factor().map_or(1, |s| clamp_to_i32(s).max(1));
-    let (edge, corner) = bands(scale);
-    json!({ "edge": edge, "corner": corner })
+pub(crate) fn resize_bands(window: tauri::Window) -> ResizeBands {
+    let (edge, corner) = bands(window_scale(&window));
+    ResizeBands { edge, corner }
 }

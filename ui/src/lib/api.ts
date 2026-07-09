@@ -9,6 +9,7 @@ import type { PreviewArgs } from './types/PreviewArgs';
 import type { Profile } from './types/profile-helpers';
 import type { MonitorPlacement } from './types/MonitorPlacement';
 import type { ProfileValidity } from './types/ProfileValidity';
+import type { ResizeBands } from './types/ResizeBands';
 import type { Schedule } from './types/Schedule';
 import type { SlideshowSource } from './types/SlideshowSource';
 
@@ -164,10 +165,6 @@ export const api = {
 
 /** Window-relative rectangle, in CSS pixels, that drags the window when pressed. */
 export type DragRect = { x: number; y: number; w: number; h: number };
-
-/** Widths of the window's resize grab regions, in CSS pixels. Owned by the
- *  backend — the same numbers its press hit-test uses. */
-export type ResizeBands = { edge: number; corner: number };
 
 export type ApiError = IpcError;
 
