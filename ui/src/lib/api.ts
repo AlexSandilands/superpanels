@@ -159,10 +159,15 @@ export const api = {
   daemonStatus: () => call<{ connected: boolean }>('daemon_status'),
   startDaemon: () => call<{ exe: string | null }>('start_daemon'),
   setDragRegions: (regions: DragRect[]) => call<void>('set_drag_regions', { regions }),
+  resizeBands: () => call<ResizeBands>('resize_bands'),
 };
 
 /** Window-relative rectangle, in CSS pixels, that drags the window when pressed. */
 export type DragRect = { x: number; y: number; w: number; h: number };
+
+/** Widths of the window's resize grab regions, in CSS pixels. Owned by the
+ *  backend — the same numbers its press hit-test uses. */
+export type ResizeBands = { edge: number; corner: number };
 
 export type ApiError = IpcError;
 

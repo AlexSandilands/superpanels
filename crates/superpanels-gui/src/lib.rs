@@ -191,6 +191,7 @@ fn build_app(start_hidden: bool) -> tauri::App {
             commands::daemon::daemon_status,
             commands::daemon::start_daemon,
             commands::window::set_drag_regions,
+            commands::window::resize_bands,
         ]);
 
     builder

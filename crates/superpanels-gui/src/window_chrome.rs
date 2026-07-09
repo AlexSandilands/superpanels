@@ -15,41 +15,69 @@
 //! So we intercept the press on the webview widget, ahead of both `WebKit`'s
 //! default handler and tao's, start the gesture synchronously with the real
 //! event timestamp, and stop the emission. The webview never sees a press
-//! whose release it will never see.
+//! whose release it will never see. That interception is GTK-specific and
+//! lives in [`native`]; the geometry and the region store here are portable.
 //!
 //! Move regions can't be hit-tested from Rust alone — "the titlebar, but not
 //! its buttons" is a DOM fact. The frontend publishes them through
 //! `set_drag_regions` (see `ui/src/components/chrome/TitleBar.svelte`), and
 //! publishes an empty list whenever an overlay covers the bar.
 
-use std::cell::Cell;
-use std::rc::Rc;
+#[cfg(target_os = "linux")]
+pub(crate) mod native;
+
 use std::sync::{Arc, Mutex};
 
-use anyhow::anyhow;
-use gtk::gdk::{EventType, ModifierType, WindowEdge};
-use gtk::glib::Propagation;
-use gtk::prelude::*;
 use serde::Deserialize;
 use tauri::WebviewWindow;
 
 /// Grab band along each edge, and the square at each corner, in GTK logical
-/// pixels. `ui/src/components/chrome/ResizeGrips.svelte` paints the cursors
-/// over the same regions — keep the two in step.
+/// pixels. The frontend reads these back over `resize_bands` rather than
+/// re-deriving them, so the cursor always matches where the grab starts.
 const EDGE_PX: i32 = 6;
 const CORNER_PX: i32 = 18;
+const CORNER_MARGIN_PX: i32 = 12;
 
 /// tao's own border, which we must cover completely: any press it would act on
 /// has to be one we stop first, or both handlers start a drag and the
 /// compositor honours whichever arrived first.
 const TAO_BORDER_PER_SCALE: i32 = 5;
 
-/// How far the pointer must travel before a press in a drag region becomes a
-/// window move. Without it a bare click hands the compositor a grab it does
-/// nothing with, and double-click-to-maximise turns flaky.
-const MOVE_THRESHOLD_PX: f64 = 3.0;
+/// The webview is untrusted (see `docs/reference/security.md`) and every left
+/// button press scans the published regions on the GTK main thread. The
+/// titlebar publishes two.
+const MAX_DRAG_REGIONS: usize = 64;
 
-const LEFT_BUTTON: u32 = 1;
+/// Install the native press handlers. A no-op off Linux, where the crate has
+/// no GTK window to hang them on.
+#[cfg(target_os = "linux")]
+pub(crate) fn install(window: &WebviewWindow, regions: &DragRegions) -> anyhow::Result<()> {
+    native::install(window, regions)
+}
+
+#[cfg(not(target_os = "linux"))]
+// reason: the Linux arm needs both; keeping one signature is what makes the
+// call site in `setup_app` free of `cfg`.
+#[allow(clippy::needless_pass_by_value, unused_variables)]
+pub(crate) fn install(window: &WebviewWindow, regions: &DragRegions) -> anyhow::Result<()> {
+    Ok(())
+}
+
+/// Which resize a press asks for. Mirrors `gdk::WindowEdge` without dragging
+/// GTK into the portable half of this module.
+// reason: only the GTK handler consumes this; off Linux it would be dead code.
+#[cfg(any(target_os = "linux", test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ResizeEdge {
+    North,
+    South,
+    East,
+    West,
+    NorthEast,
+    NorthWest,
+    SouthEast,
+    SouthWest,
+}
 
 /// A window-relative rectangle in CSS pixels — which equal GTK logical pixels
 /// for a webview that fills the window.
@@ -65,6 +93,18 @@ impl Rect {
     fn contains(self, x: f64, y: f64) -> bool {
         x >= self.x && x < self.x + self.w && y >= self.y && y < self.y + self.h
     }
+
+    /// A rect that can never match is worth dropping at the boundary rather
+    /// than scanning on every press. `NaN` fails every comparison, so it would
+    /// only ever waste the check.
+    fn is_valid(self) -> bool {
+        self.x.is_finite()
+            && self.y.is_finite()
+            && self.w.is_finite()
+            && self.h.is_finite()
+            && self.w > 0.0
+            && self.h > 0.0
+    }
 }
 
 /// Regions of the window that move it when dragged, as last published by the
@@ -73,12 +113,19 @@ impl Rect {
 pub(crate) struct DragRegions(Arc<Mutex<Vec<Rect>>>);
 
 impl DragRegions {
-    pub(crate) fn set(&self, regions: Vec<Rect>) {
+    /// Replace the published set, dropping degenerate rects and capping the
+    /// length. Both guards are against the webview, not against our own
+    /// titlebar.
+    pub(crate) fn set(&self, mut regions: Vec<Rect>) {
+        regions.retain(|r| r.is_valid());
+        regions.truncate(MAX_DRAG_REGIONS);
         if let Ok(mut slot) = self.0.lock() {
             *slot = regions;
         }
     }
 
+    // A poisoned lock deliberately degrades to "the window no longer moves"
+    // rather than panicking inside a GTK signal handler. Don't `unwrap` it.
     fn contains(&self, x: f64, y: f64) -> bool {
         self.0
             .lock()
@@ -86,160 +133,44 @@ impl DragRegions {
     }
 }
 
-pub(crate) fn install(window: &WebviewWindow, regions: &DragRegions) -> anyhow::Result<()> {
-    let gtk_window = window.gtk_window()?;
-    let vbox = window.default_vbox()?;
-    let webview = find_webview(vbox.upcast_ref())
-        .ok_or_else(|| anyhow!("no WebKitWebView in the window's GTK container tree"))?;
-
-    // Set by a swallowed press in a drag region; cleared once the move starts,
-    // the button comes back up, or the gesture turns into a double-click.
-    let pending_move = Rc::new(Cell::new(Option::<(f64, f64)>::None));
-
-    let win = gtk_window.clone();
-    let pending = Rc::clone(&pending_move);
-    let drag_regions = regions.clone();
-    webview.connect_button_press_event(move |_, event| {
-        if event.button() != LEFT_BUTTON {
-            return Propagation::Proceed;
-        }
-        let (x, y) = window_relative(&win, event.root());
-        match event.event_type() {
-            EventType::ButtonPress => {
-                if let Some(edge) = resize_edge(&win, x, y) {
-                    let (root_x, root_y) = event.root();
-                    win.begin_resize_drag(
-                        edge,
-                        1,
-                        clamp_to_i32(root_x),
-                        clamp_to_i32(root_y),
-                        event.time(),
-                    );
-                    return Propagation::Stop;
-                }
-                if drag_regions.contains(x, y) {
-                    pending.set(Some((x, y)));
-                    return Propagation::Stop;
-                }
-                Propagation::Proceed
-            }
-            EventType::DoubleButtonPress if drag_regions.contains(x, y) => {
-                pending.set(None);
-                if win.is_maximized() {
-                    win.unmaximize();
-                } else {
-                    win.maximize();
-                }
-                Propagation::Stop
-            }
-            _ => Propagation::Proceed,
-        }
-    });
-
-    let win = gtk_window.clone();
-    let pending = Rc::clone(&pending_move);
-    webview.connect_motion_notify_event(move |_, event| {
-        let Some((start_x, start_y)) = pending.get() else {
-            return Propagation::Proceed;
-        };
-        if !event.state().contains(ModifierType::BUTTON1_MASK) {
-            pending.set(None);
-            return Propagation::Proceed;
-        }
-        let (root_x, root_y) = event.root();
-        let (x, y) = window_relative(&win, (root_x, root_y));
-        if (x - start_x).hypot(y - start_y) < MOVE_THRESHOLD_PX {
-            return Propagation::Proceed;
-        }
-        pending.set(None);
-        win.begin_move_drag(1, clamp_to_i32(root_x), clamp_to_i32(root_y), event.time());
-        Propagation::Stop
-    });
-
-    // A press we swallowed must have its release swallowed too, or WebKit sees
-    // a lone mouseup and fabricates a click on whatever sits under the pointer.
-    let pending = Rc::clone(&pending_move);
-    webview.connect_button_release_event(move |_, event| {
-        if event.button() == LEFT_BUTTON && pending.take().is_some() {
-            Propagation::Stop
-        } else {
-            Propagation::Proceed
-        }
-    });
-
-    Ok(())
-}
-
-/// Window-relative coordinates from a root-relative event position. Mirrors
-/// tao: on Wayland `position()` is always `(0, 0)` and root coordinates are
-/// surface-relative, so the subtraction is a no-op there and correct on X11.
-fn window_relative(win: &gtk::ApplicationWindow, (root_x, root_y): (f64, f64)) -> (f64, f64) {
-    let (left, top) = win.position();
-    (root_x - f64::from(left), root_y - f64::from(top))
-}
-
-fn resize_edge(win: &gtk::ApplicationWindow, x: f64, y: f64) -> Option<WindowEdge> {
-    if win.is_maximized() || !win.is_resizable() {
-        return None;
-    }
-    let (width, height) = win.size();
-    let scale = win.scale_factor();
-    hit_test(
-        x,
-        y,
-        f64::from(width),
-        f64::from(height),
-        f64::from(edge_band(scale)),
-        f64::from(corner_band(scale)),
-    )
-}
-
-fn edge_band(scale: i32) -> i32 {
-    EDGE_PX.max(scale * TAO_BORDER_PER_SCALE + 1)
-}
-
-fn corner_band(scale: i32) -> i32 {
-    CORNER_PX.max(edge_band(scale) + 12)
+/// Edge and corner band widths for a display scale, in logical pixels.
+pub(crate) fn bands(scale: i32) -> (i32, i32) {
+    let edge = EDGE_PX.max(scale * TAO_BORDER_PER_SCALE + 1);
+    (edge, CORNER_PX.max(edge + CORNER_MARGIN_PX))
 }
 
 /// Which resize the press at window-relative `(x, y)` asks for, if any. A
 /// corner wins when the press is inside the corner square on *both* axes;
 /// otherwise a single edge wins only within the (much thinner) edge band.
-fn hit_test(x: f64, y: f64, w: f64, h: f64, edge: f64, corner: f64) -> Option<WindowEdge> {
+// reason: paired with `ResizeEdge` — only the GTK handler calls it.
+#[cfg(any(target_os = "linux", test))]
+fn hit_test(x: f64, y: f64, w: f64, h: f64, edge: f64, corner: f64) -> Option<ResizeEdge> {
     let (west, east) = (x < corner, x >= w - corner);
     let (north, south) = (y < corner, y >= h - corner);
     match (north, south, west, east) {
-        (true, _, true, _) => return Some(WindowEdge::NorthWest),
-        (true, _, _, true) => return Some(WindowEdge::NorthEast),
-        (_, true, true, _) => return Some(WindowEdge::SouthWest),
-        (_, true, _, true) => return Some(WindowEdge::SouthEast),
+        (true, _, true, _) => return Some(ResizeEdge::NorthWest),
+        (true, _, _, true) => return Some(ResizeEdge::NorthEast),
+        (_, true, true, _) => return Some(ResizeEdge::SouthWest),
+        (_, true, _, true) => return Some(ResizeEdge::SouthEast),
         _ => {}
     }
     if x < edge {
-        Some(WindowEdge::West)
+        Some(ResizeEdge::West)
     } else if x >= w - edge {
-        Some(WindowEdge::East)
+        Some(ResizeEdge::East)
     } else if y < edge {
-        Some(WindowEdge::North)
+        Some(ResizeEdge::North)
     } else if y >= h - edge {
-        Some(WindowEdge::South)
+        Some(ResizeEdge::South)
     } else {
         None
     }
 }
 
-fn find_webview(widget: &gtk::Widget) -> Option<gtk::Widget> {
-    if widget.type_().name().contains("WebKitWebView") {
-        return Some(widget.clone());
-    }
-    let container: &gtk::Container = widget.downcast_ref()?;
-    container.children().iter().find_map(find_webview)
-}
-
 // reason: `f64 -> i32` has no `TryFrom`; the value is rounded and clamped into
 // i32's range first, so the cast cannot truncate.
 #[allow(clippy::cast_possible_truncation)]
-fn clamp_to_i32(v: f64) -> i32 {
+pub(crate) fn clamp_to_i32(v: f64) -> i32 {
     if v.is_nan() {
         return 0;
     }
@@ -255,7 +186,7 @@ mod tests {
     const EDGE: f64 = 6.0;
     const CORNER: f64 = 18.0;
 
-    fn hit(x: f64, y: f64) -> Option<WindowEdge> {
+    fn hit(x: f64, y: f64) -> Option<ResizeEdge> {
         hit_test(x, y, W, H, EDGE, CORNER)
     }
 
@@ -265,18 +196,18 @@ mod tests {
 
     #[test]
     fn press_inside_corner_square_resizes_diagonally() {
-        assert_eq!(hit(10.0, 10.0), Some(WindowEdge::NorthWest));
-        assert_eq!(hit(W - 2.0, 17.0), Some(WindowEdge::NorthEast));
-        assert_eq!(hit(17.0, H - 1.0), Some(WindowEdge::SouthWest));
-        assert_eq!(hit(W - 17.0, H - 17.0), Some(WindowEdge::SouthEast));
+        assert_eq!(hit(10.0, 10.0), Some(ResizeEdge::NorthWest));
+        assert_eq!(hit(W - 2.0, 17.0), Some(ResizeEdge::NorthEast));
+        assert_eq!(hit(17.0, H - 1.0), Some(ResizeEdge::SouthWest));
+        assert_eq!(hit(W - 17.0, H - 17.0), Some(ResizeEdge::SouthEast));
     }
 
     #[test]
     fn press_beyond_corner_square_on_one_axis_resizes_that_edge() {
-        assert_eq!(hit(2.0, 300.0), Some(WindowEdge::West));
-        assert_eq!(hit(W - 1.0, 300.0), Some(WindowEdge::East));
-        assert_eq!(hit(400.0, 2.0), Some(WindowEdge::North));
-        assert_eq!(hit(400.0, H - 1.0), Some(WindowEdge::South));
+        assert_eq!(hit(2.0, 300.0), Some(ResizeEdge::West));
+        assert_eq!(hit(W - 1.0, 300.0), Some(ResizeEdge::East));
+        assert_eq!(hit(400.0, 2.0), Some(ResizeEdge::North));
+        assert_eq!(hit(400.0, H - 1.0), Some(ResizeEdge::South));
     }
 
     #[test]
@@ -288,10 +219,11 @@ mod tests {
     }
 
     #[test]
-    fn edge_band_covers_taos_own_border_at_every_scale() {
+    fn bands_cover_taos_own_border_at_every_scale() {
         for scale in 1..=3 {
-            assert!(edge_band(scale) > scale * TAO_BORDER_PER_SCALE);
-            assert!(corner_band(scale) > edge_band(scale));
+            let (edge, corner) = bands(scale);
+            assert!(edge > scale * TAO_BORDER_PER_SCALE);
+            assert!(corner > edge);
         }
     }
 
@@ -322,5 +254,29 @@ mod tests {
         // An overlay opening publishes an empty list; nothing drags after that.
         regions.set(Vec::new());
         assert!(!regions.contains(5.0, 5.0));
+    }
+
+    #[test]
+    fn degenerate_regions_are_dropped_at_the_boundary() {
+        let regions = DragRegions::default();
+        regions.set(vec![
+            rect(0.0, 0.0, 0.0, 40.0),
+            rect(0.0, 0.0, 100.0, -1.0),
+            rect(f64::NAN, 0.0, 100.0, 40.0),
+            rect(0.0, f64::INFINITY, 100.0, 40.0),
+            rect(0.0, 0.0, 100.0, 40.0),
+        ]);
+        assert!(regions.contains(50.0, 20.0));
+        assert_eq!(regions.0.lock().map(|r| r.len()).unwrap_or_default(), 1);
+    }
+
+    #[test]
+    fn published_regions_are_capped() {
+        let regions = DragRegions::default();
+        regions.set(vec![rect(0.0, 0.0, 10.0, 10.0); MAX_DRAG_REGIONS + 20]);
+        assert_eq!(
+            regions.0.lock().map(|r| r.len()).unwrap_or_default(),
+            MAX_DRAG_REGIONS
+        );
     }
 }
