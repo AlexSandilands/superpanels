@@ -81,10 +81,9 @@ pub fn read_dimensions(path: &Path) -> Result<(u32, u32), ImageError> {
 }
 
 /// Resampling quality for [`load_thumbnail`].
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub enum Resample {
     /// `Triangle`. Cheap enough to run once per library-grid tile.
-    #[default]
     Fast,
     /// `Lanczos3`. Roughly 1.6× the cost of [`Resample::Fast`], and worth it
     /// wherever the result gets magnified again on screen — the GUI's preview
@@ -441,17 +440,26 @@ mod tests {
 
     #[test]
     fn load_thumbnail_bounds_longest_edge_and_keeps_aspect() {
-        // Arrange — 100x50 source, 40px cap on the long edge.
+        // Arrange — 100x50 source, 40px cap on the long edge. A high-frequency
+        // checkerboard, not a solid fill: the two filters agree pixel-for-pixel
+        // on a flat image, so a solid fixture couldn't tell them apart.
         let dir = tempdir().unwrap();
-        let path = write_png(dir.path(), "in.png", &solid_image(100, 50, [1, 2, 3, 255]));
+        let mut src = RgbaImage::new(100, 50);
+        for (x, y, p) in src.enumerate_pixels_mut() {
+            let v = if (x + y) % 2 == 0 { 0 } else { 255 };
+            *p = Rgba([v, v, v, 255]);
+        }
+        let path = write_png(dir.path(), "in.png", &DynamicImage::ImageRgba8(src));
 
         // Act
         let fast = load_thumbnail(&path, 40, Resample::Fast).unwrap();
         let high = load_thumbnail(&path, 40, Resample::High).unwrap();
 
-        // Assert — both filters agree on geometry; only the sampling differs.
+        // Assert — both filters agree on geometry, and the quality knob is
+        // really wired to the resample: Lanczos3 output differs from Triangle.
         assert_eq!((fast.width(), fast.height()), (40, 20));
         assert_eq!((high.width(), high.height()), (40, 20));
+        assert_ne!(fast.to_rgba8().into_raw(), high.to_rgba8().into_raw());
     }
 
     #[test]

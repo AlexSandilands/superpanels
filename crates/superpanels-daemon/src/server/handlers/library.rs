@@ -15,10 +15,7 @@ use tracing::warn;
 
 use crate::state::DaemonState;
 
-/// Hard floor on the thumbnail edge so a misconfigured `thumbnail_size = 0`
-/// doesn't crash `image::resize`. Production default is whatever
-/// `LibraryConfig::thumbnail_size` resolves to.
-const THUMBNAIL_MIN_EDGE: u32 = 64;
+use superpanels_core::config::THUMBNAIL_MIN_EDGE;
 
 /// Force a synchronous rescan of every configured root, persist the result
 /// into the library DB, and refresh the in-memory cache. Returns the post-

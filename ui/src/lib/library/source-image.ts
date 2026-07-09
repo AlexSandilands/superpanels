@@ -14,6 +14,8 @@ export type SourceImage = {
 type Entry = {
   promise: Promise<SourceImage>;
   loaded: SourceImage | null;
+  /** Retained size of the `data:` URL. Zero until the load resolves. */
+  bytes: number;
 };
 
 /** Small previews — profile swatches and the profile-detail panel. Matches
@@ -27,7 +29,17 @@ export const PREVIEW_MAX_EDGE = 512;
  *  caps any request at 2048. */
 export const CANVAS_MAX_EDGE = 1536;
 
-const MAX_ENTRIES = 16;
+// Entries are no longer uniformly sized — a 1536px canvas render retains
+// several times what a 512px swatch does — so the cache is bounded by retained
+// bytes rather than by a count. A count would let a burst of cheap 512px
+// inserts (the profile manager opening) evict the expensive canvas renders that
+// cost ~155 ms each to rebuild.
+export const CACHE_MAX_BYTES = 24 * 1024 * 1024;
+/** Floor so one incompressible image can't evict everything behind it. */
+export const CACHE_MIN_ENTRIES = 4;
+/** Backstop bounding entries still in flight, whose size isn't known yet. */
+const MAX_ENTRIES = 32;
+
 const cache = new Map<string, Entry>();
 
 // Keyed by edge as well as path: the canvas and the profile modal ask for the
@@ -44,11 +56,14 @@ export async function loadSourceImage(
   const existing = cache.get(key);
   if (existing) return existing.promise;
   const promise = fetchAndDecode(path, maxEdge);
-  const entry: Entry = { promise, loaded: null };
+  const entry: Entry = { promise, loaded: null, bytes: 0 };
   cache.set(key, entry);
   promise.then(
     (img) => {
       entry.loaded = img;
+      entry.bytes = img.url.length;
+      // Prune again now the real size is known — on insert it counted as zero.
+      prune();
     },
     () => {
       cache.delete(key);
@@ -80,13 +95,20 @@ async function fetchAndDecode(path: string, maxEdge: number): Promise<SourceImag
   });
 }
 
+function retainedBytes(): number {
+  let total = 0;
+  for (const entry of cache.values()) total += entry.bytes;
+  return total;
+}
+
+// Evicts oldest-inserted first (Map preserves insertion order).
 function prune(): void {
-  if (cache.size <= MAX_ENTRIES) return;
-  const overflow = cache.size - MAX_ENTRIES;
-  let dropped = 0;
-  for (const key of cache.keys()) {
-    if (dropped >= overflow) break;
+  let bytes = retainedBytes();
+  for (const [key, entry] of cache) {
+    const overCount = cache.size > MAX_ENTRIES;
+    const overBytes = bytes > CACHE_MAX_BYTES && cache.size > CACHE_MIN_ENTRIES;
+    if (!overCount && !overBytes) return;
     cache.delete(key);
-    dropped += 1;
+    bytes -= entry.bytes;
   }
 }

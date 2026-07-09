@@ -16,8 +16,7 @@ use superpanels_core::library::{LibraryFilter as CoreLibraryFilter, apply_librar
 use crate::bridge::{CallResult, ok_payload, ok_unit};
 use crate::errors::IpcError;
 
-/// Floor when `LibraryConfig::thumbnail_size` is misconfigured.
-const THUMBNAIL_MIN_EDGE: u32 = 64;
+use superpanels_core::config::THUMBNAIL_MIN_EDGE;
 
 pub(crate) fn dispatch(method: &str, params: &Value, config_path: Option<&Path>) -> CallResult {
     match method {

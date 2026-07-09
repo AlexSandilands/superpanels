@@ -9,6 +9,7 @@ use std::sync::Arc;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use superpanels_core::config::{DEFAULT_THUMBNAIL_SIZE, THUMBNAIL_MIN_EDGE};
 use superpanels_core::image::Resample;
 use tracing::warn;
 use ts_rs::TS;
@@ -73,7 +74,7 @@ pub(crate) async fn library_thumbnail(
             Ok(v) => Ok(v),
             Err(e) if should_fall_back_to_local_render(&e) => {
                 warn!(error = %e, "library_thumbnail daemon unreachable; falling back to local render");
-                render_local_thumbnail(&p, DEFAULT_THUMBNAIL_MAX_EDGE, Resample::Fast)
+                render_local_thumbnail(&p, DEFAULT_THUMBNAIL_SIZE, Resample::Fast)
             }
             Err(e) => Err(e),
         }
@@ -91,15 +92,12 @@ fn should_fall_back_to_local_render(err: &IpcError) -> bool {
     matches!(err, IpcError::DaemonUnreachable(_))
 }
 
-/// Matches `LibraryConfig::thumbnail_size`'s default; the callers here don't
-/// have config in scope so the constant is hard-coded.
-const DEFAULT_THUMBNAIL_MAX_EDGE: u32 = 512;
-
-/// Bounds on `source_thumbnail`'s caller-chosen `max_edge`. The frontend asks
-/// for a bigger edge on the preview canvas than in a grid tile, but the value
-/// sizes a decode buffer and a base64 IPC payload, so it is clamped rather than
-/// trusted: 2048px is ~9 MiB of base64 for an incompressible source.
-const SOURCE_THUMBNAIL_EDGE_BOUNDS: std::ops::RangeInclusive<u32> = 64..=2048;
+/// Upper bound on `source_thumbnail`'s caller-chosen `max_edge`. The frontend
+/// asks for a bigger edge on the preview canvas than in a grid tile, but the
+/// value sizes a resample buffer and a base64 IPC payload, so it is clamped
+/// rather than trusted: 2048px is ~9 MiB of base64 for an incompressible
+/// source. `THUMBNAIL_MIN_EDGE` is the lower bound.
+const SOURCE_THUMBNAIL_MAX_EDGE: u32 = 2048;
 
 #[tauri::command]
 pub(crate) async fn source_thumbnail(
@@ -114,11 +112,15 @@ pub(crate) async fn source_thumbnail(
     run_off_main(move || render_local_thumbnail(&p, edge, Resample::High)).await
 }
 
+/// Neither this path nor the `library_thumbnail` fallback has a `Config` in
+/// scope, so an omitted `max_edge` resolves to the serde default rather than to
+/// the user's `thumbnail_size`. A configured daemon may render a grid tile at a
+/// different edge than the fallback does; the tile scales the result to its own
+/// box either way.
 fn clamp_source_edge(requested: Option<u32>) -> u32 {
-    requested.unwrap_or(DEFAULT_THUMBNAIL_MAX_EDGE).clamp(
-        *SOURCE_THUMBNAIL_EDGE_BOUNDS.start(),
-        *SOURCE_THUMBNAIL_EDGE_BOUNDS.end(),
-    )
+    requested
+        .unwrap_or(DEFAULT_THUMBNAIL_SIZE)
+        .clamp(THUMBNAIL_MIN_EDGE, SOURCE_THUMBNAIL_MAX_EDGE)
 }
 
 fn render_local_thumbnail(
@@ -188,7 +190,7 @@ mod tests {
         let img = image::RgbImage::from_pixel(64, 48, image::Rgb([255, 128, 64]));
         img.save(&path).expect("write fixture png");
 
-        let value = render_local_thumbnail(&path, DEFAULT_THUMBNAIL_MAX_EDGE, Resample::Fast)
+        let value = render_local_thumbnail(&path, DEFAULT_THUMBNAIL_SIZE, Resample::Fast)
             .expect("render local thumbnail");
         let data = value
             .get("data")
@@ -222,10 +224,10 @@ mod tests {
         // The frontend picks the edge, so a hostile or buggy webview must not
         // be able to drive an unbounded decode/encode. Omitting it falls back
         // to the grid-sized default rather than the maximum.
-        assert_eq!(clamp_source_edge(None), DEFAULT_THUMBNAIL_MAX_EDGE);
+        assert_eq!(clamp_source_edge(None), DEFAULT_THUMBNAIL_SIZE);
         assert_eq!(clamp_source_edge(Some(1536)), 1536);
-        assert_eq!(clamp_source_edge(Some(0)), 64);
-        assert_eq!(clamp_source_edge(Some(u32::MAX)), 2048);
+        assert_eq!(clamp_source_edge(Some(0)), THUMBNAIL_MIN_EDGE);
+        assert_eq!(clamp_source_edge(Some(u32::MAX)), SOURCE_THUMBNAIL_MAX_EDGE);
     }
 
     #[test]

@@ -21,6 +21,14 @@ vi.mock('$lib/api', () => ({
   },
 }));
 
+const mime = 'image/png';
+
+// The cache measures an entry by its `data:` URL length, so payload size is
+// the only thing these fixtures need to control.
+function bigData(bytes: number): string {
+  return 'A'.repeat(Math.ceil(bytes));
+}
+
 // jsdom's Image doesn't actually decode `data:` URLs — stub it so `onload`
 // fires synchronously after `src` is set with predictable natural dims.
 class FakeImage {
@@ -79,14 +87,53 @@ describe('loadSourceImage', () => {
     expect(peeked?.naturalW).toBe(100);
   });
 
-  it('lru_evicts_oldest_when_over_capacity', async () => {
+  it('evicts_oldest_when_retained_bytes_exceed_budget', async () => {
     const mod = await import('./source-image');
-    // MAX_ENTRIES is 16; load 17 distinct paths and the first should evict.
-    for (let i = 0; i < 17; i += 1) {
+    // Twelve entries at an eighth of the budget each: 1.5x over, so the
+    // oldest are dropped until it fits. Sized so eviction is driven by bytes
+    // and settles well above CACHE_MIN_ENTRIES — the floor must not be what
+    // stops the loop here, or this would pass for the wrong reason.
+    ctx.invokeImpl = () => Promise.resolve({ data: bigData(mod.CACHE_MAX_BYTES / 8), mime });
+    for (let i = 0; i < 12; i += 1) await mod.loadSourceImage(`/img/${i}.png`);
+
+    const held = Array.from({ length: 12 }, (_, i) => mod.peekSourceImage(`/img/${i}.png`)).filter(
+      (e) => e !== null,
+    );
+    const retained = held.reduce((sum, e) => sum + e.url.length, 0);
+    expect(retained).toBeLessThanOrEqual(mod.CACHE_MAX_BYTES);
+    expect(held.length).toBeGreaterThan(mod.CACHE_MIN_ENTRIES);
+    expect(mod.peekSourceImage('/img/0.png')).toBeNull();
+    expect(mod.peekSourceImage('/img/11.png')).not.toBeNull();
+  });
+
+  it('keeps_a_floor_of_entries_when_each_alone_exceeds_the_budget', async () => {
+    const mod = await import('./source-image');
+    // A pathological source (huge, incompressible) must not leave the cache
+    // empty and re-fetching on every render.
+    ctx.invokeImpl = () => Promise.resolve({ data: bigData(mod.CACHE_MAX_BYTES), mime });
+    for (let i = 0; i < mod.CACHE_MIN_ENTRIES + 2; i += 1) {
       await mod.loadSourceImage(`/img/${i}.png`);
     }
-    expect(mod.peekSourceImage('/img/0.png')).toBeNull();
-    expect(mod.peekSourceImage('/img/16.png')).not.toBeNull();
+    const held = Array.from({ length: mod.CACHE_MIN_ENTRIES + 2 }, (_, i) =>
+      mod.peekSourceImage(`/img/${i}.png`),
+    ).filter((e) => e !== null);
+    expect(held.length).toBe(mod.CACHE_MIN_ENTRIES);
+  });
+
+  it('canvas_entries_survive_a_burst_of_preview_sized_inserts', async () => {
+    const mod = await import('./source-image');
+    // Regression: with a fixed entry count, opening the profile manager (a
+    // burst of cheap 512px inserts) evicted the canvas's expensive 1536px
+    // renders, silently re-paying a full IPC round-trip per layer.
+    for (let i = 0; i < 8; i += 1) {
+      await mod.loadSourceImage(`/img/layer-${i}.png`, mod.CANVAS_MAX_EDGE);
+    }
+    for (let i = 0; i < 10; i += 1) {
+      await mod.loadSourceImage(`/img/profile-${i}.png`, mod.PREVIEW_MAX_EDGE);
+    }
+    for (let i = 0; i < 8; i += 1) {
+      expect(mod.peekSourceImage(`/img/layer-${i}.png`, mod.CANVAS_MAX_EDGE)).not.toBeNull();
+    }
   });
 
   it('requests_the_default_edge_when_caller_omits_one', async () => {
