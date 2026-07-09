@@ -271,7 +271,12 @@ pub(crate) fn canonicalise_inside_roots(
 }
 
 fn render_thumbnail(path: &Path, edge: u32) -> Result<(Vec<u8>, &'static str), String> {
-    let img = superpanels_core::image::load_thumbnail(path, edge).map_err(|e| e.to_string())?;
+    let img = superpanels_core::image::load_thumbnail(
+        path,
+        edge,
+        superpanels_core::image::Resample::Fast,
+    )
+    .map_err(|e| e.to_string())?;
     let bytes = superpanels_core::image::encode_png(&img).map_err(|e| e.to_string())?;
     Ok((bytes, "image/png"))
 }

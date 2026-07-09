@@ -6,7 +6,7 @@ import { untrack } from 'svelte';
 import { errorMessage, type Monitor } from '$lib/api';
 import { canvasView, type MonitorOverride } from '$lib/stores/canvas-view.svelte';
 import { coverImageRect, defaultOverrides, type PreviewMonitor } from '$lib/canvas/preview-layout';
-import { loadSourceImage, peekSourceImage } from '$lib/library/source-image';
+import { CANVAS_MAX_EDGE, loadSourceImage, peekSourceImage } from '$lib/library/source-image';
 import { toast } from '$lib/stores/toast.svelte';
 import type { MonitorPlacement } from '$lib/types/MonitorPlacement';
 
@@ -70,7 +70,7 @@ export function useSourceImage(
       initializedFor = '';
       return;
     }
-    const cached = peekSourceImage(path);
+    const cached = peekSourceImage(path, CANVAS_MAX_EDGE);
     if (cached) {
       sourceState = {
         url: cached.url,
@@ -81,7 +81,7 @@ export function useSourceImage(
       return;
     }
     let cancelled = false;
-    void loadSourceImage(path)
+    void loadSourceImage(path, CANVAS_MAX_EDGE)
       .then((img) => {
         if (cancelled || getSourcePath() !== path) return;
         sourceState = { url: img.url, naturalDims: { w: img.naturalW, h: img.naturalH }, path };

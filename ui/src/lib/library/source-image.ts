@@ -16,33 +16,57 @@ type Entry = {
   loaded: SourceImage | null;
 };
 
+/** Small previews — profile swatches and the profile-detail panel. Matches
+ *  `LibraryConfig::thumbnail_size`'s default. */
+export const PREVIEW_MAX_EDGE = 512;
+
+/** The preview canvas stretches one source image across the whole desktop
+ *  plane, so a grid-sized thumbnail reads as soft and blocky. 1536px is the
+ *  point where a spanned image looks sharp without the decode (~130 ms) or the
+ *  base64 `data:` URL (~0.6 MiB for a photo) becoming noticeable; the Rust side
+ *  caps any request at 2048. */
+export const CANVAS_MAX_EDGE = 1536;
+
 const MAX_ENTRIES = 16;
 const cache = new Map<string, Entry>();
 
-export async function loadSourceImage(path: string): Promise<SourceImage> {
-  const existing = cache.get(path);
+// Keyed by edge as well as path: the canvas and the profile modal ask for the
+// same file at different sizes and must not serve each other's copy.
+function keyFor(path: string, maxEdge: number): string {
+  return `${maxEdge}:${path}`;
+}
+
+export async function loadSourceImage(
+  path: string,
+  maxEdge: number = PREVIEW_MAX_EDGE,
+): Promise<SourceImage> {
+  const key = keyFor(path, maxEdge);
+  const existing = cache.get(key);
   if (existing) return existing.promise;
-  const promise = fetchAndDecode(path);
+  const promise = fetchAndDecode(path, maxEdge);
   const entry: Entry = { promise, loaded: null };
-  cache.set(path, entry);
+  cache.set(key, entry);
   promise.then(
     (img) => {
       entry.loaded = img;
     },
     () => {
-      cache.delete(path);
+      cache.delete(key);
     },
   );
   prune();
   return promise;
 }
 
-export function peekSourceImage(path: string): SourceImage | null {
-  return cache.get(path)?.loaded ?? null;
+export function peekSourceImage(
+  path: string,
+  maxEdge: number = PREVIEW_MAX_EDGE,
+): SourceImage | null {
+  return cache.get(keyFor(path, maxEdge))?.loaded ?? null;
 }
 
-async function fetchAndDecode(path: string): Promise<SourceImage> {
-  const { data, mime } = await api.sourceThumbnail(path);
+async function fetchAndDecode(path: string, maxEdge: number): Promise<SourceImage> {
+  const { data, mime } = await api.sourceThumbnail(path, maxEdge);
   const url = `data:${mime};base64,${data}`;
   return await new Promise((resolve, reject) => {
     const img = new Image();

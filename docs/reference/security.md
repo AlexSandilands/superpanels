@@ -90,6 +90,7 @@ The trust boundary is *anything reachable through a saved profile body or a live
 We accept this in v1 because:
 
 - The decode-memory cap (512 MB) prevents DoS via image bombs.
+- The command's `max_edge` argument is chosen by the frontend (the preview canvas asks for a larger render than a grid tile), but it sizes a resample buffer and a base64 payload, so the Rust side clamps it to `64..=2048` rather than trusting it.
 - File picks are user-initiated; profile bodies are user-saved. No unbounded discovery primitive (no `list_files`, no glob).
 - Anything more restrictive demands a pick-time allowlist persisted across the webview lifecycle — a feature, not hardening.
 

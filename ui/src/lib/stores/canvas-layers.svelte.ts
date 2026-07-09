@@ -6,7 +6,7 @@
 import { errorMessage } from '$lib/api';
 import { contain } from '$lib/canvas/snap';
 import { coverImageRect, monitorRect, type PreviewMonitor } from '$lib/canvas/preview-layout';
-import { loadSourceImage, peekSourceImage } from '$lib/library/source-image';
+import { CANVAS_MAX_EDGE, loadSourceImage, peekSourceImage } from '$lib/library/source-image';
 import { toast } from '$lib/stores/toast.svelte';
 import type { ImageTransform } from '$lib/stores/image-transform.svelte';
 import type { StandardLayer } from '$lib/types/profile-helpers';
@@ -66,7 +66,7 @@ export const canvasLayers = {
     // stagger nudge the all-monitors cover-fit uses to avoid eclipsing siblings.
     const seed = (aspect: number): ImageTransform =>
       target ? contain(monitorRect(target), aspect) : coverTransform(monitors, aspect, stagger);
-    const cached = peekSourceImage(path);
+    const cached = peekSourceImage(path, CANVAS_MAX_EDGE);
     const layer: CanvasLayer = {
       id,
       path,
@@ -77,7 +77,7 @@ export const canvasLayers = {
     layers = [...layers, layer];
     if (cached) return;
     try {
-      const img = await loadSourceImage(path);
+      const img = await loadSourceImage(path, CANVAS_MAX_EDGE);
       // Re-seed at the true aspect now that we know it (the layer was invisible
       // until now — no url — so the user can't have dragged it yet).
       layers = layers.map((l) =>
@@ -117,7 +117,7 @@ export const canvasLayers = {
    *  the persisted rects; urls load async). */
   setFromLayers(input: StandardLayer[]): void {
     layers = input.map((cl) => {
-      const cached = peekSourceImage(cl.path);
+      const cached = peekSourceImage(cl.path, CANVAS_MAX_EDGE);
       return {
         id: genId(),
         path: cl.path,
@@ -128,7 +128,7 @@ export const canvasLayers = {
     });
     for (const l of layers) {
       if (l.url) continue;
-      void loadSourceImage(l.path)
+      void loadSourceImage(l.path, CANVAS_MAX_EDGE)
         .then((img) => {
           layers = layers.map((x) =>
             x.id === l.id

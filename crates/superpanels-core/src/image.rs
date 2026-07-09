@@ -80,22 +80,56 @@ pub fn read_dimensions(path: &Path) -> Result<(u32, u32), ImageError> {
         })
 }
 
-/// Decode `path` then resize so the longest edge is `max_edge` pixels using
-/// the fast `Triangle` filter. Used by `library_thumbnail` to
-/// keep IPC payloads small. The decode is gated by the default memory budget.
-pub fn load_thumbnail(path: &Path, max_edge: u32) -> Result<DynamicImage, ImageError> {
-    let img = load(path)?;
-    Ok(img.resize(max_edge, max_edge, imageops::FilterType::Triangle))
+/// Resampling quality for [`load_thumbnail`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Resample {
+    /// `Triangle`. Cheap enough to run once per library-grid tile.
+    #[default]
+    Fast,
+    /// `Lanczos3`. Roughly 1.6× the cost of [`Resample::Fast`], and worth it
+    /// wherever the result gets magnified again on screen — the GUI's preview
+    /// canvas stretches one thumbnail across the whole desktop plane.
+    High,
 }
 
-/// Encode `img` as PNG bytes using the fast settings shared with
-/// `temp::save_temp_in`. In-memory equivalent of [`save_temp`] for the
-/// thumbnail IPC path.
+impl Resample {
+    fn filter(self) -> imageops::FilterType {
+        match self {
+            Self::Fast => imageops::FilterType::Triangle,
+            Self::High => imageops::FilterType::Lanczos3,
+        }
+    }
+}
+
+/// Decode `path` then downscale so the longest edge is at most `max_edge`
+/// pixels. Used by the thumbnail IPC commands to keep payloads small. The
+/// decode is gated by the default memory budget.
+///
+/// A source already within the box is returned at its native size —
+/// `DynamicImage::resize` would otherwise *upscale* it to fill the box, paying
+/// for pixels that carry no extra detail.
+pub fn load_thumbnail(
+    path: &Path,
+    max_edge: u32,
+    quality: Resample,
+) -> Result<DynamicImage, ImageError> {
+    let img = load(path)?;
+    if img.width() <= max_edge && img.height() <= max_edge {
+        return Ok(img);
+    }
+    Ok(img.resize(max_edge, max_edge, quality.filter()))
+}
+
+/// Encode `img` as PNG bytes for an IPC payload. In-memory counterpart to
+/// [`save_temp`], but tuned differently: `Adaptive` row filtering costs about a
+/// millisecond at thumbnail sizes yet shrinks a photographic 1536px encode ~6×,
+/// which matters because these bytes cross IPC and are then held as a base64
+/// `data:` URL in the webview.
 pub fn encode_png(img: &DynamicImage) -> Result<Vec<u8>, ImageError> {
     use image::codecs::png::{CompressionType, FilterType, PngEncoder};
     let mut bytes = Vec::new();
     let encoder =
-        PngEncoder::new_with_quality(&mut bytes, CompressionType::Fast, FilterType::NoFilter);
+        PngEncoder::new_with_quality(&mut bytes, CompressionType::Fast, FilterType::Adaptive);
     img.write_with_encoder(encoder)
         .map_err(|e| ImageError::Decode {
             path: PathBuf::new(),
@@ -403,6 +437,35 @@ mod tests {
 
         // Assert
         assert!(matches!(result, Err(ImageError::Io { .. })));
+    }
+
+    #[test]
+    fn load_thumbnail_bounds_longest_edge_and_keeps_aspect() {
+        // Arrange — 100x50 source, 40px cap on the long edge.
+        let dir = tempdir().unwrap();
+        let path = write_png(dir.path(), "in.png", &solid_image(100, 50, [1, 2, 3, 255]));
+
+        // Act
+        let fast = load_thumbnail(&path, 40, Resample::Fast).unwrap();
+        let high = load_thumbnail(&path, 40, Resample::High).unwrap();
+
+        // Assert — both filters agree on geometry; only the sampling differs.
+        assert_eq!((fast.width(), fast.height()), (40, 20));
+        assert_eq!((high.width(), high.height()), (40, 20));
+    }
+
+    #[test]
+    fn load_thumbnail_does_not_upscale_a_smaller_source() {
+        // Arrange — `resize` fits *within* the box, so a tiny source is
+        // returned untouched rather than blown up to max_edge.
+        let dir = tempdir().unwrap();
+        let path = write_png(dir.path(), "in.png", &solid_image(8, 6, [0, 0, 0, 255]));
+
+        // Act
+        let out = load_thumbnail(&path, 1536, Resample::High).unwrap();
+
+        // Assert
+        assert_eq!((out.width(), out.height()), (8, 6));
     }
 
     #[test]

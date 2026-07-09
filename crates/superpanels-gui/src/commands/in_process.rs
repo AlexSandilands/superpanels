@@ -247,8 +247,12 @@ fn library_thumbnail(params: &Value, config_path: Option<&Path>) -> CallResult {
     let cfg = load_config(config_path)?;
     let edge = cfg.library.thumbnail_size.max(THUMBNAIL_MIN_EDGE);
     let canonical = canonicalise_inside_roots(Path::new(path), &cfg.library.roots)?;
-    let img = superpanels_core::image::load_thumbnail(&canonical, edge)
-        .map_err(|e| IpcError::Image(e.to_string()))?;
+    let img = superpanels_core::image::load_thumbnail(
+        &canonical,
+        edge,
+        superpanels_core::image::Resample::Fast,
+    )
+    .map_err(|e| IpcError::Image(e.to_string()))?;
     let bytes =
         superpanels_core::image::encode_png(&img).map_err(|e| IpcError::Image(e.to_string()))?;
     let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);

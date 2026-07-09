@@ -136,8 +136,8 @@ export const api = {
     call<{ data: string; mime: string }>('library_thumbnail', { path }),
   // Local-only render path used by the canvas preview for any selected /
   // dropped source file — bypasses library-roots gating.
-  sourceThumbnail: (path: string) =>
-    call<{ data: string; mime: string }>('source_thumbnail', { path }),
+  sourceThumbnail: (path: string, maxEdge?: number) =>
+    call<{ data: string; mime: string }>('source_thumbnail', { path, maxEdge }),
   libraryTag: (path: string, tag: string, on: boolean) =>
     call<void>('library_tag', { path, tag, on }),
   libraryDelete: (path: string) => call<void>('library_delete', { path }),

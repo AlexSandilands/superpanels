@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const ctx = vi.hoisted(() => {
   return {
     invocations: [] as string[],
+    edges: [] as (number | undefined)[],
     invokeImpl: (): Promise<{ data: string; mime: string }> =>
       Promise.resolve({ data: 'AAAA', mime: 'image/png' }),
   };
@@ -12,8 +13,9 @@ const ctx = vi.hoisted(() => {
 
 vi.mock('$lib/api', () => ({
   api: {
-    sourceThumbnail: (path: string) => {
+    sourceThumbnail: (path: string, maxEdge?: number) => {
       ctx.invocations.push(path);
+      ctx.edges.push(maxEdge);
       return ctx.invokeImpl();
     },
   },
@@ -35,6 +37,7 @@ class FakeImage {
 
 beforeEach(() => {
   ctx.invocations.length = 0;
+  ctx.edges.length = 0;
   ctx.invokeImpl = () => Promise.resolve({ data: 'AAAA', mime: 'image/png' });
   vi.stubGlobal('Image', FakeImage);
   // Reset the module's cache by re-importing fresh.
@@ -84,6 +87,23 @@ describe('loadSourceImage', () => {
     }
     expect(mod.peekSourceImage('/img/0.png')).toBeNull();
     expect(mod.peekSourceImage('/img/16.png')).not.toBeNull();
+  });
+
+  it('requests_the_default_edge_when_caller_omits_one', async () => {
+    const mod = await import('./source-image');
+    await mod.loadSourceImage('/img/a.png');
+    expect(ctx.edges).toEqual([mod.PREVIEW_MAX_EDGE]);
+  });
+
+  it('same_path_at_two_edges_is_cached_separately', async () => {
+    const mod = await import('./source-image');
+    // The canvas asks for a big render of the same file the profile modal
+    // shows as a swatch; neither may be served the other's copy.
+    await mod.loadSourceImage('/img/a.png', mod.PREVIEW_MAX_EDGE);
+    await mod.loadSourceImage('/img/a.png', mod.CANVAS_MAX_EDGE);
+    expect(ctx.edges).toEqual([mod.PREVIEW_MAX_EDGE, mod.CANVAS_MAX_EDGE]);
+    expect(mod.peekSourceImage('/img/a.png', mod.CANVAS_MAX_EDGE)).not.toBeNull();
+    expect(mod.peekSourceImage('/img/a.png', 999)).toBeNull();
   });
 
   it('on_error_evicts_failed_entry_so_retry_refetches', async () => {
