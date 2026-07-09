@@ -863,7 +863,7 @@
     canSaveAsNew={true}
     {canSave}
     {canRevert}
-    saveDirty={canvasDirty}
+    {canvasDirty}
     onApply={() => void applyDraftProfile()}
     onSave={() => void saveActiveProfile()}
     onSaveAsNew={() => (saveDialogOpen = true)}
