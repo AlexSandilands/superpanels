@@ -1,15 +1,25 @@
-//! One-time re-exec that enables the `WebKitGTK` DMABUF-renderer workaround only
-//! when the session looks like NVIDIA-on-Wayland — the stack where the
-//! zero-copy DMABUF path crashes (`Gdk-Message: Error 71`). Applying it
-//! everywhere forces a slow copy-fallback render path on GPUs that handle
-//! DMABUF fine (Intel/AMD), so the binary detects and re-execs itself instead
-//! of every launcher baking the env in. See GitHub #57 (and #8 for the
-//! upstream fix that retires this entirely). This is the single source of
-//! truth — launchers no longer set the variable.
+//! One-time re-exec that enables the NVIDIA-on-Wayland `WebKitGTK` workarounds
+//! only when the session looks like that stack — where showing the webview
+//! crashes the process with a Wayland protocol error (`Error 71`). Applying the
+//! workarounds everywhere forces a slow copy-fallback render path on GPUs that
+//! handle the fast paths fine (Intel/AMD), so the binary detects and re-execs
+//! itself instead of every launcher baking the env in. See GitHub #57 / #76
+//! (and #8 for the upstream fix that retires this entirely). This is the single
+//! source of truth — launchers no longer set the variables.
+//!
+//! Two variables, because they address different halves of the crash:
+//! - `WEBKIT_DISABLE_DMABUF_RENDERER=1` moves the renderer off the zero-copy
+//!   GBM DMABUF path onto shared-memory buffers.
+//! - `__NV_DISABLE_EXPLICIT_SYNC=1` disables NVIDIA's Wayland explicit-sync
+//!   protocol, which is the actual trigger for the `Error 71` protocol abort on
+//!   this stack and which the DMABUF variable alone does **not** dodge on a
+//!   cold boot (the crash #76's fix was assumed to close, but did not). See
+//!   Tauri's Linux-graphics NVIDIA notes.
 
 use std::path::Path;
 
-const ENV_VAR: &str = "WEBKIT_DISABLE_DMABUF_RENDERER";
+const DMABUF_VAR: &str = "WEBKIT_DISABLE_DMABUF_RENDERER";
+const EXPLICIT_SYNC_VAR: &str = "__NV_DISABLE_EXPLICIT_SYNC";
 
 /// Apply the workaround by re-execing with the env set, when warranted. Must
 /// run before any thread spawns or GTK/WebKit initialises.
@@ -24,7 +34,10 @@ pub(crate) fn apply() {
     // DMABUF is WebKitGTK's call — some versions gate on the var's presence, not
     // its value — but honouring the user's setting untouched is the contract
     // either way (to force acceleration back on, unset the var rather than `=0`).
-    if std::env::var_os(ENV_VAR).is_some() {
+    // The DMABUF var is the loop-break sentinel: it is always among the ones we
+    // set, so the child always sees it even when only the explicit-sync var was
+    // the effective fix.
+    if std::env::var_os(DMABUF_VAR).is_some() {
         return;
     }
     if warranted(&Facts::probe()) {
@@ -89,7 +102,8 @@ fn reexec_with_workaround() {
     // process rather than aborting startup.
     let err = std::process::Command::new(exe)
         .args(std::env::args_os().skip(1))
-        .env(ENV_VAR, "1")
+        .env(DMABUF_VAR, "1")
+        .env(EXPLICIT_SYNC_VAR, "1")
         .exec();
     tracing::warn!(error = %err, "DMABUF workaround: re-exec failed; continuing without it");
 }
