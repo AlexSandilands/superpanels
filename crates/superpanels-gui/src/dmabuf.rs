@@ -7,14 +7,15 @@
 //! (and #8 for the upstream fix that retires this entirely). This is the single
 //! source of truth — launchers no longer set the variables.
 //!
-//! Two variables, because they address different halves of the crash:
-//! - `WEBKIT_DISABLE_DMABUF_RENDERER=1` moves the renderer off the zero-copy
-//!   GBM DMABUF path onto shared-memory buffers.
-//! - `__NV_DISABLE_EXPLICIT_SYNC=1` disables NVIDIA's Wayland explicit-sync
-//!   protocol, which is the actual trigger for the `Error 71` protocol abort on
-//!   this stack and which the DMABUF variable alone does **not** dodge on a
-//!   cold boot (the crash #76's fix was assumed to close, but did not). See
-//!   Tauri's Linux-graphics NVIDIA notes.
+//! The failing mechanism (captured with `WAYLAND_DEBUG=1`): with no workaround,
+//! the webview initialises EGL, NVIDIA's egl-wayland attaches a
+//! `wp_linux_drm_syncobj_surface_v1` to the window surface from a render
+//! thread, and the GTK main thread's next commit lands without an acquire
+//! point — `KWin` kills the connection ("explicit sync is used, but no acquire
+//! point is set", surfacing as `Error 71`). `WEBKIT_DISABLE_DMABUF_RENDERER=1`
+//! keeps the webview off EGL entirely, so the sync object never exists;
+//! `__NV_DISABLE_EXPLICIT_SYNC=1` is belt-and-braces from Tauri's
+//! Linux-graphics NVIDIA notes.
 
 use std::path::Path;
 
@@ -59,6 +60,7 @@ impl Facts {
             wayland: wayland_session(
                 std::env::var("XDG_SESSION_TYPE").ok().as_deref(),
                 std::env::var("WAYLAND_DISPLAY").ok().as_deref(),
+                default_wayland_socket_exists(std::env::var_os("XDG_RUNTIME_DIR").as_deref()),
             ),
             glx_vendor_nvidia: env_contains_ignore_case("__GLX_VENDOR_LIBRARY_NAME", "nvidia"),
             nvidia_dev_node: Path::new("/dev/nvidiactl").exists()
@@ -67,13 +69,31 @@ impl Facts {
     }
 }
 
-/// `XDG_SESSION_TYPE` alone is not enough: an `/etc/xdg/autostart` process
-/// inherits a thinner environment than a login shell and may not have it, which
-/// silently skipped the workaround and crashed the webview on first render.
-/// `WAYLAND_DISPLAY` survives that. See GitHub #76.
-fn wayland_session(session_type: Option<&str>, wayland_display: Option<&str>) -> bool {
+/// Env sniffing alone cannot decide this. At cold-boot login the autostart
+/// unit can start before the session manager exports `WAYLAND_DISPLAY` /
+/// `XDG_SESSION_TYPE` into the systemd activation environment — yet GTK still
+/// reaches the compositor, because `wl_display_connect(NULL)` falls back to
+/// `$XDG_RUNTIME_DIR/wayland-0`. So a missing env var must not read as "not
+/// Wayland": probe for that default socket too, mirroring libwayland's own
+/// fallback. Reproduce the failure with
+/// `env -u WAYLAND_DISPLAY -u XDG_SESSION_TYPE superpanels-gui --tray`,
+/// then Open from the tray. See GitHub #76.
+fn wayland_session(
+    session_type: Option<&str>,
+    wayland_display: Option<&str>,
+    default_socket_exists: bool,
+) -> bool {
     session_type.is_some_and(|v| v.eq_ignore_ascii_case("wayland"))
         || wayland_display.is_some_and(|v| !v.is_empty())
+        || default_socket_exists
+}
+
+/// Only `wayland-0`, exactly what `wl_display_connect(NULL)` tries: if the
+/// compositor listens on a non-default socket and the env var is absent, GTK
+/// falls back to X11 and the crash cannot happen — so neither should the
+/// workaround.
+fn default_wayland_socket_exists(runtime_dir: Option<&std::ffi::OsStr>) -> bool {
+    runtime_dir.is_some_and(|dir| Path::new(dir).join("wayland-0").exists())
 }
 
 /// Warranted only on Wayland with a sign NVIDIA is the active GL stack. A
@@ -116,6 +136,7 @@ fn env_contains_ignore_case(key: &str, needle: &str) -> bool {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)] // reason: tests fail loudly on unexpected errors
 mod tests {
     use super::*;
 
@@ -146,25 +167,41 @@ mod tests {
 
     #[test]
     fn session_type_wayland_is_a_wayland_signal() {
-        assert!(wayland_session(Some("wayland"), None));
-        assert!(wayland_session(Some("Wayland"), None));
+        assert!(wayland_session(Some("wayland"), None, false));
+        assert!(wayland_session(Some("Wayland"), None, false));
     }
 
     #[test]
     fn wayland_display_alone_is_a_wayland_signal() {
-        // The autostart case: `/etc/xdg/autostart` does not pass through
-        // `XDG_SESSION_TYPE`, but `WAYLAND_DISPLAY` is present. See GitHub #76.
-        assert!(wayland_session(None, Some("wayland-0")));
+        assert!(wayland_session(None, Some("wayland-0"), false));
+    }
+
+    #[test]
+    fn default_socket_alone_is_a_wayland_signal() {
+        // The cold-boot autostart case: the unit starts before the session
+        // manager exports WAYLAND_DISPLAY / XDG_SESSION_TYPE into the systemd
+        // activation environment, but GTK connects via libwayland's
+        // $XDG_RUNTIME_DIR/wayland-0 fallback anyway. See GitHub #76.
+        assert!(wayland_session(None, None, true));
     }
 
     #[test]
     fn empty_wayland_display_is_not_a_wayland_signal() {
-        assert!(!wayland_session(None, Some("")));
+        assert!(!wayland_session(None, Some(""), false));
     }
 
     #[test]
-    fn no_wayland_signal_when_neither_is_set() {
-        assert!(!wayland_session(None, None));
-        assert!(!wayland_session(Some("x11"), None));
+    fn no_wayland_signal_when_nothing_is_set() {
+        assert!(!wayland_session(None, None, false));
+        assert!(!wayland_session(Some("x11"), None, false));
+    }
+
+    #[test]
+    fn socket_probe_requires_a_runtime_dir_and_an_existing_socket() {
+        assert!(!default_wayland_socket_exists(None));
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!default_wayland_socket_exists(Some(dir.path().as_os_str())));
+        std::fs::write(dir.path().join("wayland-0"), b"").unwrap();
+        assert!(default_wayland_socket_exists(Some(dir.path().as_os_str())));
     }
 }
