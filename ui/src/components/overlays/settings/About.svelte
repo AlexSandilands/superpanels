@@ -1,6 +1,8 @@
 <script lang="ts">
   import { getVersion } from '@tauri-apps/api/app';
   import { onMount } from 'svelte';
+  import { api, errorMessage } from '$lib/api';
+  import { toast } from '$lib/stores/toast.svelte';
   import Icon from '../../widgets/Icon.svelte';
   import SectionHeader from './SectionHeader.svelte';
 
@@ -11,6 +13,16 @@
   onMount(async () => {
     version = await getVersion();
   });
+
+  // The release URL is built Rust-side from crate metadata, not passed from
+  // here — the webview only triggers the open.
+  async function openRelease() {
+    try {
+      await api.openReleasePage();
+    } catch (err) {
+      toast.error('Could not open release page', errorMessage(err));
+    }
+  }
 </script>
 
 <SectionHeader title="About Superpanels" />
@@ -26,12 +38,11 @@
   <Icon name="logo-lg" size={48} />
   <div>
     <div style:font-size="18px" style:font-weight="600">
-      Superpanels{#if version}<span
-          class="mono"
-          style:font-size="12px"
-          style:font-weight="400"
-          style:color="var(--text-3)"
-          style:margin-left="8px">v{version}</span
+      Superpanels{#if version}<button
+          type="button"
+          class="mono version-link"
+          onclick={openRelease}
+          title="View this release on GitHub">v{version}</button
         >{/if}
     </div>
     <div class="mono" style:font-size="11px" style:color="var(--text-3)" style:margin-top="4px">
@@ -42,3 +53,20 @@
     </div>
   </div>
 </div>
+
+<style>
+  .version-link {
+    margin-left: 8px;
+    padding: 0;
+    border: 0;
+    background: none;
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--text-3);
+    cursor: pointer;
+  }
+  .version-link:hover {
+    color: var(--accent);
+    text-decoration: underline;
+  }
+</style>

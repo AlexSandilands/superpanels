@@ -155,6 +155,7 @@ export const api = {
   getConfig: () => call<unknown>('get_config'),
   saveConfig: (config: unknown) => call<void>('save_config', { config }),
   openConfigFile: () => call<void>('open_config_file'),
+  openReleasePage: () => call<void>('open_release_page'),
   currentState: () => call<RuntimeState>('current_state'),
   setAutostart: (enabled: boolean) => call<{ enabled: boolean }>('set_autostart', { enabled }),
   getAutostart: () => call<{ enabled: boolean }>('get_autostart'),

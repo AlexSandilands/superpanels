@@ -17,6 +17,7 @@ use serde_json::Value;
 
 use crate::errors::IpcError;
 
+pub(crate) mod about;
 pub(crate) mod autostart;
 pub(crate) mod config;
 pub(crate) mod daemon;
