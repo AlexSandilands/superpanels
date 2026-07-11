@@ -184,6 +184,7 @@ fn build_app(start_hidden: bool) -> tauri::App {
             commands::config::get_config,
             commands::config::save_config,
             commands::config::open_config_file,
+            commands::about::open_release_page,
             commands::runtime::current_state,
             commands::autostart::set_autostart,
             commands::autostart::get_autostart,
