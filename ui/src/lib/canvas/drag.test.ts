@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resizeRect, snapRectToMonitors, type ResizeDrag } from './drag.svelte';
+import { panCommit, resizeRect, snapRectToMonitors, type ResizeDrag } from './drag.svelte';
 import type { PreviewMonitor } from './preview-layout';
 
 function pm(over: Partial<PreviewMonitor> & { id: string }): PreviewMonitor {
@@ -77,5 +77,15 @@ describe('snapRectToMonitors', () => {
     expect(out.x).toBe(100);
     expect(out.y).toBe(100);
     expect(out.guides).toHaveLength(0);
+  });
+});
+
+describe('panCommit', () => {
+  it('folds the live pan offset into the committed origin', () => {
+    expect(panCommit(30, -10, { x: 5, y: 12 })).toEqual({ x: 35, y: 2 });
+  });
+
+  it('is identity for a zero offset (a click with no drag)', () => {
+    expect(panCommit(30, -10, { x: 0, y: 0 })).toEqual({ x: 30, y: -10 });
   });
 });
