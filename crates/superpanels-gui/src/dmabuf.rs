@@ -31,13 +31,12 @@ const EXPLICIT_SYNC_VAR: &str = "__NV_DISABLE_EXPLICIT_SYNC";
 pub(crate) fn apply() {
     // An explicit setting in either direction is the escape hatch, and it also
     // breaks the post-re-exec loop: the child inherits the `1` we set below, so
-    // this returns immediately the second time through. Whether `=0` re-enables
-    // DMABUF is WebKitGTK's call — some versions gate on the var's presence, not
-    // its value — but honouring the user's setting untouched is the contract
-    // either way (to force acceleration back on, unset the var rather than `=0`).
-    // The DMABUF var is the loop-break sentinel: it is always among the ones we
-    // set, so the child always sees it even when only the explicit-sync var was
-    // the effective fix.
+    // this returns immediately the second time through (DMABUF_VAR is the
+    // sentinel because it is always among the vars we set). Whether `=0`
+    // re-enables DMABUF is WebKitGTK's call — some versions gate on the var's
+    // presence, not its value — but honouring the user's setting untouched is
+    // the contract either way (to force acceleration back on, unset the var
+    // rather than `=0`).
     if std::env::var_os(DMABUF_VAR).is_some() {
         tracing::info!("nvidia-wayland workaround: env already set (user or re-exec)");
         return;
@@ -59,16 +58,12 @@ struct Facts {
 impl Facts {
     fn probe() -> Self {
         let glx_vendor_nvidia = env_contains_ignore_case("__GLX_VENDOR_LIBRARY_NAME", "nvidia");
-        // The /dev/nvidia* nodes are created lazily by the NVIDIA userspace
-        // (nvidia-modprobe) the first time something opens the device — at
-        // cold boot that can be *this process's own* later EGL init, so at
-        // probe time they may not exist yet (observed born the same second
-        // the autostart unit started). The kernel module, by contrast, must
-        // be loaded before the compositor can bring up an NVIDIA-driven
-        // session at all, so /sys/module/nvidia is ordered strictly before
-        // any Wayland socket we could have connected to.
-        let nvidia_dev_node =
-            Path::new("/dev/nvidiactl").exists() || Path::new("/dev/nvidia0").exists();
+        // Not /dev/nvidia*: those are created lazily by nvidia-modprobe on
+        // first device open — at cold boot observed born the same second the
+        // autostart unit started, i.e. after this probe ran. The kernel module
+        // must be loaded before the compositor can bring up an NVIDIA-driven
+        // session at all, so /sys/module/nvidia is ordered strictly before any
+        // Wayland socket we could have connected to.
         let nvidia_module_loaded = Path::new("/sys/module/nvidia").exists();
         let wayland = wayland_session(
             std::env::var("XDG_SESSION_TYPE").ok().as_deref(),
@@ -81,22 +76,21 @@ impl Facts {
         tracing::info!(
             wayland,
             glx_vendor_nvidia,
-            nvidia_dev_node,
             nvidia_module_loaded,
             "nvidia-wayland workaround probe"
         );
         Self {
             wayland,
-            nvidia: nvidia_signal(glx_vendor_nvidia, nvidia_dev_node, nvidia_module_loaded),
+            nvidia: nvidia_signal(glx_vendor_nvidia, nvidia_module_loaded),
         }
     }
 }
 
-/// Any one signal is enough: the env hint, the (lazily created) device nodes,
-/// or the loaded kernel module — the only one guaranteed to exist by the time
-/// an NVIDIA-driven compositor has a socket up.
-fn nvidia_signal(glx_vendor_nvidia: bool, dev_node: bool, module_loaded: bool) -> bool {
-    glx_vendor_nvidia || dev_node || module_loaded
+/// Either signal is enough: the env hint (an explicit vendor selection) or the
+/// loaded kernel module — the boot-timing-proof fact that the lazily created
+/// `/dev/nvidia*` nodes were only ever a proxy for.
+fn nvidia_signal(glx_vendor_nvidia: bool, module_loaded: bool) -> bool {
+    glx_vendor_nvidia || module_loaded
 }
 
 /// Env sniffing alone cannot decide this. At cold-boot login the autostart
@@ -142,7 +136,7 @@ fn reexec_with_workaround() {
     let exe = match std::env::current_exe() {
         Ok(exe) => exe,
         Err(e) => {
-            tracing::warn!(error = %e, "DMABUF workaround: cannot resolve current exe; continuing without it");
+            tracing::warn!(error = %e, "nvidia-wayland workaround: cannot resolve current exe; continuing without it");
             return;
         }
     };
@@ -155,7 +149,7 @@ fn reexec_with_workaround() {
         .env(DMABUF_VAR, "1")
         .env(EXPLICIT_SYNC_VAR, "1")
         .exec();
-    tracing::warn!(error = %err, "DMABUF workaround: re-exec failed; continuing without it");
+    tracing::warn!(error = %err, "nvidia-wayland workaround: re-exec failed; continuing without it");
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -187,20 +181,13 @@ mod tests {
     }
 
     #[test]
-    fn any_single_nvidia_probe_is_a_signal() {
-        assert!(nvidia_signal(true, false, false));
-        assert!(nvidia_signal(false, true, false));
-        assert!(nvidia_signal(false, false, true));
-        assert!(!nvidia_signal(false, false, false));
-    }
-
-    #[test]
-    fn module_alone_is_an_nvidia_signal() {
-        // The cold-boot race: /dev/nvidia* are created lazily and can be born
-        // *after* the probe (observed same-second as the autostart unit's
-        // start), while /sys/module/nvidia is loaded strictly before the
-        // compositor's socket can exist. See GitHub #76.
-        assert!(nvidia_signal(false, false, true));
+    fn either_nvidia_probe_alone_is_a_signal() {
+        assert!(nvidia_signal(true, false));
+        // Module alone must suffice — at cold boot it is the only probe
+        // guaranteed to be true before the compositor's socket exists. See
+        // GitHub #76.
+        assert!(nvidia_signal(false, true));
+        assert!(!nvidia_signal(false, false));
     }
 
     #[test]
