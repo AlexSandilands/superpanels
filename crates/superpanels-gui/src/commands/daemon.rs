@@ -3,8 +3,8 @@
 //! `daemon_status` is a cheap socket probe the GUI polls to drive its
 //! "daemon not running" banner. `start_daemon` spawns the bundled
 //! `superpanels-daemon` binary; the daemon self-daemonises (re-execs
-//! `--foreground` in the background) so the GUI just needs to fire it
-//! once and drop the child handle.
+//! `--foreground` in the background) so the GUI only fires it once and
+//! reaps the short-lived intermediate child.
 
 #![allow(clippy::needless_pass_by_value)]
 
@@ -52,12 +52,18 @@ pub(crate) fn ensure_daemon_running() -> Result<Option<PathBuf>, IpcError> {
         return Ok(None);
     }
     let exe = locate_daemon_exe();
-    Command::new(&exe).spawn().map_err(|e| {
+    let mut child = Command::new(&exe).spawn().map_err(|e| {
         IpcError::internal(format!(
             "could not spawn '{}': {e} — is `superpanels-daemon` on $PATH?",
             exe.display()
         ))
     })?;
+    // The child re-execs `--foreground` detached and exits within
+    // milliseconds; reap it off-thread so it doesn't linger as a zombie for
+    // the GUI's lifetime (#82).
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
     Ok(Some(exe))
 }
 

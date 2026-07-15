@@ -34,6 +34,17 @@ mod watcher;
 
 use crate::state::DaemonState;
 
+/// glibc malloc parks freed image-decode buffers in per-thread arenas
+/// indefinitely, pinning daemon RSS at the high-water mark of the largest
+/// decode burst (#82). mimalloc purges freed pages back to the OS promptly.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+/// Async workers only dispatch IPC and timers — heavy image work runs on the
+/// blocking pool — so the tokio default of one worker per core just multiplies
+/// stacks and allocator arenas on big machines (#82).
+const WORKER_THREADS: usize = 4;
+
 #[derive(Parser, Debug)]
 #[command(name = "superpanels-daemon", about = "Superpanels background daemon")]
 struct Cli {
@@ -87,6 +98,7 @@ fn main() -> ExitCode {
     init_tracing(cli.verbose, cli.quiet);
 
     let rt = match tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(WORKER_THREADS)
         .enable_all()
         .build()
         .context("building Tokio runtime")

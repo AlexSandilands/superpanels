@@ -10,10 +10,16 @@ use serde_json::{Value, json};
 use superpanels_core::ipc::validate as v;
 use superpanels_core::ipc::{IpcRequest, IpcResponse};
 use superpanels_core::library::{LibraryEntry, LibraryFilter, apply_library_filter};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Semaphore};
 use tracing::warn;
 
 use crate::state::DaemonState;
+
+/// Cap on concurrent thumbnail renders. Each render decodes the
+/// full-resolution source (~42 MiB for a 7680×1440 wallpaper) on its own
+/// blocking thread, and a library-grid open fires one request per visible
+/// tile — unbounded fan-out drove daemon RSS past 700 MiB (#82).
+static THUMBNAIL_RENDER_PERMITS: Semaphore = Semaphore::const_new(3);
 
 /// Force a synchronous rescan of every configured root, persist the result
 /// into the library DB, and refresh the in-memory cache. Returns the post-
@@ -82,6 +88,9 @@ pub(crate) async fn cmd_library_thumbnail(
     }
 
     let canonical_for_task = canonical.clone();
+    // `acquire` errs only on a closed semaphore; this one is never closed, so
+    // fall through unthrottled rather than fail the request.
+    let _permit = THUMBNAIL_RENDER_PERMITS.acquire().await.ok();
     let result =
         tokio::task::spawn_blocking(move || render_thumbnail(&canonical_for_task, edge)).await;
     cache_and_respond(result, state, canonical, mtime).await
