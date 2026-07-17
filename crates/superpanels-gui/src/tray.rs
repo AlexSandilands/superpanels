@@ -340,9 +340,16 @@ fn handle_menu_event(app: &AppHandle, id: &str, _handle: &AppHandle, state: &Arc
             state.request_shutdown();
             app.exit(0);
         }
-        ID_OPEN => show_main_window(app),
+        ID_OPEN => crate::window_lifecycle::show_or_recreate_main_window(app),
         ID_SETTINGS => {
-            show_main_window(app);
+            // "Window exists" is not "listeners attached": a window still loading
+            // from a rebuild would drop an event emitted now. So unconditionally
+            // stash the flag its boot handshake drains, show/rebuild, and also
+            // emit for an already-loaded window. The frontend consumes the flag
+            // on both paths so it can't go stale (see `commands::window` and
+            // `ui/src/App.svelte`).
+            state.set_pending_open_settings();
+            crate::window_lifecycle::show_or_recreate_main_window(app);
             let _ = app.emit("tray://open-settings", ());
         }
         ID_NEXT => {
@@ -389,23 +396,16 @@ fn parse_profile_menu_id(id: &str) -> Option<String> {
     Some(suffix.to_owned())
 }
 
+/// Left-clicking the tray icon toggles the window. Dismissing a visible window
+/// tears it down (persist + `destroy`) exactly like the close button, so the
+/// ~300MB webview is reclaimed whichever dismiss gesture the user picks; a gone
+/// or hidden window is shown, rebuilding it when a close-to-tray destroyed it.
 fn toggle_main_window(handle: &AppHandle) {
-    let Some(window) = handle.get_webview_window("main") else {
-        return;
-    };
-    if window.is_visible().unwrap_or(false) {
-        let _ = window.hide();
-    } else {
-        let _ = window.show();
-        let _ = window.set_focus();
-    }
-}
-
-fn show_main_window(handle: &AppHandle) {
-    if let Some(window) = handle.get_webview_window("main") {
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
+    match handle.get_webview_window(crate::window_lifecycle::MAIN_LABEL) {
+        Some(window) if window.is_visible().unwrap_or(false) => {
+            crate::window_lifecycle::tear_down_to_tray(&window);
+        }
+        _ => crate::window_lifecycle::show_or_recreate_main_window(handle),
     }
 }
 

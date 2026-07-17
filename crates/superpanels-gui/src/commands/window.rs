@@ -1,9 +1,12 @@
 //! Window-chrome `#[tauri::command]`s.
 
+use std::sync::Arc;
+
 use serde::Serialize;
 use tauri::State;
 use ts_rs::TS;
 
+use crate::state::AppState;
 use crate::window_chrome::{DragRegions, Rect, bands, window_scale};
 
 /// Widths of the window's resize grab regions, in logical pixels. Exported so
@@ -36,4 +39,15 @@ pub(crate) fn set_drag_regions(regions: Vec<Rect>, state: State<'_, DragRegions>
 pub(crate) fn resize_bands(window: tauri::Window) -> ResizeBands {
     let (edge, corner) = bands(window_scale(&window));
     ResizeBands { edge, corner }
+}
+
+/// Boot handshake for a window rebuilt from tray "Settings…": returns (and
+/// clears) whether the panel should open. A freshly loaded page has no
+/// `tray://open-settings` listener yet, so the tray stashes the intent in
+/// [`AppState`] and the frontend drains it here once listeners are up.
+// reason: `tauri::State` is always passed by value into a command handler.
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+pub(crate) fn take_pending_open_settings(state: State<'_, Arc<AppState>>) -> bool {
+    state.take_pending_open_settings()
 }

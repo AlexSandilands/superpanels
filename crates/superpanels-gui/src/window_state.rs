@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use tauri::{App, Manager, PhysicalPosition, PhysicalSize, Window};
+use tauri::{PhysicalPosition, PhysicalSize, WebviewWindow};
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub(crate) struct WindowState {
@@ -52,13 +52,10 @@ pub(crate) fn save_to(path: &Path, state: &WindowState) -> std::io::Result<()> {
     fs::write(path, body)
 }
 
-/// Apply a saved window state (size, position, maximized) to the main window.
-pub(crate) fn restore(app: &App) {
+/// Apply a saved window state (size, position, maximized) to `window`.
+pub(crate) fn restore(window: &WebviewWindow) {
     let Some(path) = state_path() else { return };
     let state = load_from(&path);
-    let Some(window) = app.get_webview_window("main") else {
-        return;
-    };
     if let (Some(w), Some(h)) = (state.width, state.height) {
         let _ = window.set_size(PhysicalSize::new(w, h));
     }
@@ -70,8 +67,8 @@ pub(crate) fn restore(app: &App) {
     }
 }
 
-/// Snapshot the window's current geometry into `state.json`. Called on close.
-pub(crate) fn persist(window: &Window) -> std::io::Result<()> {
+/// Snapshot the window's current geometry into `state.json`. Called on teardown.
+pub(crate) fn persist(window: &WebviewWindow) -> std::io::Result<()> {
     let Some(path) = state_path() else {
         return Ok(());
     };

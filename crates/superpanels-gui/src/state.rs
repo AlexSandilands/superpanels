@@ -16,6 +16,10 @@ pub(crate) struct AppState {
     /// to exit cleanly. Set on `RunEvent::ExitRequested` so the poller doesn't
     /// outlive the Tauri runtime and dial into a torn-down daemon during shutdown.
     pub(crate) shutdown: AtomicBool,
+    /// Set when tray "Settings…" rebuilds a torn-down window: the fresh page has
+    /// no event listeners yet, so it drains this flag on boot (via
+    /// `take_pending_open_settings`) instead of receiving `tray://open-settings`.
+    pub(crate) pending_open_settings: AtomicBool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -55,6 +59,17 @@ impl AppState {
     pub(crate) fn shutting_down(&self) -> bool {
         self.shutdown.load(Ordering::SeqCst)
     }
+
+    pub(crate) fn set_pending_open_settings(&self) {
+        self.pending_open_settings.store(true, Ordering::SeqCst);
+    }
+
+    /// Read and clear the pending-settings flag. The boot handshake calls this
+    /// exactly once per fresh page load, so a rebuild-for-settings opens the
+    /// panel and any stale flag can't reopen it on the next launch.
+    pub(crate) fn take_pending_open_settings(&self) -> bool {
+        self.pending_open_settings.swap(false, Ordering::SeqCst)
+    }
 }
 
 #[cfg(test)]
@@ -78,6 +93,35 @@ mod tests {
         // Idempotent — repeat requests don't unset.
         s.request_shutdown();
         assert!(s.shutting_down());
+    }
+
+    #[test]
+    fn pending_open_settings_latches_then_drains_once() {
+        let s = AppState::new();
+        assert!(!s.take_pending_open_settings());
+        s.set_pending_open_settings();
+        // First drain sees it; a second must not — else settings would reopen
+        // on the next fresh page load.
+        assert!(s.take_pending_open_settings());
+        assert!(!s.take_pending_open_settings());
+    }
+
+    #[test]
+    fn pending_open_settings_consumed_by_live_event_then_boot_drain_is_false() {
+        // Tray "Settings…" always stages the flag AND emits. On a live window
+        // the event's `onOpenSettings` handler drains it; a later window rebuild
+        // must then see a *cleared* flag on its boot handshake, or Settings
+        // would spuriously reopen. Models: set -> event drain -> boot drain.
+        let s = AppState::new();
+        s.set_pending_open_settings();
+        assert!(
+            s.take_pending_open_settings(),
+            "live event consumes the flag"
+        );
+        assert!(
+            !s.take_pending_open_settings(),
+            "next rebuilt window's boot handshake must not reopen settings"
+        );
     }
 
     #[test]
