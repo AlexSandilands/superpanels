@@ -77,16 +77,20 @@ pub(crate) fn install_at(data_dir: &Path, exec: &str) -> Result<(), IpcError> {
     Ok(())
 }
 
-// The WebKitGTK DMABUF workaround is no longer baked into `Exec=` — the binary
-// self-detects NVIDIA-on-Wayland and re-execs with the env set. See `dmabuf.rs`
-// and GitHub #57.
+// `TOKIO_WORKER_THREADS=2` caps zbus's lazily-built blocking runtime (GitHub
+// #84). A menu-launched instance hides to tray on close, so it lives just as
+// long as the autostart one — it needs the same cap the autostart entry sets.
+//
+// The WebKitGTK DMABUF workaround is deliberately *not* baked into `Exec=` — the
+// binary self-detects NVIDIA-on-Wayland and re-execs with the env set, so a
+// non-NVIDIA GPU keeps DMABUF acceleration. See `dmabuf.rs` and GitHub #57.
 fn desktop_body(exec: &str) -> String {
     format!(
         "[Desktop Entry]\n\
          Type=Application\n\
          Name=Superpanels\n\
          Comment=Bezel-aware multi-monitor wallpaper manager\n\
-         Exec={exec}\n\
+         Exec=env TOKIO_WORKER_THREADS=2 {exec}\n\
          Icon={APP_ID}\n\
          Categories=Graphics;Utility;\n\
          Terminal=false\n\
@@ -215,13 +219,23 @@ mod tests {
     }
 
     #[test]
-    fn desktop_body_execs_the_binary_directly() {
-        // The DMABUF workaround now lives in the binary (`dmabuf.rs`, GitHub
-        // #57), not the launcher: `Exec=` must invoke the binary with no `env`
-        // prefix so non-NVIDIA GPUs keep DMABUF acceleration.
+    fn desktop_body_caps_tokio_but_keeps_dmabuf_out_of_exec() {
+        // `Exec=` gains the `TOKIO_WORKER_THREADS` cap (GitHub #84) with the
+        // binary path as `env`'s argument, but the DMABUF workaround still lives
+        // in the binary (`dmabuf.rs`, GitHub #57), not the launcher — baking it
+        // in would cost non-NVIDIA GPUs DMABUF acceleration.
         let body = desktop_body("/usr/bin/superpanels-gui");
-        assert!(body.contains("Exec=/usr/bin/superpanels-gui\n"));
+        assert!(body.contains("Exec=env TOKIO_WORKER_THREADS=2 /usr/bin/superpanels-gui\n"));
         assert!(!body.contains("WEBKIT_DISABLE_DMABUF_RENDERER"));
+    }
+
+    #[test]
+    fn desktop_body_caps_tokio_with_a_quoted_path() {
+        // The quoted absolute path stays intact as `env`'s trailing argument.
+        let body = desktop_body("\"/home/a user/target/debug/superpanels-gui\"");
+        assert!(body.contains(
+            "Exec=env TOKIO_WORKER_THREADS=2 \"/home/a user/target/debug/superpanels-gui\"\n"
+        ));
     }
 
     #[test]
