@@ -20,6 +20,7 @@ pub(crate) mod errors;
 pub(crate) mod state;
 pub(crate) mod tray;
 pub(crate) mod window_chrome;
+pub(crate) mod window_lifecycle;
 pub(crate) mod window_state;
 
 use std::sync::Arc;
@@ -27,6 +28,7 @@ use std::sync::Arc;
 use tracing_subscriber::EnvFilter;
 
 use crate::state::AppState;
+use crate::window_lifecycle::ExitDecision;
 
 /// Entry point. Spawns the Tauri runtime; never returns under normal use.
 pub fn run() {
@@ -59,13 +61,8 @@ fn init_tracing() {
 // (`Fn(&AppHandle, Vec<String>, String)`); we can't borrow these args.
 #[allow(clippy::needless_pass_by_value)]
 fn on_second_instance(app: &tauri::AppHandle, argv: Vec<String>, _cwd: String) {
-    use tauri::Manager;
     if !argv.iter().any(|a| a == "--tray") {
-        if let Some(window) = app.get_webview_window("main") {
-            let _ = window.show();
-            let _ = window.unminimize();
-            let _ = window.set_focus();
-        }
+        crate::window_lifecycle::show_or_recreate_main_window(app);
     }
     std::thread::spawn(|| {
         if let Err(e) = crate::commands::daemon::ensure_daemon_running() {
@@ -79,18 +76,14 @@ fn on_second_instance(app: &tauri::AppHandle, argv: Vec<String>, _cwd: String) {
 fn setup_app(
     app: &mut tauri::App,
     state: &Arc<AppState>,
-    drag_regions: &crate::window_chrome::DragRegions,
     start_hidden: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::Manager;
     crate::tray::install(app, Arc::clone(state))?;
-    crate::window_state::restore(app);
     // The window defaults to hidden (`visible: false`); a normal launch opts
     // into showing it, tray-only autostart leaves it hidden.
-    if let Some(window) = app.get_webview_window("main") {
-        if let Err(e) = crate::window_chrome::install(&window, drag_regions) {
-            tracing::warn!(error = %e, "window chrome not installed; the window may not move or resize");
-        }
+    if let Some(window) = app.get_webview_window(crate::window_lifecycle::MAIN_LABEL) {
+        crate::window_lifecycle::configure_main_window(app.handle(), &window);
         if !start_hidden {
             let _ = window.show();
             let _ = window.set_focus();
@@ -113,19 +106,26 @@ fn setup_app(
     Ok(())
 }
 
-/// Close hides to tray instead of quitting: the process — and so the tray and
-/// the daemon we own — stays alive. The real quit is tray → "Exit Superpanels".
+/// Close tears the main window down instead of quitting: `destroy()` frees the
+/// webview and its `WebKit` processes (a plain `hide` kept ~300MB resident), while
+/// the process — tray and the daemon we own — stays alive. Destroying the last
+/// window makes the runtime fire `ExitRequested { code: None }`, which
+/// [`handle_event`] keeps alive. The real quit is tray → "Exit Superpanels".
 fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
-    // Only the main window hides to tray; any future secondary window (dialog,
-    // picker) should close normally rather than become un-closeable.
-    if window.label() != "main" {
+    // Only the main window tears down to tray; any future secondary window
+    // (dialog, picker) should close normally rather than become un-closeable.
+    if window.label() != crate::window_lifecycle::MAIN_LABEL {
         return;
     }
     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-        // Persist geometry first so the next show restores it.
+        // Persist geometry first so the next open restores it.
         let _ = crate::window_state::persist(window);
+        // Prevent the runtime's own close, then destroy explicitly so teardown
+        // has a single owner that runs after the persist above. `destroy()`
+        // routes straight to the runtime's window-removal (no re-emitted
+        // `CloseRequested`), unlike `close()`.
         api.prevent_close();
-        let _ = window.hide();
+        let _ = window.destroy();
     }
 }
 
@@ -149,8 +149,8 @@ fn build_app(start_hidden: bool) -> tauri::App {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .manage(Arc::clone(&state))
-        .manage(drag_regions.clone())
-        .setup(move |app| setup_app(app, &state, &drag_regions, start_hidden))
+        .manage(drag_regions)
+        .setup(move |app| setup_app(app, &state, start_hidden))
         .on_window_event(on_window_event)
         .invoke_handler(tauri::generate_handler![
             commands::monitors::detect_monitors,
@@ -194,6 +194,7 @@ fn build_app(start_hidden: bool) -> tauri::App {
             commands::daemon::start_daemon,
             commands::window::set_drag_regions,
             commands::window::resize_bands,
+            commands::window::take_pending_open_settings,
         ]);
 
     builder
@@ -207,22 +208,30 @@ fn build_app(start_hidden: bool) -> tauri::App {
 // reason: Tauri's run callback signature requires owned `RunEvent`.
 #[allow(clippy::needless_pass_by_value)]
 fn handle_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
-    if let tauri::RunEvent::ExitRequested { code, .. } = &event {
+    if let tauri::RunEvent::ExitRequested { code, api, .. } = &event {
         use tauri::Manager;
-        tracing::info!(code = ?code, "exit requested");
-        if let Some(state) = app.try_state::<Arc<AppState>>() {
-            // We own the daemon's lifecycle, so it must not outlive this
-            // process: stop it on every exit path (tray "Exit", a fatal error,
-            // a relaunch teardown), not just the tray menu. Best-effort and
-            // prompt — the daemon's `shutdown` handler takes no locks and
-            // replies at once. `request_shutdown` then stops the tray poller
-            // before the runtime tears down.
-            let _ = crate::bridge::call(
-                "shutdown",
-                serde_json::json!({}),
-                state.config_path().as_deref(),
-            );
-            state.request_shutdown();
+        let decision = crate::window_lifecycle::exit_decision(*code);
+        tracing::info!(code = ?code, decision = ?decision, "exit requested");
+        match decision {
+            // Close-to-tray: the last window was destroyed, so the runtime asks
+            // to exit with no code. Veto it — the tray and the daemon we own
+            // must outlive the webview — and leave the daemon running.
+            ExitDecision::StayResident => api.prevent_exit(),
+            // A real quit (tray "Exit", programmatic exit/restart). We own the
+            // daemon's lifecycle, so it must not outlive this process. Best-
+            // effort and prompt — the daemon's `shutdown` handler takes no
+            // locks and replies at once. `request_shutdown` then stops the tray
+            // poller before the runtime tears down.
+            ExitDecision::Quit => {
+                if let Some(state) = app.try_state::<Arc<AppState>>() {
+                    let _ = crate::bridge::call(
+                        "shutdown",
+                        serde_json::json!({}),
+                        state.config_path().as_deref(),
+                    );
+                    state.request_shutdown();
+                }
+            }
         }
     }
 }

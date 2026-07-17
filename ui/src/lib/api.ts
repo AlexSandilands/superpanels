@@ -166,6 +166,9 @@ export const api = {
   startDaemon: () => call<{ exe: string | null }>('start_daemon'),
   setDragRegions: (regions: DragRect[]) => call<void>('set_drag_regions', { regions }),
   resizeBands: () => call<ResizeBands>('resize_bands'),
+  // Boot handshake: a window rebuilt from tray "Settings…" has no
+  // `tray://open-settings` listener yet, so it drains the intent here instead.
+  takePendingOpenSettings: () => call<boolean>('take_pending_open_settings'),
 };
 
 /** Window-relative rectangle, in CSS pixels, that drags the window when pressed. */
