@@ -721,7 +721,13 @@
     void libraryStore.refresh();
 
     const detachWindow = attachWindowEvents({
-      onOpenSettings: () => (settingsOpen = true),
+      onOpenSettings: () => {
+        // The tray also stages a pending flag for the rebuild boot path; drain
+        // it here so a live-window event can't leave it set to spuriously
+        // reopen Settings on the next rebuilt window's boot handshake.
+        void api.takePendingOpenSettings();
+        settingsOpen = true;
+      },
       onDragOver: () => (dragOverlay = true),
       onDragLeave: () => (dragOverlay = false),
       onDrop: (path, position) => {

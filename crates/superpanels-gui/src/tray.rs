@@ -342,20 +342,15 @@ fn handle_menu_event(app: &AppHandle, id: &str, _handle: &AppHandle, state: &Arc
         }
         ID_OPEN => crate::window_lifecycle::show_or_recreate_main_window(app),
         ID_SETTINGS => {
-            // A live window has its `tray://open-settings` listener attached, so
-            // emitting reaches it. A window rebuilt from a prior close-to-tray
-            // loads fresh and would miss an event fired now — stash a flag its
-            // boot handshake drains instead. See `commands::window`.
-            if app
-                .get_webview_window(crate::window_lifecycle::MAIN_LABEL)
-                .is_some()
-            {
-                crate::window_lifecycle::show_or_recreate_main_window(app);
-                let _ = app.emit("tray://open-settings", ());
-            } else {
-                state.set_pending_open_settings();
-                crate::window_lifecycle::show_or_recreate_main_window(app);
-            }
+            // "Window exists" is not "listeners attached": a window still loading
+            // from a rebuild would drop an event emitted now. So unconditionally
+            // stash the flag its boot handshake drains, show/rebuild, and also
+            // emit for an already-loaded window. The frontend consumes the flag
+            // on both paths so it can't go stale (see `commands::window` and
+            // `ui/src/App.svelte`).
+            state.set_pending_open_settings();
+            crate::window_lifecycle::show_or_recreate_main_window(app);
+            let _ = app.emit("tray://open-settings", ());
         }
         ID_NEXT => {
             let _ = bridge::call("slideshow_next", json!({}), state.config_path().as_deref());
@@ -401,13 +396,14 @@ fn parse_profile_menu_id(id: &str) -> Option<String> {
     Some(suffix.to_owned())
 }
 
-/// Left-clicking the tray icon toggles the window: a visible window hides
-/// (cheap, transient — the webview stays for a quick re-show), and a hidden or
-/// torn-down window is shown, rebuilding it when a close-to-tray destroyed it.
+/// Left-clicking the tray icon toggles the window. Dismissing a visible window
+/// tears it down (persist + `destroy`) exactly like the close button, so the
+/// ~300MB webview is reclaimed whichever dismiss gesture the user picks; a gone
+/// or hidden window is shown, rebuilding it when a close-to-tray destroyed it.
 fn toggle_main_window(handle: &AppHandle) {
     match handle.get_webview_window(crate::window_lifecycle::MAIN_LABEL) {
         Some(window) if window.is_visible().unwrap_or(false) => {
-            let _ = window.hide();
+            crate::window_lifecycle::tear_down_to_tray(&window);
         }
         _ => crate::window_lifecycle::show_or_recreate_main_window(handle),
     }

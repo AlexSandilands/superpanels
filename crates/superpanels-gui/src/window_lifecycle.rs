@@ -30,9 +30,29 @@ pub(crate) fn exit_decision(code: Option<i32>) -> ExitDecision {
     }
 }
 
+/// Tear the main window down to tray: persist geometry, then `destroy()` to free
+/// the webview and its `WebKit` processes. Shared by the close-button path and
+/// the tray-icon dismiss so both reclaim the ~300MB rather than just hiding.
+pub(crate) fn tear_down_to_tray(window: &WebviewWindow) {
+    let _ = crate::window_state::persist(window);
+    let _ = window.destroy();
+}
+
 /// Show the main window, rebuilding its webview from config first when a prior
 /// close-to-tray tore it down.
+///
+/// Always hops to the GTK main thread before touching windows: reached from
+/// [`crate::on_second_instance`] this runs on the single-instance plugin's zbus
+/// handler thread, and the rebuild wires GTK signal handlers
+/// ([`crate::window_chrome::install`]) that are main-thread-only.
 pub(crate) fn show_or_recreate_main_window(app: &AppHandle) {
+    let handle = app.clone();
+    if let Err(e) = app.run_on_main_thread(move || show_or_recreate_on_main(&handle)) {
+        tracing::error!(error = %e, "could not dispatch main-window open to the main thread");
+    }
+}
+
+fn show_or_recreate_on_main(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(MAIN_LABEL) {
         let _ = window.show();
         let _ = window.unminimize();

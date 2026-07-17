@@ -112,20 +112,21 @@ fn setup_app(
 /// window makes the runtime fire `ExitRequested { code: None }`, which
 /// [`handle_event`] keeps alive. The real quit is tray → "Exit Superpanels".
 fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
+    use tauri::Manager;
     // Only the main window tears down to tray; any future secondary window
     // (dialog, picker) should close normally rather than become un-closeable.
     if window.label() != crate::window_lifecycle::MAIN_LABEL {
         return;
     }
     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-        // Persist geometry first so the next open restores it.
-        let _ = crate::window_state::persist(window);
-        // Prevent the runtime's own close, then destroy explicitly so teardown
-        // has a single owner that runs after the persist above. `destroy()`
-        // routes straight to the runtime's window-removal (no re-emitted
+        // Prevent the runtime's own close, then tear down explicitly so teardown
+        // has a single owner that persists geometry first. `destroy()` routes
+        // straight to the runtime's window-removal (no re-emitted
         // `CloseRequested`), unlike `close()`.
         api.prevent_close();
-        let _ = window.destroy();
+        if let Some(window) = window.get_webview_window(window.label()) {
+            crate::window_lifecycle::tear_down_to_tray(&window);
+        }
     }
 }
 

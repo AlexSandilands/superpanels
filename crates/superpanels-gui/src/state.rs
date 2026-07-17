@@ -107,6 +107,24 @@ mod tests {
     }
 
     #[test]
+    fn pending_open_settings_consumed_by_live_event_then_boot_drain_is_false() {
+        // Tray "Settings…" always stages the flag AND emits. On a live window
+        // the event's `onOpenSettings` handler drains it; a later window rebuild
+        // must then see a *cleared* flag on its boot handshake, or Settings
+        // would spuriously reopen. Models: set -> event drain -> boot drain.
+        let s = AppState::new();
+        s.set_pending_open_settings();
+        assert!(
+            s.take_pending_open_settings(),
+            "live event consumes the flag"
+        );
+        assert!(
+            !s.take_pending_open_settings(),
+            "next rebuilt window's boot handshake must not reopen settings"
+        );
+    }
+
+    #[test]
     fn set_snapshot_round_trips() {
         let s = AppState::new();
         s.set_snapshot(RuntimeSnapshot {

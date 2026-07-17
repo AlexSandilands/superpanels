@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use tauri::{PhysicalPosition, PhysicalSize, WebviewWindow, Window};
+use tauri::{PhysicalPosition, PhysicalSize, WebviewWindow};
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub(crate) struct WindowState {
@@ -67,8 +67,8 @@ pub(crate) fn restore(window: &WebviewWindow) {
     }
 }
 
-/// Snapshot the window's current geometry into `state.json`. Called on close.
-pub(crate) fn persist(window: &Window) -> std::io::Result<()> {
+/// Snapshot the window's current geometry into `state.json`. Called on teardown.
+pub(crate) fn persist(window: &WebviewWindow) -> std::io::Result<()> {
     let Some(path) = state_path() else {
         return Ok(());
     };
