@@ -33,8 +33,34 @@ pub fn run() {
     init_tracing();
     // Re-exec (if warranted) before any thread spawns or the webview inits.
     dmabuf::apply();
+    // Cap Tauri's async runtime before `build_app` runs: left to its default it
+    // spawns one worker per core (64 idle threads on a 32-core box — GitHub
+    // #84). `set` stores only the handle, so the `Runtime` must outlive the app;
+    // `run()` blocks until exit, so this binding does.
+    let _runtime = install_async_runtime();
     let start_hidden = wants_tray_mode(std::env::args().skip(1));
     build_app(start_hidden).run(handle_event);
+}
+
+/// Install a small tokio runtime as Tauri's async runtime, returning it so the
+/// caller keeps it alive. On build failure we log and return `None`, letting
+/// Tauri lazily create its default (per-core) runtime instead.
+fn install_async_runtime() -> Option<tokio::runtime::Runtime> {
+    match tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
+        .enable_io()
+        .enable_time()
+        .build()
+    {
+        Ok(runtime) => {
+            tauri::async_runtime::set(runtime.handle().clone());
+            Some(runtime)
+        }
+        Err(error) => {
+            tracing::warn!(%error, "could not build capped tokio runtime; using tauri default");
+            None
+        }
+    }
 }
 
 /// Whether the GUI was launched in tray-only mode. The login-autostart entry
