@@ -22,6 +22,11 @@ const FILE_NAME: &str = "superpanels.desktop";
 // starts the daemon without popping the window. The app-menu entry
 // (`desktop_entry.rs`) deliberately omits it so a manual launch opens the GUI.
 //
+// `TOKIO_WORKER_THREADS=2` caps zbus's lazily-built blocking runtime, which
+// otherwise sizes itself one worker per core on this long-lived launch path
+// (GitHub #84). Tauri's own runtime is capped in code (`lib.rs`); this covers
+// the runtime we can't reach directly.
+//
 // The WebKitGTK DMABUF workaround is no longer an `env` prefix here — the
 // binary self-detects NVIDIA-on-Wayland and re-execs with it set. See
 // `dmabuf.rs` and GitHub #57.
@@ -29,7 +34,7 @@ const DESKTOP_BODY: &str = "[Desktop Entry]\n\
 Type=Application\n\
 Name=Superpanels\n\
 Comment=Bezel-aware multi-monitor wallpaper manager\n\
-Exec=superpanels-gui --tray\n\
+Exec=env TOKIO_WORKER_THREADS=2 superpanels-gui --tray\n\
 Icon=superpanels-gui\n\
 Categories=Graphics;Utility;\n\
 Terminal=false\n\
@@ -150,7 +155,7 @@ mod tests {
         let path = tmp.path().join("autostart").join(FILE_NAME);
         set_enabled_at(&path, false, true).unwrap();
         let body = fs::read_to_string(&path).unwrap();
-        assert!(body.contains("Exec=superpanels-gui --tray"));
+        assert!(body.contains("Exec=env TOKIO_WORKER_THREADS=2 superpanels-gui --tray"));
         // The DMABUF workaround moved into the binary (GitHub #57): no `env`
         // prefix here, else non-NVIDIA autostart loses DMABUF acceleration.
         assert!(!body.contains("WEBKIT_DISABLE_DMABUF_RENDERER"));
@@ -209,6 +214,13 @@ mod tests {
     fn autostart_entry_launches_in_tray_mode() {
         // Login startup must come up backgrounded (tray + daemon, no window).
         assert!(DESKTOP_BODY.contains("superpanels-gui --tray"));
+    }
+
+    #[test]
+    fn autostart_entry_caps_tokio_worker_threads() {
+        // Keeps zbus's lazily-built blocking runtime small on the launch path
+        // that lives for the whole session (GitHub #84).
+        assert!(DESKTOP_BODY.contains("Exec=env TOKIO_WORKER_THREADS=2 superpanels-gui --tray"));
     }
 
     #[test]

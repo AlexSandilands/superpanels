@@ -33,8 +33,44 @@ pub fn run() {
     init_tracing();
     // Re-exec (if warranted) before any thread spawns or the webview inits.
     dmabuf::apply();
+    // Cap Tauri's async runtime before `build_app` runs: left to its default it
+    // spawns one worker per core (64 idle threads on a 32-core box — GitHub
+    // #84). `set` stores only the handle, so we own the `Runtime` and keep it
+    // alive for the app's lifetime.
+    let runtime = install_async_runtime();
     let start_hidden = wants_tray_mode(std::env::args().skip(1));
-    build_app(start_hidden).run(handle_event);
+    // `run_return`, not `run`: `run` diverges into `process::exit` inside tao,
+    // so we could never reach the teardown below. We must, because letting the
+    // owned `Runtime`'s `Drop` fire on exit would block up to 120 s — `Drop`
+    // joins in-flight `spawn_blocking` tasks and every IPC read parks on the
+    // blocking pool for `READ_TIMEOUT` (superpanels-core). `shutdown_background`
+    // releases without waiting. See GitHub #84.
+    let exit_code = build_app(start_hidden).run_return(handle_event);
+    if let Some(runtime) = runtime {
+        runtime.shutdown_background();
+    }
+    std::process::exit(exit_code);
+}
+
+/// Install a small tokio runtime as Tauri's async runtime, returning it so the
+/// caller keeps it alive. On build failure we log and return `None`, letting
+/// Tauri lazily create its default (per-core) runtime instead.
+fn install_async_runtime() -> Option<tokio::runtime::Runtime> {
+    match tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
+        .enable_io()
+        .enable_time()
+        .build()
+    {
+        Ok(runtime) => {
+            tauri::async_runtime::set(runtime.handle().clone());
+            Some(runtime)
+        }
+        Err(error) => {
+            tracing::warn!(%error, "could not build capped tokio runtime; using tauri default");
+            None
+        }
+    }
 }
 
 /// Whether the GUI was launched in tray-only mode. The login-autostart entry

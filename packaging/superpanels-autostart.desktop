@@ -2,7 +2,7 @@
 Type=Application
 Name=Superpanels
 Comment=Bezel-aware multi-monitor wallpaper manager
-Exec=superpanels-gui --tray
+Exec=env TOKIO_WORKER_THREADS=2 superpanels-gui --tray
 Icon=superpanels-gui
 Categories=Graphics;Utility;
 Terminal=false
